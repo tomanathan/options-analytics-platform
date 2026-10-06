@@ -39,8 +39,9 @@ airflow.db
 airflow.cfg
 webserver_config.py
 
-# Data is never committed
+# Data is never committed (vendor licence terms: personal analysis only, no redistribution)
 data/
+.iceberg-local/
 
 # macOS
 .DS_Store

@@ -1,12 +1,12 @@
 # Runbook
 
-For whoever operates the stack. All commands run from the repo root unless noted. Phase 0 has no pipelines, so "operating" means the Airflow stack, dbt, Terraform and the checks.
+For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the Phase 1 bronze pipelines (backfill, daily snapshot, maintenance), dbt, Terraform and the checks.
 
 ## Airflow stack
 
 Services: `postgres` (metadata DB), `airflow-init` (one-shot migrate and create user), `airflow-webserver`, `airflow-scheduler`. LocalExecutor. `make up`, `make down`, `make reset` and `make logs` wrap the commands below; `make down` keeps the metadata volume, `make reset` deletes it.
 
-The containers receive `AWS_REGION`, `OAP_*` and `ALPACA_*` from `.env`. They get no AWS credentials in Phase 0, so DAGs cannot reach S3 yet; Phase 1 will add that.
+The containers receive `AWS_REGION`, `OAP_*` and `ALPACA_*` from `.env`. By default the DAGs write to the local Iceberg catalog; see "Local and AWS catalog" below for switching to S3 and Glue. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are passed through from the shell that runs `docker compose`, not from `.env`.
 
 Start:
 
@@ -62,6 +62,118 @@ Run an Airflow CLI command inside the stack:
 ```bash
 docker compose exec airflow-scheduler airflow dags list
 ```
+
+## Phase 1: bronze pipelines
+
+Three DAGs write and maintain `bronze.option_chain`: `backfill_chains` (history from DoltHub, triggered by hand), `daily_chain_snapshot` (Alpaca snapshot after the NYSE close) and `iceberg_maintenance` (weekly). The table design and the overwrite rule are in [architecture.md](architecture.md) and [ADR 0003](decisions/0003-partition-overwrite-for-idempotency.md). Locally the table lives in `.iceberg-local/` (gitignored); inside the containers that directory is mounted at `/opt/airflow/.iceberg-local`. The local catalog is a standard-library SQLite file, `.iceberg-local/catalog.db` ([ADR 0005](decisions/0005-stdlib-sqlite-local-catalog.md)); it supports one writer host, so do not point two machines at one file.
+
+### Build the Airflow image
+
+All Airflow services share one image, `oap-airflow:dev`, built from `docker/airflow.Dockerfile`: the official image plus `pip install .`, so the dependencies of `oap` (pyiceberg, Great Expectations, pandas) are baked in. Any change to the dependencies in `pyproject.toml` needs a rebuild. Python edits under `src/` do not, because `src/`, `dags/`, `plugins/` and `scripts/` are mounted.
+
+```bash
+make airflow-build
+make up
+```
+
+`make up` builds the image only if it does not exist yet. If a DAG fails with `ModuleNotFoundError` for a third-party package, the image is stale: run `make airflow-build`, then `make up` again to recreate the containers.
+
+### Run a backfill for one month
+
+```bash
+make backfill START=2024-01-01 END=2024-01-31
+make backfill START=2024-01-01 END=2024-03-31 SYMBOLS=SPY,QQQ
+```
+
+`SYMBOLS` defaults to the watchlist seed (`dbt/seeds/watchlist.csv`, mounted read-only into the containers). The make target unpauses the DAG and triggers it with the dates as run parameters. The equivalent direct commands:
+
+```bash
+docker compose exec -T airflow-scheduler airflow dags unpause backfill_chains
+docker compose exec -T airflow-scheduler airflow dags trigger backfill_chains \
+  --conf '{"start": "2024-01-01", "end": "2024-01-31", "symbols": ["SPY", "QQQ"]}'
+```
+
+An empty `symbols` list means the watchlist. The DAG plans one fetch task per (symbol, month) with at least one NYSE session in range, runs at most 4 tasks at once, and retries each fetch up to 5 times with exponential backoff (capped at 10 minutes). A fetch that finds no rows in DoltHub ends as `skipped`, not failed. Coverage for the watchlist starts in 2020 and has scattered missing trading days, so a range before 2020 produces skipped fetches only. After the fetches, one write task per month merges the staged symbols into each day's slice and overwrites it, one month at a time. A write for a month is skipped over any slice whose content did not change, so repeating a backfill adds no snapshots. Only one backfill run is active at a time; a second trigger waits.
+
+DoltHub notes: range predicates on `date` time out, so the client queries each month with an explicit list of trading days and pages with `LIMIT 1000 OFFSET n`. With an explicit `LIMIT`, DoltHub reports a full page as `Success` rather than `RowLimit`, so the client keeps paging while a page holds exactly 1000 rows. Timeouts, HTTP 429 and 5xx responses are retried inside the client before Airflow's own retries begin. Rows with a crossed quote (bid above ask) are dropped with a logged `WARNING` giving the count per underlying and date.
+
+### Re-run a failed day
+
+Run the backfill for that single date:
+
+```bash
+make backfill START=2024-01-17 END=2024-01-17 SYMBOLS=SPY
+```
+
+This is safe to repeat. Each write replaces the (trade_date, source) slice and never appends, so the re-run produces the same rows as a clean run and leaves no duplicates (ADR 0003). Other symbols already in the slice are kept. `ingested_at` differs when a slice is rewritten; `make iceberg-count` prints a content hash that excludes it. If a month's write task fails with "fetch failed for ...", one of its fetches did not finish; its slices were left untouched, so re-run that month.
+
+A failed `daily_chain_snapshot` task is retried by clearing it in the UI grid or with `airflow tasks clear`. Alpaca returns the latest snapshot, so a run triggered long after its session stores the quotes of the trigger time under that session's date. Re-run an Alpaca session the same evening or not at all. To fill a missed past day, use the DoltHub backfill, with its column limits (no last, volume, open interest or underlying price).
+
+### Watch progress
+
+```bash
+docker compose exec -T airflow-scheduler airflow dags list-runs -d backfill_chains
+docker compose exec -T airflow-scheduler airflow tasks states-for-dag-run backfill_chains <run_id>
+```
+
+Get `<run_id>` from `list-runs`. `states-for-dag-run` prints one line per task instance and map index; count the states of `fetch_month` to see how many (symbol, month) tasks are `success`, `running`, `up_for_retry`, `skipped` or `failed`, and those of `write_month` for the months. In the UI (http://localhost:8080), open the DAG, then Grid: each mapped task shows a count badge, and clicking it lists each map index with its logs. Logs are also on disk under `logs/airflow/`. The `summarize` task logs the totals.
+
+### Count what landed
+
+```bash
+make iceberg-count
+make iceberg-count ARGS="--source dolthub --start 2024-01-01 --end 2024-01-31"
+```
+
+This runs `scripts/iceberg_count.py` in the scheduler container and prints one line per (source, trade_date) with its row count, then the total and a `content_hash` of the selected rows. Use the counts to confirm that expected days exist and that no day is unexpectedly low. Run the same command before and after a re-run: an unchanged hash shows the re-run was a no-op. The script exits with an error if the table does not exist yet (nothing has been written).
+
+### Quality failures
+
+The `quality` task of `daily_chain_snapshot` reads the written slice back and runs the bronze suite (`src/oap/quality/bronze_suite.py`) against the previous 20 sessions of the same source. A failed expectation raises `BronzeQualityError`, naming the failed expectations, and fails the task. The backfill DAG does not run the suite in Phase 1; check its output with `make iceberg-count`. A failure does not roll back the write: the slice stays as written until it is re-run. Frames are also validated against the bronze contract before every write (bid not above ask, expiration not before trade date, unique key, strike above zero, right in C/P); a violation fails the write task with the list of failed checks and commits nothing.
+
+**`row_count:<SYMBOL>`.** The underlying's row count for the day is outside the band: within 50% of the median over its previous 20 sessions. Underlyings with fewer than 5 days of history are not bounded.
+- Below the band: usually a vendor outage or a partial response. Re-run the day (the same evening for Alpaca). If it stays low, check the vendor directly.
+- Above the band: new expirations were listed, or the same data was written under two source tags. Inspect the slice with `make iceberg-count` before re-running.
+
+**`occ_symbol_not_null`.** The parser failed to build the compact OCC symbol for some rows. This is a bug in `src/oap/ingest/`, not a data problem. Do not re-run until the parser is fixed, because the re-run overwrites with the same bad rows.
+
+**`strike_positive` or `right_in_set`.** Malformed vendor rows or a column mapping error. Read the failing expectation in the task log. If the vendor changed a format, fix the mapping, then re-run.
+
+**`key_unique`.** Duplicates on (occ_symbol, trade_date, source). The overwrite rule should make this impossible within one source tag. It means two writers used the same `source` value, or the vendor sent the same contract twice. Check the `source` column of the slice; if a writer is tagging with the wrong source, fix it and re-run both days.
+
+### Maintenance DAG
+
+`iceberg_maintenance` runs weekly. First it expires snapshots older than 7 days, always keeping the current one. Then it compacts: any (trade_date, source) slice with more than one data file is read and written back through the same overwrite path, because pyiceberg 0.12 has no `rewrite_data_files`; the rows, including `ingested_at`, are unchanged. Run it by hand:
+
+```bash
+docker compose exec -T airflow-scheduler airflow dags unpause iceberg_maintenance
+docker compose exec -T airflow-scheduler airflow dags trigger iceberg_maintenance
+```
+
+Run it after a large backfill: retries and re-runs leave replaced data files referenced by old snapshots until they expire. Expiring snapshots limits time travel to 7 days.
+
+### Local and AWS catalog
+
+The catalog is chosen by environment variables (set them in `.env`; Compose passes them to the containers):
+
+| Variable | Local (default) | AWS |
+| --- | --- | --- |
+| `OAP_ICEBERG_CATALOG` | `sql` (alias `local`) | `glue` |
+| `OAP_ICEBERG_URI` | `sqlite:///.iceberg-local/catalog.db` | not used |
+| `OAP_ICEBERG_WAREHOUSE` | `file://./.iceberg-local/warehouse` | `s3://<bucket>/bronze` |
+| `OAP_GLUE_DATABASE` | not used | `oap_bronze` (the table's namespace) |
+
+In AWS mode the table is `<OAP_GLUE_DATABASE>.option_chain`. The containers cannot read `~/.aws` profiles, so export `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for the `oap-pipeline` user in the shell that runs `docker compose`, together with `AWS_REGION`. Switching also needs the Terraform resources applied. The local and AWS tables are separate; nothing copies one to the other.
+
+### Full history backfill
+
+One command, run overnight:
+
+```bash
+make backfill START=2020-01-01 END=<yesterday as YYYY-MM-DD>
+```
+
+For 11 symbols over about 81 months that is roughly 900 fetch tasks at 4 concurrent, about one hour when DoltHub answers quickly. DoltHub rate limits can stretch it. The run is resumable: if tasks fail after their retries, re-run the same command; unchanged slices are skipped and the overwrite rule makes the repeat safe. Finish with `make iceberg-count` and the maintenance DAG.
 
 ## dbt
 
@@ -172,6 +284,8 @@ docker compose exec airflow-scheduler airflow dags list-import-errors
 The scheduler log (`docker compose logs airflow-scheduler`) holds the traceback. A frequent cause is importing `oap` when `PYTHONPATH` does not include `/opt/airflow/src`; check `docker compose exec airflow-scheduler env | grep PYTHONPATH`. Reproduce it without the stack with `uv run pytest tests/dags -q`, which loads every DAG file into a DagBag.
 
 **Permission denied on `logs/airflow` on Linux.** Set `AIRFLOW_UID` in `.env` to the output of `id -u`, create the directory yourself with `mkdir -p logs/airflow`, then `docker compose down -v && docker compose up -d`.
+
+**`ModuleNotFoundError` in a DAG task, or the `backfill_chains` DAG is missing.** The image predates a dependency change. Run `make airflow-build` and `make up`, then `docker compose exec airflow-scheduler airflow dags list-import-errors`.
 
 **`dbt compile` cannot find packages.** Run `make dbt-deps`. Packages install to `dbt/dbt_packages/`, which is gitignored.
 

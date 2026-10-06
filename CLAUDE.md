@@ -1,18 +1,21 @@
 # options-analytics-platform
 
 Options chains go to Iceberg on S3 (bronze), dbt on Snowflake (silver/gold), orchestrated by Airflow with Great Expectations gates.
-On top sits a put credit spread engine: market-implied distribution from vertical spreads, calibrated on 2019+ outcomes, scored on return on collateral.
-Phase 0 is scaffolding only; no pipeline or engine logic exists yet. See README.md and docs/architecture.md.
+On top sits a put credit spread engine: market-implied distribution from vertical spreads, calibrated on 2020+ outcomes (the free history starts in 2020), scored on return on collateral.
+Phase 1 (ingestion and bronze) is built: DoltHub + Alpaca into `bronze.option_chain`. Phase 2 (dbt layers) and 3 (engine) are not. See README.md and docs/architecture.md.
 
 ## Layout
-- `src/oap/{ingest,engine,quality}/`: Python package. `tests/`: pytest + hypothesis, mirrors the code.
-- `dags/`: Airflow DAGs. `dbt/`: dbt project `oap` (`profiles.yml` committed, no secrets).
-- `infra/`: Terraform (S3, Glue, scoped IAM user). `docker/`: Dockerfiles. `docker-compose.yml`: Airflow stack.
+- `src/oap/{ingest,engine,quality}/` and `src/oap/calendar.py` (NYSE calendar): Python package. `tests/`: pytest + hypothesis, mirrors the code.
+- `dags/`: Airflow DAGs. `plugins/`: Airflow plugins (`oap_timetables.py` registers `NYSECloseTimetable` from `dags/timetables.py`). `scripts/`: operator scripts. `dbt/`: dbt project `oap` (`profiles.yml` committed, no secrets).
+- `infra/`: Terraform (S3, Glue, scoped IAM user). `docker/`: Dockerfiles (`airflow.Dockerfile`: dependency changes need `make airflow-build`). `docker-compose.yml`: Airflow stack.
 - `docs/`: architecture, runbook, ADRs in `docs/decisions/`. `.claude/`: hooks, commands, agents.
 
 ## Conventions
 - Python 3.12, `uv` (`uv sync --all-groups`), `ruff` lint+format (Google docstrings), `mypy --strict`, `pytest` + `hypothesis`.
 - Engine code is pure functions, no I/O. Every docstring states units: prices in dollars, vol as decimal, time in years.
+- Bronze writes go through `write_partition` and overwrite the (trade_date, source) slice; never append (ADR 0003).
+- DAG schedules that depend on the market calendar use `NYSECloseTimetable`, not cron.
+- Local Iceberg catalog is `oap.ingest.local_catalog` (stdlib sqlite3), because Airflow 2.11 and SqlCatalog conflict on SQLAlchemy (ADR 0005).
 - Dependency groups: `dev`, `airflow` (apache-airflow==2.11.2), `dbt`.
 - dbt: every model has `schema.yml` descriptions on every column and at least two tests. `dev` target is DuckDB, `prod` is Snowflake.
 - Write portable SQL for DuckDB and Snowflake; use `adapter.dispatch` where they differ (ADR 0002).
