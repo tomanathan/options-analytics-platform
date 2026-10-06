@@ -1,0 +1,20 @@
+version: 2
+
+models:
+  - name: stg_watchlist
+    description: "{{ doc('stg_watchlist') }}"
+    columns:
+      - name: symbol
+        description: Ticker of the underlying, trimmed and upper-cased.
+        data_tests:
+          - unique
+          - not_null
+          - dbt_expectations.expect_column_values_to_match_regex:
+              arguments:
+                regex: "^[A-Z.]{1,6}$"
+      - name: sector
+        description: GICS sector of the underlying, or "Broad Market ETF" for index ETFs.
+      - name: added_on
+        description: Date the symbol was added to the watchlist.
+        data_tests:
+          - not_null

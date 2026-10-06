@@ -1,0 +1,22 @@
+# Committed on purpose: every value that differs per machine or is secret comes from the
+# environment. `dev` runs on a local DuckDB file; `prod` runs on Snowflake.
+# The DuckDB path is relative to the directory dbt is invoked from (the repo root via
+# `make`), and its parent directory must exist: `make dbt-compile` creates `.dbt-local/`.
+oap:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('OAP_DUCKDB_PATH', '.dbt-local/oap.duckdb') }}"
+      threads: 4
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: "{{ env_var('SNOWFLAKE_SCHEMA') }}"
+      threads: 8
+      client_session_keep_alive: false

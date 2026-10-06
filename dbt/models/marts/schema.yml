@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: dim_underlying
+    description: "{{ doc('dim_underlying') }}"
+    columns:
+      - name: underlying_key
+        description: Surrogate key, an MD5 hash of the symbol.
+        data_tests:
+          - unique
+          - not_null
+      - name: symbol
+        description: Ticker of the underlying, trimmed and upper-cased.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_watchlist')
+                field: symbol
+      - name: sector
+        description: GICS sector of the underlying, or "Broad Market ETF" for index ETFs.
+      - name: added_on
+        description: Date the symbol was added to the watchlist.
