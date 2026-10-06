@@ -1,0 +1,2 @@
+# Copy to terraform.tfvars (gitignored). Bucket names are global across all AWS accounts, so make it yours.
+bucket_name = "oap-lake-ab-7f3k2q"
