@@ -20,6 +20,17 @@ variable "bucket_name" {
   }
 }
 
+variable "noncurrent_version_expiration_days" {
+  description = "Days after an object version becomes noncurrent before S3 deletes it. Bounds how long Iceberg time travel can reach back after snapshot expiry."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.noncurrent_version_expiration_days > 30
+    error_message = "Noncurrent versions must outlive the 30-day STANDARD_IA transition."
+  }
+}
+
 variable "bronze_ia_transition_days" {
   description = "Days after which objects under bronze/ move to STANDARD_IA."
   type        = number

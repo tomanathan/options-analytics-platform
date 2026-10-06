@@ -50,6 +50,15 @@ resource "aws_s3_bucket_lifecycle_configuration" "lake" {
       noncurrent_days = 30
       storage_class   = "STANDARD_IA"
     }
+
+    # Versioning keeps every file an Iceberg snapshot expiry deletes; without this, expiry never frees storage.
+    noncurrent_version_expiration {
+      noncurrent_days = var.noncurrent_version_expiration_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 
   # Noncurrent-version rules are only accepted once versioning is on.

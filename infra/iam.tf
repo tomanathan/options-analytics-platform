@@ -22,7 +22,7 @@ data "aws_iam_policy_document" "pipeline" {
       "s3:DeleteObject",
       "s3:AbortMultipartUpload",
     ]
-    resources = ["${aws_s3_bucket.lake.arn}/*"]
+    resources = ["${aws_s3_bucket.lake.arn}/bronze/*"]
   }
 
   statement {

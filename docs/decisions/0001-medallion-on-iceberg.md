@@ -36,7 +36,8 @@ Good:
 
 Costs:
 
-- Two systems to operate. Bronze maintenance (compaction, snapshot expiry) is our job; Snowflake does not do it for tables it only reads.
+- Two systems to operate. Bronze maintenance (compaction, snapshot expiry) is our job; Snowflake does not do it for tables it only reads. Because the bucket is versioned, an expired snapshot's files only stop costing money when S3 deletes the noncurrent version, which the lifecycle rule does after 90 days; that window is also how far back a mistaken expiry can be undone.
+- Bronze moves to STANDARD_IA after 30 days. IA bills a 128 KB minimum per object, so compaction must run before that transition or small files cost more than they would in STANDARD.
 - Snowflake reads bronze as externally managed Iceberg tables. That needs an external volume, a catalog integration and an IAM trust relationship, none of which exist in Phase 0. The IAM user Terraform creates is for the ingest writer, not for Snowflake.
 - Iceberg tables from a Glue catalog have a refresh lag in Snowflake. Gates must read the same snapshot the transform used, not "latest".
 - Small files will accumulate if Phase 1 writes one batch per underlying per day. Writes should be batched, and compaction scheduled.
