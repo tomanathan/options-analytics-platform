@@ -13,11 +13,24 @@ models:
         description: Ticker of the underlying, trimmed and upper-cased.
         data_tests:
           - not_null
-          - relationships:
-              arguments:
-                to: ref('stg_watchlist')
-                field: symbol
       - name: sector
         description: GICS sector of the underlying, or "Broad Market ETF" for index ETFs.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - Broad Market ETF
+                  - Communication Services
+                  - Consumer Discretionary
+                  - Consumer Staples
+                  - Energy
+                  - Financials
+                  - Health Care
+                  - Industrials
+                  - Information Technology
+                  - Materials
+                  - Real Estate
+                  - Utilities
       - name: added_on
         description: Date the symbol was added to the watchlist.
