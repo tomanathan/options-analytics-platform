@@ -1,0 +1,14 @@
+{
+  "snapshots": {
+    "SPY261218C00700000": {
+      "latestTrade": {"t": "2026-10-05T15:12:44.871Z", "p": 3.05, "s": 1},
+      "impliedVolatility": 0.1688,
+      "dailyBar": {"t": "2026-10-05T04:00:00Z", "o": 3.05, "h": 3.05, "l": 3.05, "c": 3.05, "v": 1, "n": 1, "vw": 3.05}
+    },
+    "SPY261218P00500000": {
+      "impliedVolatility": 0.3021,
+      "greeks": {"delta": -0.0212, "gamma": 0.0003, "theta": -0.0187, "vega": 0.1544, "rho": -0.0322}
+    }
+  },
+  "next_page_token": null
+}
