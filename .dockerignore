@@ -1,0 +1,7 @@
+# Keep the Airflow image build context to the files pip install needs.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+src/**/__pycache__/

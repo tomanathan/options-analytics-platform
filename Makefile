@@ -4,7 +4,7 @@ SHELL := /bin/bash
 DBT_ARGS := --project-dir dbt --profiles-dir dbt
 
 .PHONY: help install lint format typecheck test dbt-deps dbt-compile dbt-build check \
-	tf-fmt tf-validate compose-config up down reset logs clean
+	tf-fmt tf-validate compose-config airflow-build up down reset logs backfill iceberg-count clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -47,7 +47,12 @@ tf-validate: ## Validate Terraform without a backend
 compose-config: ## Validate docker-compose.yml
 	docker compose config --quiet
 
+airflow-build: ## Build the Airflow image (one image serves every Airflow service)
+	docker compose build airflow-webserver
+
+# Builds the image on first use only; run `make airflow-build` after dependency changes.
 up: ## Start the local Airflow stack
+	mkdir -p .iceberg-local logs/airflow
 	docker compose up -d
 
 down: ## Stop the stack, keeping the Postgres metadata volume
@@ -58,6 +63,19 @@ reset: ## Stop the stack and delete its volumes (fresh Airflow metadata DB on ne
 
 logs: ## Tail logs from the stack
 	docker compose logs -f --tail=100
+
+backfill: ## Backfill DoltHub history: make backfill START=YYYY-MM-DD END=YYYY-MM-DD [SYMBOLS=SPY,QQQ]
+	@if [ -z "$(START)" ] || [ -z "$(END)" ]; then \
+		echo "usage: make backfill START=YYYY-MM-DD END=YYYY-MM-DD [SYMBOLS=SPY,QQQ] (no SYMBOLS = watchlist)" >&2; \
+		exit 1; \
+	fi
+	docker compose exec -T airflow-scheduler airflow dags unpause backfill_chains
+	symbols=$$(printf '%s' "$(SYMBOLS)" | awk -v RS=, 'NF { printf "%s\"%s\"", sep, $$1; sep = "," }'); \
+	docker compose exec -T airflow-scheduler airflow dags trigger backfill_chains \
+		--conf "{\"start\":\"$(START)\",\"end\":\"$(END)\",\"symbols\":[$$symbols]}"
+
+iceberg-count: ## Rows per (source, trade_date) in bronze and its content hash; ARGS="--source dolthub"
+	docker compose exec -T airflow-scheduler python /opt/airflow/scripts/iceberg_count.py $(ARGS)
 
 clean: ## Remove local caches and build artefacts
 	rm -rf .venv .mypy_cache .ruff_cache .pytest_cache .hypothesis dbt/target dbt/dbt_packages dbt/logs .dbt-local infra/.terraform

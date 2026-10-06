@@ -1,8 +1,12 @@
 # Local Airflow 2.x stack (LocalExecutor + Postgres) for the options-analytics-platform DAGs.
 # Start with `make up` (UI at http://localhost:8080); the dbt tool runs on demand: `docker compose run --rm dbt compile`.
+# The Airflow services share one image built from docker/airflow.Dockerfile; run `make airflow-build` after dependency changes.
 
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.11.2-python3.12
+  build:
+    context: .
+    dockerfile: docker/airflow.Dockerfile
+  image: oap-airflow:dev
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -13,12 +17,24 @@ x-airflow-common: &airflow-common
     AWS_REGION: ${AWS_REGION:-}
     OAP_S3_BUCKET: ${OAP_S3_BUCKET:-}
     OAP_GLUE_DATABASE: ${OAP_GLUE_DATABASE:-}
+    # The local catalog lives in ./.iceberg-local, mounted at /opt/airflow/.iceberg-local. The container's working
+    # directory is /opt/airflow, so the host-relative values in .env.example resolve to the same files here.
+    OAP_ICEBERG_CATALOG: ${OAP_ICEBERG_CATALOG:-sql}
+    OAP_ICEBERG_URI: ${OAP_ICEBERG_URI:-sqlite:////opt/airflow/.iceberg-local/catalog.db}
+    OAP_ICEBERG_WAREHOUSE: ${OAP_ICEBERG_WAREHOUSE:-file:///opt/airflow/.iceberg-local/warehouse}
+    # Containers cannot read the host's ~/.aws profiles; the Glue catalog gets keys from the environment.
+    AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+    AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     ALPACA_API_KEY: ${ALPACA_API_KEY:-}
     ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
     ALPACA_PAPER: ${ALPACA_PAPER:-}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/src:ro
+    - ./plugins:/opt/airflow/plugins
+    - ./dbt:/opt/airflow/dbt:ro
+    - ./scripts:/opt/airflow/scripts:ro
+    - ./.iceberg-local:/opt/airflow/.iceberg-local
     - ./logs/airflow:/opt/airflow/logs
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on
