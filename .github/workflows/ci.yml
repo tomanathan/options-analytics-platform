@@ -39,3 +39,4 @@ jobs:
       - run: make tf-validate
       - run: make compose-config
       - run: docker compose --profile tools build dbt
+      - run: make airflow-build
