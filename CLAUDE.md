@@ -23,7 +23,7 @@ Phase 0 is scaffolding only; no pipeline or engine logic exists yet. See README.
 ## Checks
 - `make check` (lint, typecheck, test, dbt-compile) must be green before every commit.
 - Also: `make tf-validate`, `make compose-config`. pre-commit runs `detect-secrets`, ruff and hygiene hooks.
-- Hooks: ruff runs on every Python file you edit; `uv run pytest -q` runs when you stop.
+- Hooks: ruff formats and fixes every Python file you edit and reports what it cannot fix; `uv run pytest -q` runs when you stop and blocks on failures.
 
 ## Adding things
 - New Python module: use the `python` agent; add a test at the mirrored path under `tests/`; stubs hold a docstring only.
