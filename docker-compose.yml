@@ -27,7 +27,6 @@ x-airflow-common: &airflow-common
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     ALPACA_API_KEY: ${ALPACA_API_KEY:-}
     ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
-    ALPACA_PAPER: ${ALPACA_PAPER:-}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/src:ro

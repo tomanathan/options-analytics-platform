@@ -1,9 +1,11 @@
 """Print row counts per (source, trade_date) of the bronze table, and its content hash.
 
-Run inside the Airflow scheduler container with ``make iceberg-count`` (or on the host with
-``uv run python scripts/iceberg_count.py``); the catalog comes from the ``OAP_ICEBERG_*``
-environment like every ingest task. The hash is ``content_hash`` over the selected rows, so
-comparing it before and after re-running a load shows whether the load is idempotent.
+Run it inside the Airflow scheduler container with ``make iceberg-count``. The table metadata
+stores the container's absolute file paths (``/opt/airflow/.iceberg-local/...``), so the
+local catalog written by the stack cannot be read from the host. The catalog comes from the
+``OAP_ICEBERG_*`` environment like every ingest task. The hash is ``content_hash`` over the
+selected rows, so comparing it before and after re-running a load shows whether the load is
+idempotent.
 ``--start``/``--end``/``--source`` narrow the selection; the default is the whole table.
 """
 

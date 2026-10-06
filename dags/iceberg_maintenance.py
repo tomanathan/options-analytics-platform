@@ -2,6 +2,10 @@
 
 ``expire_snapshots`` drops snapshots older than seven days from the table metadata, which
 bounds the metadata file and the time-travel window. The current snapshot is always kept.
+In pyiceberg 0.12 this removes snapshot metadata only: the data files, manifests and manifest
+lists those snapshots referenced, and any orphaned files, stay on disk (or in S3). Sweeping
+them is a later phase (S3 lifecycle rules and orphan-file removal); until then, storage
+grows with every rewrite even though the table only reads live files.
 
 ``compact`` rewrites every ``(trade_date, source)`` slice that has more than one live data
 file. pyiceberg 0.12 has no ``rewrite_data_files``; instead the slice is read and written back
@@ -43,7 +47,11 @@ def iceberg_maintenance() -> None:
             datetime.now(UTC) - SNAPSHOT_RETENTION
         ).commit()
         remaining = len(table.refresh().metadata.snapshots)
-        logger.info("expired %d snapshots, %d remain", before - remaining, remaining)
+        logger.info(
+            "expired %d snapshots from metadata, %d remain; their data files were not deleted",
+            before - remaining,
+            remaining,
+        )
         return remaining
 
     @task

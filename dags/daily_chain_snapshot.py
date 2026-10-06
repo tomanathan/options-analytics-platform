@@ -6,8 +6,11 @@ watchlist seed. The session a run is for is the New York date of its ``data_inte
 The snapshot comes from Alpaca's free ``indicative`` feed: quotes are derived from OPRA
 rather than the consolidated NBBO, and there is no open interest. It is stored as
 ``source="alpaca_indicative"`` so it is never mistaken for a real NBBO record. The endpoint
-returns the latest snapshot, so a run triggered long after its session stores the quotes of
-trigger time under that session's date; re-run a session the same evening or not at all.
+only returns the latest snapshot, so a session can only be captured on its own evening.
+``snapshot_chain`` enforces this: when the newest quote's New York date is not the run's
+session (for example a manual trigger the next morning), it raises ``AlpacaError`` and
+``snapshot`` fails before anything is written, rather than storing live quotes under an
+earlier session's date.
 
 Tasks run ``snapshot >> write >> quality``:
 
