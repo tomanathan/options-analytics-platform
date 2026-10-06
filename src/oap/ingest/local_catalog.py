@@ -17,9 +17,10 @@ Commits are optimistic: the row is updated only if its ``metadata_location`` is 
 the commit was based on; otherwise ``CommitFailedException`` is raised and the caller retries
 against the refreshed table.
 
-The SQLite file and the table metadata files are this module's I/O. Every operation opens
-its own short-lived connection, so the catalog is safe to use from several processes (for
-example concurrent Airflow tasks); SQLite serialises the writes.
+The SQLite file and the table metadata files are this module's I/O. Constructing a catalog
+touches nothing; the first operation creates the file, its directory and the two tables.
+Every operation opens its own short-lived connection, so the catalog is safe to use from
+several processes (for example concurrent Airflow tasks); SQLite serialises the writes.
 """
 
 import sqlite3
@@ -131,19 +132,30 @@ class LocalCatalog(MetastoreCatalog):
     """
 
     def __init__(self, name: str, **properties: str) -> None:
-        """Open (and if needed create) the catalog tables in the SQLite file."""
+        """Check the properties; the file is not touched until the first operation."""
         super().__init__(name, **properties)
         uri = self.properties.get("uri")
         if not uri:
             raise ValueError("LocalCatalog needs a 'uri' property")
         self.path = sqlite_path(uri)
-        with self._connect() as conn:
+        self._initialised = False
+
+    def _initialise(self) -> None:
+        """Create the database's directory and the two catalog tables if missing."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             for statement in CREATE_TABLES_SQL:
                 conn.execute(statement)
+        self._initialised = True
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        """Yield a connection inside one transaction: commit on success, roll back on error."""
+        """Yield a connection inside one transaction: commit on success, roll back on error.
+
+        The first call creates the database file, its directory and the catalog tables.
+        """
+        if not self._initialised:
+            self._initialise()
         with closing(sqlite3.connect(self.path, timeout=30)) as conn, conn:
             yield conn
 

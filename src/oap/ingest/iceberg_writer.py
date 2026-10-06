@@ -89,7 +89,7 @@ _DATA_FILE_CONTENT = 0
 _ICEBERG_TYPES: dict[pa.DataType, IcebergType] = {
     pa.date32(): DateType(),
     pa.string(): StringType(),
-    pa.decimal128(10, 2): DecimalType(10, 2),
+    pa.decimal128(10, 3): DecimalType(10, 3),
     pa.float64(): DoubleType(),
     pa.int64(): LongType(),
     pa.timestamp("us", tz="UTC"): TimestamptzType(),
@@ -132,7 +132,7 @@ def bronze_iceberg_schema() -> Schema:
     """Return BRONZE_SCHEMA as an Iceberg schema, field ids 1 to 20 in column order.
 
     Returns:
-        The Iceberg schema: dates as ``date``, the strike as ``decimal(10, 2)``, prices and
+        The Iceberg schema: dates as ``date``, the strike as ``decimal(10, 3)``, prices and
         greeks as ``double``, counts as ``long`` and ``ingested_at`` as ``timestamptz``.
     """
     return Schema(
@@ -176,8 +176,9 @@ def catalog_from_env(env: Mapping[str, str] | None = None) -> Catalog:
       (default ``sqlite:///.iceberg-local/catalog.db``), warehouse from
       ``OAP_ICEBERG_WAREHOUSE`` (default ``file://<absolute cwd>/.iceberg-local/warehouse``).
       Relative paths in either, such as ``sqlite:///.iceberg-local/catalog.db`` or
-      ``file://./.iceberg-local/warehouse``, resolve against the working directory. The local
-      directories are created when this function is called, never at import.
+      ``file://./.iceberg-local/warehouse``, resolve against the working directory at call
+      time. Nothing is created here: the catalog's directory and database appear on its first
+      operation (``ensure_table``), and pyiceberg creates warehouse directories as it writes.
     * ``glue``: warehouse from ``OAP_ICEBERG_WAREHOUSE``, an ``s3://bucket/prefix`` URI;
       region from ``AWS_REGION`` when set. Credentials come from the usual AWS chain.
 
@@ -206,15 +207,12 @@ def catalog_from_env(env: Mapping[str, str] | None = None) -> Catalog:
             properties["client.region"] = region
         return GlueCatalog(CATALOG_NAME, **properties)
     uri = env.get("OAP_ICEBERG_URI", "").strip() or f"sqlite:///{DEFAULT_LOCAL_DIR}/catalog.db"
-    db_path = sqlite_path(uri).resolve()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path = sqlite_path(uri).absolute()
     warehouse = env.get("OAP_ICEBERG_WAREHOUSE", "").strip() or (
         (Path.cwd() / DEFAULT_LOCAL_DIR / "warehouse").as_uri()
     )
     if warehouse.startswith(_FILE_SCHEME):
-        warehouse_path = Path(warehouse.removeprefix(_FILE_SCHEME)).resolve()
-        warehouse_path.mkdir(parents=True, exist_ok=True)
-        warehouse = warehouse_path.as_uri()
+        warehouse = Path(warehouse.removeprefix(_FILE_SCHEME)).absolute().as_uri()
     return LocalCatalog(CATALOG_NAME, uri=f"sqlite:///{db_path}", warehouse=warehouse)
 
 
@@ -246,7 +244,9 @@ def ensure_table(catalog: Catalog, identifier: tuple[str, str] = TABLE_IDENTIFIE
     """Return the bronze table, creating its namespace and the table if missing.
 
     A new table gets BRONZE_SCHEMA and ``bronze_partition_spec()``. An existing table is
-    returned as is; its schema is not altered.
+    never altered, but it must hold every BRONZE_SCHEMA column with the same type and
+    nullability; a table created by an older contract (for example with a two-decimal
+    strike) is reported instead of being written to with a mismatched schema.
 
     Args:
         catalog: Catalog to create the table in.
@@ -254,19 +254,40 @@ def ensure_table(catalog: Catalog, identifier: tuple[str, str] = TABLE_IDENTIFIE
 
     Returns:
         The loaded table.
+
+    Raises:
+        ValueError: If an existing table's schema differs from BRONZE_SCHEMA; the message
+            lists the differing columns.
     """
     namespace = identifier[0]
     catalog.create_namespace_if_not_exists(namespace)
     try:
-        return catalog.load_table(identifier)
+        table = catalog.load_table(identifier)
     except NoSuchTableError:
-        pass
-    try:
-        return catalog.create_table(
-            identifier, schema=bronze_iceberg_schema(), partition_spec=bronze_partition_spec()
+        try:
+            return catalog.create_table(
+                identifier, schema=bronze_iceberg_schema(), partition_spec=bronze_partition_spec()
+            )
+        except TableAlreadyExistsError:
+            table = catalog.load_table(identifier)
+    _check_schema(table)
+    return table
+
+
+def _check_schema(table: Table) -> None:
+    """Raise ValueError if ``table`` lacks a bronze column or holds it with another type."""
+    actual = {f.name: (f.field_type, f.required) for f in table.schema().fields}
+    differences = [
+        f"{f.name}: expected {f.field_type}{' required' if f.required else ''}, "
+        f"found {actual[f.name][0] if f.name in actual else 'nothing'}"
+        for f in bronze_iceberg_schema().fields
+        if actual.get(f.name) != (f.field_type, f.required)
+    ]
+    if differences:
+        raise ValueError(
+            f"table {'.'.join(table.name())} does not match the bronze schema: "
+            + "; ".join(differences)
         )
-    except TableAlreadyExistsError:
-        return catalog.load_table(identifier)
 
 
 def write_partition(table: Table, frame: pd.DataFrame, *, trade_date: date, source: str) -> int:

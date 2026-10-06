@@ -18,6 +18,10 @@ implied volatility is a decimal (0.20 means 20%); greeks are as the vendor repor
 share (theta per calendar day); volume and open interest are contracts. ``trade_date`` and
 ``expiration`` are exchange calendar dates; ``ingested_at`` is the UTC instant of the load.
 
+The strike is ``decimal(10, 3)``: the OCC symbol encodes strikes in thousandths of a dollar,
+and adjusted contracts after splits and special dividends carry three decimals (12.625), so
+two decimals would reject real contracts.
+
 Everything in this module is pure: no I/O, no clocks.
 """
 
@@ -50,7 +54,7 @@ _BRONZE_FIELDS: "list[pa.Field[Any]]" = [
     pa.field("underlying", pa.string(), nullable=False),
     pa.field("occ_symbol", pa.string(), nullable=False),
     pa.field("expiration", pa.date32(), nullable=False),
-    pa.field("strike", pa.decimal128(10, 2), nullable=False),
+    pa.field("strike", pa.decimal128(10, 3), nullable=False),
     pa.field("right", pa.string(), nullable=False),
     pa.field("bid", pa.float64()),
     pa.field("ask", pa.float64()),

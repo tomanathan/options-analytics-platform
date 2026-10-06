@@ -108,8 +108,22 @@ def test_ddl_names_exactly_the_sqlcatalog_columns() -> None:
     assert "PRIMARY KEY (catalog_name, namespace, property_key)" in namespace_ddl
 
 
+def test_constructing_the_catalog_touches_nothing(tmp_path: Path) -> None:
+    LocalCatalog("oap", uri=f"sqlite:///{tmp_path}/a/b/catalog.db")
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_first_operation_creates_the_directory_and_tables(tmp_path: Path) -> None:
+    catalog = LocalCatalog("oap", uri=f"sqlite:///{tmp_path}/a/b/catalog.db")
+
+    assert catalog.list_namespaces() == []
+    assert (tmp_path / "a" / "b" / "catalog.db").is_file()
+
+
 def test_database_file_has_the_sqlcatalog_layout(tmp_path: Path, catalog: LocalCatalog) -> None:
     db = tmp_path / "catalog.db"
+    catalog.list_namespaces()
 
     tables = _columns(db, "iceberg_tables")
     namespaces = _columns(db, "iceberg_namespace_properties")

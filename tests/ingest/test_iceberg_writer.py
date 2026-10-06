@@ -2,6 +2,7 @@ import logging
 import subprocess
 import sys
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -11,12 +12,15 @@ import pytest
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.glue import GlueCatalog
 from pyiceberg.exceptions import CommitFailedException
+from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.transforms import DayTransform, IdentityTransform
-from pyiceberg.types import DateType, DecimalType, TimestamptzType
+from pyiceberg.types import DateType, DecimalType, NestedField, TimestamptzType
 
+from oap.ingest.alpaca import parse_snapshots
 from oap.ingest.iceberg_writer import (
     TABLE_IDENTIFIER,
+    bronze_iceberg_schema,
     catalog_from_env,
     content_hash,
     ensure_table,
@@ -27,7 +31,7 @@ from oap.ingest.iceberg_writer import (
     write_partition,
 )
 from oap.ingest.local_catalog import LocalCatalog
-from oap.ingest.schema import BRONZE_FRAME, BRONZE_SCHEMA, empty_frame
+from oap.ingest.schema import BRONZE_FRAME, BRONZE_SCHEMA, empty_frame, to_arrow
 from tests.bronze_factory import bronze_frame
 
 D1 = date(2024, 1, 2)
@@ -74,9 +78,22 @@ def test_catalog_from_env_defaults_to_a_local_sql_catalog_under_cwd(
 
     catalog = catalog_from_env({})
 
-    assert (tmp_path / ".iceberg-local").is_dir()
+    assert list(tmp_path.iterdir()) == []
     ensure_table(catalog)
+    assert (tmp_path / ".iceberg-local" / "catalog.db").is_file()
     assert catalog.list_tables("bronze") == [TABLE_IDENTIFIER]
+
+
+def test_catalog_from_env_has_no_side_effects(tmp_path: Path) -> None:
+    env = {
+        "OAP_ICEBERG_CATALOG": "sql",
+        "OAP_ICEBERG_URI": f"sqlite:///{tmp_path}/nested/dir/catalog.db",
+        "OAP_ICEBERG_WAREHOUSE": f"file://{tmp_path}/warehouse",
+    }
+
+    catalog_from_env(env)
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_catalog_from_env_resolves_relative_local_paths_against_cwd(
@@ -157,6 +174,20 @@ def test_ensure_table_does_not_touch_existing_data(catalog: Catalog) -> None:
     assert _row_count(ensure_table(catalog)) == 20
 
 
+def test_ensure_table_rejects_a_table_from_an_older_contract(catalog: Catalog) -> None:
+    old_fields = [
+        NestedField(f.field_id, f.name, DecimalType(10, 2), required=f.required)
+        if f.name == "strike"
+        else f
+        for f in bronze_iceberg_schema().fields
+    ]
+    catalog.create_namespace("bronze")
+    catalog.create_table(TABLE_IDENTIFIER, schema=Schema(*old_fields))
+
+    with pytest.raises(ValueError, match=r"strike: expected decimal\(10, 3\)"):
+        ensure_table(catalog)
+
+
 def test_ensure_table_schema_matches_bronze_schema(table: Table) -> None:
     schema = table.schema()
 
@@ -164,7 +195,7 @@ def test_ensure_table_schema_matches_bronze_schema(table: Table) -> None:
     required = {f.name for f in schema.fields if f.required}
     assert required == {f.name for f in BRONZE_SCHEMA if not f.nullable}
     assert schema.find_field("trade_date").field_type == DateType()
-    assert schema.find_field("strike").field_type == DecimalType(10, 2)
+    assert schema.find_field("strike").field_type == DecimalType(10, 3)
     assert schema.find_field("ingested_at").field_type == TimestamptzType()
 
 
@@ -469,3 +500,24 @@ def test_reads_reject_an_unknown_source(table: Table) -> None:
         read_partition(table, trade_date=D1, source="x' OR '1'='1")
     with pytest.raises(ValueError):
         read_range(table, start=D1, end=D2, source="yahoo")
+
+
+def test_a_three_decimal_strike_round_trips_through_bronze(table: Table) -> None:
+    # Adjusted contracts after splits carry thousandths, as the OCC code does.
+    as_of = date(2026, 10, 5)
+    quote = {"t": "2026-10-05T19:59:59Z", "bp": 1.10, "bs": 1, "ap": 1.20, "as": 1}
+    payload = {"snapshots": {"SPY261016C00012625": {"latestQuote": quote}}}
+    frame = parse_snapshots(
+        payload,
+        underlying="SPY",
+        as_of=as_of,
+        underlying_price=None,
+        ingested_at=LATER,
+    )
+
+    assert to_arrow(frame).column("strike").to_pylist() == [Decimal("12.625")]
+    write_partition(table, frame, trade_date=as_of, source="alpaca_indicative")
+
+    stored = read_partition(table, trade_date=as_of, source="alpaca_indicative")
+    assert stored["strike"].tolist() == [Decimal("12.625")]
+    assert stored["occ_symbol"].tolist() == ["SPY261016C00012625"]
