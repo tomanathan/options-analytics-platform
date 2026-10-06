@@ -29,7 +29,7 @@ flowchart LR
 
 ## Data flow
 
-Each layer has one job, and a quality gate decides whether the next layer may build. Gates fail closed: a failed or missing check stops the DAG so bad data does not propagate.
+Each layer has one job, and a quality gate decides whether the next layer may build. In dbt the layers are folders: `models/staging` is silver and `models/marts` is gold; bronze never passes through dbt. Gates fail closed: a failed or missing check stops the DAG so bad data does not propagate.
 
 **Bronze** (Phase 1) holds the vendor response as received: one row per contract per snapshot, with the vendor's quote timestamp. Nothing is cleaned here, so any later layer can be rebuilt from it. Loads are idempotent per snapshot date: a re-run replaces that date's partition, and the earlier Iceberg snapshot stays readable. The planned table is `options_chain` in the Glue database `oap_bronze`, partitioned by trade date and underlying. Storage is Iceberg on S3 (ADR 0001).
 
@@ -51,7 +51,7 @@ Three steps, all future:
 
 1. Extract the market-implied distribution of the underlying's price at expiry from vertical spread prices.
 2. Calibrate it against realized outcomes from 2019 onward, so a stated probability is checked against how often it happened.
-3. Score each candidate put credit spread by expected return on collateral, including interest earned on the held cash (3.6% APY, Robinhood Gold).
+3. Score each candidate put credit spread by expected return on collateral, including interest earned on the held cash at a configurable APY (Robinhood Gold pays 3.6% at the time of writing).
 
 ## Local stack and cloud stack
 
