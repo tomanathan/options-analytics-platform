@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,9 +32,10 @@ def test_smoke_dag_is_loaded(dagbag: "DagBag") -> None:
     assert "smoke" in dagbag.dag_ids
 
 
-def test_every_dag_retries_and_alerts_on_failure(dagbag: "DagBag") -> None:
+def test_every_dag_retries_has_sla_and_logs_on_failure(dagbag: "DagBag") -> None:
     assert dagbag.dags
     for dag_id, dag in dagbag.dags.items():
         default_args = dag.default_args
         assert default_args.get("retries", 0) >= 1, dag_id
+        assert default_args.get("sla") == timedelta(hours=1), dag_id
         assert callable(default_args.get("on_failure_callback")), dag_id

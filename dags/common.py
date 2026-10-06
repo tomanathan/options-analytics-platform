@@ -1,7 +1,9 @@
 """Project-wide defaults shared by every oap DAG.
 
 Every DAG passes ``DEFAULT_ARGS`` as its ``default_args`` so that retries, the task SLA
-and failure logging are consistent. ``tests/dags/test_dag_import.py`` enforces this.
+and failure logging are consistent. ``tests/dags/test_dag_import.py`` checks every loaded DAG
+for them; ``tests/dags/test_common.py`` checks the callback itself. The callback only logs;
+routing that log line to a pager or chat channel is a later phase.
 """
 
 import logging
