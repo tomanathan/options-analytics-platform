@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Secrets and local config (.env.example is the committed template)
+.env
+.env.*
+!.env.example
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+.dbt-local/
+*.duckdb
+*.duckdb.wal
+
+# Terraform (.terraform.lock.hcl is committed on purpose)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Airflow local artefacts
+logs/
+airflow.db
+airflow.cfg
+webserver_config.py
+
+# Data is never committed
+data/
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
