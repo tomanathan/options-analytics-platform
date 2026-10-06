@@ -22,10 +22,11 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.12"
-      - run: uv sync --all-groups --frozen
+      - run: uv sync --all-groups --locked
       - run: make check
         env:
           HYPOTHESIS_PROFILE: ci
+      - run: uv run pre-commit run --all-files
 
   infra:
     runs-on: ubuntu-latest
@@ -37,3 +38,4 @@ jobs:
       - run: make tf-fmt
       - run: make tf-validate
       - run: make compose-config
+      - run: docker compose --profile tools build dbt
