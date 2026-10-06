@@ -4,7 +4,7 @@ For whoever operates the stack. All commands run from the repo root unless noted
 
 ## Airflow stack
 
-Services: `postgres` (metadata DB), `airflow-init` (one-shot migrate and create user), `airflow-webserver`, `airflow-scheduler`. LocalExecutor. `make up`, `make down` and `make logs` wrap the commands below; note that `make down` also removes volumes.
+Services: `postgres` (metadata DB), `airflow-init` (one-shot migrate and create user), `airflow-webserver`, `airflow-scheduler`. LocalExecutor. `make up`, `make down`, `make reset` and `make logs` wrap the commands below; `make down` keeps the metadata volume, `make reset` deletes it.
 
 The containers receive `AWS_REGION`, `OAP_*` and `ALPACA_*` from `.env`. They get no AWS credentials in Phase 0, so DAGs cannot reach S3 yet; Phase 1 will add that.
 
@@ -103,10 +103,10 @@ uv run dbt build --project-dir dbt --profiles-dir dbt --target prod
 
 ## Terraform
 
-Terraform needs an AWS account and a named profile. Create the profile once with `aws configure --profile oap`, using an administrator or a role allowed to create S3, Glue and IAM resources.
+Terraform needs an AWS account and a named profile. Create the profile once with `aws configure --profile oap-admin`, using an administrator or a role allowed to create S3, Glue and IAM resources. This is separate from the `oap-pipeline` profile the ingest code uses (see `.env.example`), so day-to-day runs never carry admin rights.
 
 ```bash
-export AWS_PROFILE=oap
+export AWS_PROFILE=oap-admin
 terraform -chdir=infra init
 terraform -chdir=infra plan -var bucket_name=<globally-unique-bucket-name>
 terraform -chdir=infra apply -var bucket_name=<globally-unique-bucket-name>
@@ -127,13 +127,13 @@ terraform -chdir=infra destroy -var bucket_name=<name>
 Terraform creates the IAM user (`oap-pipeline`) but no access key, so keys live outside state. Rotation creates the new key before removing the old one:
 
 ```bash
-export AWS_PROFILE=oap        # an administrator profile, not the key being rotated
+export AWS_PROFILE=oap-admin  # the administrator profile, not the key being rotated
 USER_NAME=$(terraform -chdir=infra output -raw pipeline_user_name)
 aws iam list-access-keys --user-name "$USER_NAME"
 aws iam create-access-key --user-name "$USER_NAME"
 ```
 
-Store the new key in the profile or secret store the ingest code uses. Confirm it works, then delete the old one:
+Store the new key in the `oap-pipeline` profile (`aws configure --profile oap-pipeline`) or the secret store the ingest code uses. Confirm it works, then delete the old one:
 
 ```bash
 aws iam update-access-key --user-name "$USER_NAME" --access-key-id <old-key-id> --status Inactive

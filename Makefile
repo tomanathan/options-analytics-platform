@@ -3,8 +3,8 @@ SHELL := /bin/bash
 
 DBT_ARGS := --project-dir dbt --profiles-dir dbt
 
-.PHONY: help install lint format typecheck test dbt-deps dbt-compile check \
-	tf-fmt tf-validate compose-config up down logs clean
+.PHONY: help install lint format typecheck test dbt-deps dbt-compile dbt-build check \
+	tf-fmt tf-validate compose-config up down reset logs clean
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -28,12 +28,15 @@ test: ## Run the pytest suite
 dbt-deps: ## Install dbt packages
 	uv run dbt deps $(DBT_ARGS)
 
-dbt-compile: ## Compile dbt models against the local DuckDB dev target
+dbt-compile: dbt-deps ## Compile dbt models against the local DuckDB dev target
 	mkdir -p .dbt-local
-	uv run dbt deps $(DBT_ARGS)
 	uv run dbt compile $(DBT_ARGS) --target dev
 
-check: lint typecheck test dbt-compile ## The gate before every commit
+dbt-build: dbt-deps ## Seed, run and test the dbt project on the local DuckDB dev target
+	mkdir -p .dbt-local
+	uv run dbt build $(DBT_ARGS) --target dev
+
+check: lint typecheck test dbt-compile dbt-build ## The gate before every commit
 
 tf-fmt: ## Check Terraform formatting
 	terraform -chdir=infra fmt -check -recursive
@@ -47,7 +50,10 @@ compose-config: ## Validate docker-compose.yml
 up: ## Start the local Airflow stack
 	docker compose up -d
 
-down: ## Stop the stack and remove its volumes
+down: ## Stop the stack, keeping the Postgres metadata volume
+	docker compose down --remove-orphans
+
+reset: ## Stop the stack and delete its volumes (fresh Airflow metadata DB on next up)
 	docker compose down -v --remove-orphans
 
 logs: ## Tail logs from the stack

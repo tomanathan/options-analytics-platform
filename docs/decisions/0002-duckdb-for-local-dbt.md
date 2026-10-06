@@ -24,7 +24,7 @@ CI compiles on `dev`. Only `prod` runs models against Snowflake, and only from a
 
 ## Consequences
 
-- Models are compiled, not run, in CI. A passing `make check` proves that Jinja renders, refs resolve and YAML is valid on DuckDB. It does not prove the SQL is valid on Snowflake.
+- Models are compiled and built on DuckDB in `make check` and CI (`dbt build` seeds, runs and tests them). A passing check proves that Jinja renders, refs resolve, YAML is valid and the SQL and tests pass on DuckDB. It does not prove the SQL is valid on Snowflake.
 - Adapter-specific SQL has to be avoided or dispatched. Prefer dbt's cross-database macros (`dbt.dateadd`, `dbt.datediff`, `dbt.safe_cast`) and `dbt_utils` over raw functions. Where a function differs, wrap it in a macro that uses `adapter.dispatch` with a `duckdb__` and a `snowflake__` implementation. Semi-structured data (`VARIANT`, `FLATTEN`), `TRY_TO_*` conversions and date-part functions are the likeliest places to diverge.
 - Differences in type systems and case handling will show up in prod first. Snowflake upper-cases unquoted identifiers; DuckDB preserves case. Write lower-case snake_case and never quote identifiers.
 - Phase 2 should add a `dbt build --target prod` run against the Snowflake trial before merging model changes, and record it in the runbook. Until then, a model change is only compile-checked.

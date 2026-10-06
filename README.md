@@ -1,6 +1,6 @@
 # options-analytics-platform
 
-Daily options chains land in Apache Iceberg tables on S3, are modeled with dbt on Snowflake, and feed a put credit spread engine. The engine extracts the market-implied probability distribution from vertical spread prices, calibrates it against realized outcomes since 2019, and scores every candidate spread on expected return on collateral, including interest on the cash that stays held (Robinhood Gold, 3.6% APY). The project exists to build that path end to end, from vendor data to a ranked decision, with a quality gate between every layer.
+A data platform for scoring put credit spreads, built in phases. Daily options chains will land in Apache Iceberg tables on S3, be modeled with dbt on Snowflake, and feed a spread engine. The engine will extract the market-implied probability distribution from vertical spread prices, calibrate it against realized outcomes since 2019, and score every candidate spread on expected return on collateral, including interest on the cash held against it (a configurable APY; Robinhood Gold pays 3.6% today). The project exists to build that path end to end, from vendor data to a ranked decision, with a quality gate between every layer. **Today it is Phase 0: scaffolding only.**
 
 ```
 Alpaca ──> Airflow ──> Iceberg on S3 ──> dbt on Snowflake ──> spread engine
@@ -40,14 +40,15 @@ docker compose up -d          # Airflow UI at http://localhost:8080 (airflow / a
 
 ## Checks
 
-`make check` runs the four checks below and must pass before every commit. CI runs the same target.
+`make check` runs the checks below and must pass before every commit. CI runs the same target (with the deterministic `ci` hypothesis profile) and then `pre-commit` over every file.
 
 | Check | What it guards |
 | --- | --- |
 | `make lint` | `ruff` lint and format check: style drift and common bugs. |
 | `make typecheck` | `mypy --strict` on `src/`, `tests/` and `dags/`: untyped or wrongly typed code, which matters most in the engine. |
-| `make test` | `pytest` and `hypothesis`: behaviour and property invariants. |
-| `make dbt-compile` | `dbt compile` on DuckDB: Jinja, refs and YAML in every model. It does not run SQL on Snowflake (see ADR 0002). |
+| `make test` | `pytest`: package, DAG and dbt-project conventions. `hypothesis` profiles are registered for the property tests the engine will need. |
+| `make dbt-compile` | `dbt compile` on DuckDB: Jinja, refs and YAML in every model. |
+| `make dbt-build` | `dbt build` on DuckDB: seeds, runs and tests every model locally. It does not prove the SQL on Snowflake (see ADR 0002). |
 
 `make tf-fmt`, `make tf-validate` and `make compose-config` check the Terraform and Compose files and run in the CI `infra` job. `pre-commit` (install once with `uv run pre-commit install`) runs `detect-secrets`, ruff and file hygiene hooks on each commit.
 
