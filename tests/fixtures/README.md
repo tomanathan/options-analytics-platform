@@ -3,7 +3,9 @@
 The Alpaca JSON files in this directory are hand-built from the response shapes in Alpaca's
 market data API documentation, because no Alpaca API key was available when they were
 written. They are not recordings of live responses: symbols, prices and timestamps are
-invented to exercise the parser and the pagination logic.
+invented to exercise the parser and the pagination logic. Every `latestQuote.t` and
+`latestTrade.t` falls on 2026-10-05 in New York time, the session date the tests pass as
+`as_of`, because `snapshot_chain` refuses quotes from another session.
 
 - `alpaca_snapshots_spy_page1.json`: first page of `GET /v1beta1/options/snapshots/SPY`,
   with a `next_page_token`. Holds a fully populated call and put, and a contract with only a

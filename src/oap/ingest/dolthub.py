@@ -6,9 +6,11 @@ over HTTP API. This module turns a symbol and a date range into a validated bron
 1. ``oap.calendar.trading_days`` lists the session days, so holidays are never queried.
 2. ``month_chunks`` groups them by calendar month, one ``date IN (...)`` query per month.
    Range predicates on ``date`` time out on DoltHub; an explicit ``IN`` list does not.
-3. Each month is paged with ``LIMIT 1000 OFFSET n`` (``build_query``) until a page comes back
-   shorter than ``PAGE_SIZE``. DoltHub reports ``Success``, not ``RowLimit``, for a full page
-   when the query carries its own ``LIMIT``, so the page length is what ends the loop.
+3. Each month is paged with ``LIMIT 1000 OFFSET n`` (``build_query``), advancing the offset
+   by the rows actually received. Paging stops on an empty page, or on a short page whose
+   status is ``Success``. A full page reported as ``Success`` (what DoltHub returns when the
+   query carries its own ``LIMIT``) and any ``RowLimit`` page, even a short one truncated by
+   the server, continue the loop.
 4. ``parse_rows`` maps the string-typed rows to the bronze contract, and the result is
    validated with ``BRONZE_FRAME``.
 
@@ -267,8 +269,10 @@ class DoltHubClient:
         """Run one SQL query and return its status and rows.
 
         Sends ``GET base_url?q=<sql>``. Retries, with the configured wait, on
-        ``httpx.TransportError``, HTTP 429 and 5xx responses, and on an ``Error`` status whose
-        message contains ``deadline exceeded``, for at most ``max_attempts`` attempts.
+        ``httpx.TransportError`` (except ``LocalProtocolError``), HTTP 429 and 5xx responses,
+        and on an ``Error`` status whose message contains ``deadline exceeded``, for at most
+        ``max_attempts`` attempts. Transport errors are reported by class name only, and the
+        body of a 401/403 response is not repeated, so error text cannot carry secrets.
 
         Args:
             sql: The SQL text.
@@ -300,10 +304,16 @@ class DoltHubClient:
         """Send one request; raise ``_RetryableError`` for failures worth retrying."""
         try:
             response = self._http.get(self._base_url, params={"q": sql})
+        except httpx.LocalProtocolError as e:
+            # Raised before sending (malformed request); not transient, and its text is not
+            # repeated because it can quote request headers.
+            raise DoltHubError(f"transport error: {type(e).__name__}") from None
         except httpx.TransportError as e:
-            raise _RetryableError(f"transport error: {e!r}") from e
+            raise _RetryableError(f"transport error: {type(e).__name__}") from None
         if response.status_code == 429 or response.status_code >= 500:
             raise _RetryableError(f"HTTP {response.status_code}")
+        if response.status_code in (401, 403):
+            raise DoltHubError(f"HTTP {response.status_code}: access denied")
         if response.is_error:
             raise DoltHubError(f"HTTP {response.status_code}: {response.text[:200]}")
         try:
@@ -335,7 +345,7 @@ def fetch_chain(
     """Fetch and validate the option chain for one symbol over a date range.
 
     Queries only NYSE session days in ``[start, end]``, one month per query, paging each month
-    until a page holds fewer than ``PAGE_SIZE`` rows, then parses and validates the union.
+    as described in the module docstring, then parses and validates the union.
     Logs one INFO line per month with its row count.
 
     Args:
@@ -364,11 +374,11 @@ def fetch_chain(
         while True:
             if offset and client.page_pause_s > 0:
                 time.sleep(client.page_pause_s)
-            _, page = client.query(build_query(symbol, month, offset))
+            status, page = client.query(build_query(symbol, month, offset))
             month_rows.extend(page)
-            if len(page) < PAGE_SIZE:
+            if not page or (len(page) < PAGE_SIZE and status == "Success"):
                 break
-            offset += PAGE_SIZE
+            offset += len(page)
         logger.info(
             "dolthub %s %s: %d rows over %d sessions",
             symbol,

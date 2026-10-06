@@ -487,3 +487,59 @@ def test_fetch_chain_logs_one_info_line_per_month(caplog: pytest.LogCaptureFixtu
     assert len(lines) == 2
     assert "SPY" in lines[0] and "2024-01" in lines[0] and "3 rows" in lines[0]
     assert "SPY" in lines[1] and "2024-02" in lines[1] and "0 rows" in lines[1]
+
+
+def test_fetch_chain_continues_after_a_short_row_limit_page() -> None:
+    # A server-truncated page reports RowLimit even when it is shorter than PAGE_SIZE.
+    recorder = Recorder(
+        [
+            _ok(dolthub_rows(600, start=0), status="RowLimit"),
+            _ok(dolthub_rows(100, start=600)),
+        ]
+    )
+
+    frame = fetch_chain("SPY", date(2024, 1, 2), date(2024, 1, 2), client=_client(recorder))
+
+    assert recorder.offsets == [0, 600]
+    assert len(frame) == 700
+
+
+def test_fetch_chain_stops_on_an_empty_row_limit_page() -> None:
+    recorder = Recorder([_ok(dolthub_rows(5), status="RowLimit"), _ok([], status="RowLimit")])
+
+    frame = fetch_chain("SPY", date(2024, 1, 2), date(2024, 1, 2), client=_client(recorder))
+
+    assert recorder.offsets == [0, 5]
+    assert len(frame) == 5
+
+
+def test_query_does_not_retry_or_echo_a_local_protocol_error() -> None:
+    recorder = Recorder([httpx.LocalProtocolError("Illegal header value b'SECRET'")])
+
+    with pytest.raises(DoltHubError) as excinfo:
+        _client(recorder).query("SELECT 1")
+
+    assert len(recorder.queries) == 1
+    assert "SECRET" not in str(excinfo.value)
+    assert excinfo.value.__cause__ is None
+
+
+def test_query_reports_transport_errors_by_class_name_only() -> None:
+    recorder = Recorder([httpx.ConnectError("SECRET in a message")])
+
+    with pytest.raises(DoltHubError) as excinfo:
+        _client(recorder).query("SELECT 1")
+
+    assert "ConnectError" in str(excinfo.value)
+    assert "SECRET" not in str(excinfo.value)
+    assert "SECRET" not in str(excinfo.value.__cause__)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_query_does_not_repeat_an_auth_failure_body(status: int) -> None:
+    recorder = Recorder([httpx.Response(status, text="token SECRET rejected")])
+
+    with pytest.raises(DoltHubError) as excinfo:
+        _client(recorder).query("SELECT 1")
+
+    assert "SECRET" not in str(excinfo.value)

@@ -24,6 +24,7 @@ import pandas as pd
 from tenacity import RetryError, Retrying, retry_if_exception_type, stop_after_attempt
 from tenacity.wait import wait_base, wait_random_exponential
 
+from oap.calendar import NEW_YORK
 from oap.ingest.schema import (
     BRONZE_FRAME,
     empty_frame,
@@ -57,6 +58,56 @@ class AlpacaError(Exception):
 
 class _RetryableError(Exception):
     """A failure worth another attempt: transport error or HTTP 429/5xx."""
+
+
+def _check_credential(name: str, value: str) -> None:
+    """Reject an empty credential or one with non-printable characters, without echoing it."""
+    if not value:
+        raise AlpacaError(f"Alpaca credential {name} is empty")
+    if not value.isprintable() or value != value.strip():
+        raise AlpacaError(
+            f"Alpaca credential {name} contains whitespace or non-printable characters"
+        )
+
+
+def _parse_time(value: Any) -> datetime | None:
+    """Parse an RFC 3339 timestamp (nanoseconds allowed) as an aware UTC datetime."""
+    if not isinstance(value, str) or not value:
+        return None
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def newest_quote_time(payload: Mapping[str, Any]) -> datetime | None:
+    """Return the newest quote or trade time in an option snapshots payload.
+
+    Looks at ``latestQuote.t`` and ``latestTrade.t`` of every snapshot; ``dailyBar.t`` is
+    the bar's start, not an observation, and is ignored.
+
+    Args:
+        payload: A snapshots response body with a ``snapshots`` mapping.
+
+    Returns:
+        The latest of those timestamps as a timezone-aware UTC datetime, or None when no
+        snapshot carries one.
+
+    Raises:
+        ValueError: If a timestamp is not ISO 8601.
+    """
+    newest: datetime | None = None
+    snapshots = payload.get("snapshots") or {}
+    for snapshot in snapshots.values():
+        if not isinstance(snapshot, Mapping):
+            continue
+        for key in ("latestQuote", "latestTrade"):
+            observation = snapshot.get(key)
+            if isinstance(observation, Mapping):
+                stamp = _parse_time(observation.get("t"))
+                if stamp is not None and (newest is None or stamp > newest):
+                    newest = stamp
+    return newest
 
 
 def _float(obj: Mapping[str, Any] | None, key: str) -> float | None:
@@ -186,7 +237,16 @@ class AlpacaClient:
         retry_wait: wait_base | None = None,
         max_attempts: int = MAX_ATTEMPTS,
     ) -> None:
-        """Store credentials, transport and retry policy; no request is sent."""
+        """Check credentials and store them with the transport and retry policy.
+
+        No request is sent.
+
+        Raises:
+            AlpacaError: If a credential is empty or holds a non-printable character (such as
+                a trailing newline from an ``.env`` file). The value is never echoed.
+        """
+        _check_credential("key_id", key_id)
+        _check_credential("secret_key", secret_key)
         self._headers = {"APCA-API-KEY-ID": key_id, "APCA-API-SECRET-KEY": secret_key}
         self._http = http if http is not None else httpx.Client(timeout=30.0)
         self._base_url = base_url.rstrip("/")
@@ -196,19 +256,31 @@ class AlpacaClient:
         self._max_attempts = max_attempts
 
     @classmethod
-    def from_env(cls) -> Self:
+    def from_env(cls, env: Mapping[str, str] | None = None) -> Self:
         """Build a client from ``ALPACA_API_KEY`` and ``ALPACA_SECRET_KEY``.
+
+        Surrounding spaces are stripped. Any other non-printable character, including a
+        trailing newline or tab, is rejected rather than silently removed, so a malformed
+        ``.env`` line is fixed at its source. Error messages name the variable, never its
+        value.
+
+        Args:
+            env: Environment to read; ``os.environ`` when omitted.
 
         Returns:
             A client with the default transport, base URL and retry policy.
 
         Raises:
-            AlpacaError: If either variable is unset or empty.
+            AlpacaError: If either variable is unset, empty, or holds a non-printable
+                character.
         """
-        values = {name: os.environ.get(name, "") for name in (KEY_ID_ENV, SECRET_KEY_ENV)}
+        env = os.environ if env is None else env
+        values = {name: env.get(name, "").strip(" ") for name in (KEY_ID_ENV, SECRET_KEY_ENV)}
         missing = [name for name, value in values.items() if not value]
         if missing:
             raise AlpacaError(f"missing Alpaca credentials: {', '.join(missing)} not set")
+        for name, value in values.items():
+            _check_credential(name, value)
         return cls(values[KEY_ID_ENV], values[SECRET_KEY_ENV])
 
     def option_snapshots(self, underlying: str) -> dict[str, Any]:
@@ -216,7 +288,9 @@ class AlpacaClient:
 
         Sends ``GET /v1beta1/options/snapshots/{underlying}?feed=indicative&limit=1000`` and
         repeats with ``page_token`` while the response carries a ``next_page_token``.
-        Retries on ``httpx.TransportError``, HTTP 429 and 5xx.
+        Retries on ``httpx.TransportError`` (except ``LocalProtocolError``, which is raised
+        before sending and is not transient), HTTP 429 and 5xx. Transport errors are reported by
+        class name only and 401/403 bodies are not repeated, so no error text carries a key.
 
         Args:
             underlying: Underlying ticker, for example ``"SPY"``.
@@ -278,6 +352,8 @@ class AlpacaClient:
             return retrying(self._get_once, path, params)
         except RetryError as e:
             cause = e.last_attempt.exception()
+            # The cause is a _RetryableError whose text was built without vendor or exception
+            # text, and which carries no chained exception, so nothing secret can surface.
             raise AlpacaError(
                 f"Alpaca request {path} failed after {self._max_attempts} attempts: {cause}"
             ) from cause
@@ -288,10 +364,17 @@ class AlpacaClient:
             response = self._http.get(
                 self._base_url + path, params=dict(params), headers=self._headers
             )
+        except httpx.LocalProtocolError as e:
+            # Raised before sending, for example by a header value with a control character.
+            # Its text can quote the header (the secret), so only the class name is kept and
+            # the original is not chained.
+            raise AlpacaError(f"transport error: {type(e).__name__}") from None
         except httpx.TransportError as e:
-            raise _RetryableError(f"transport error: {e!r}") from e
+            raise _RetryableError(f"transport error: {type(e).__name__}") from None
         if response.status_code == 429 or response.status_code >= 500:
             raise _RetryableError(f"HTTP {response.status_code}")
+        if response.status_code in (401, 403):
+            raise AlpacaError(f"HTTP {response.status_code} for {path}: check the Alpaca keys")
         if response.is_error:
             raise AlpacaError(f"HTTP {response.status_code} for {path}: {response.text[:200]}")
         try:
@@ -303,12 +386,26 @@ class AlpacaClient:
         return body
 
 
+def _check_session(symbol: str, payload: Mapping[str, Any], as_of: date) -> None:
+    """Raise ``AlpacaError`` if the newest quote in ``payload`` is not from session ``as_of``."""
+    newest = newest_quote_time(payload)
+    if newest is None:
+        return
+    quote_date = newest.astimezone(NEW_YORK).date()
+    if quote_date != as_of:
+        raise AlpacaError(
+            f"{symbol}: newest quote is from {quote_date} (New York), not the session {as_of}; "
+            "refusing to store it under the wrong trade_date"
+        )
+
+
 def snapshot_chain(
     symbols: Sequence[str],
     as_of: date,
     *,
     client: AlpacaClient,
     ingested_at: datetime | None = None,
+    require_session_match: bool = True,
 ) -> pd.DataFrame:
     """Snapshot, parse and validate the option chains of several underlyings.
 
@@ -316,11 +413,17 @@ def snapshot_chain(
     underlying price is never later than the option quotes it accompanies. Logs one INFO
     line per symbol with its row count.
 
+    Alpaca returns the latest quotes, not the quotes of a chosen session. Unless
+    ``require_session_match`` is False, each symbol's newest quote or trade time
+    (``newest_quote_time``), converted to America/New_York, must fall on ``as_of``; otherwise
+    the run would store another session's quotes under ``as_of``.
+
     Args:
         symbols: Underlying tickers.
         as_of: Session date the snapshot represents, stamped as ``trade_date``.
         client: Alpaca client to request through.
         ingested_at: UTC instant stamped on every row; the current time when omitted.
+        require_session_match: Check that the quotes belong to ``as_of`` (see above).
 
     Returns:
         A frame that passed ``BRONZE_FRAME.validate(frame, lazy=True)``, with
@@ -328,7 +431,9 @@ def snapshot_chain(
         contract.
 
     Raises:
-        AlpacaError: If a request fails (see ``AlpacaClient``).
+        AlpacaError: If a request fails (see ``AlpacaClient``), or if
+            ``require_session_match`` is set and a symbol's newest quote is from another
+            New York date than ``as_of``.
         pandera.errors.SchemaErrors: If the parsed rows break the bronze contract; validation
             is lazy, so every failed check is listed.
     """
@@ -337,6 +442,8 @@ def snapshot_chain(
     frames: list[pd.DataFrame] = []
     for symbol in symbols:
         payload = client.option_snapshots(symbol)
+        if require_session_match:
+            _check_session(symbol, payload, as_of)
         frame = parse_snapshots(
             payload,
             underlying=symbol,

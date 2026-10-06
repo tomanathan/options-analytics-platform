@@ -14,6 +14,7 @@ from tenacity import wait_none
 from oap.ingest.alpaca import (
     AlpacaClient,
     AlpacaError,
+    newest_quote_time,
     parse_snapshots,
     snapshot_chain,
 )
@@ -398,3 +399,147 @@ def test_snapshot_chain_logs_one_info_line_per_symbol(caplog: pytest.LogCaptureF
     assert len(lines) == 2
     assert "SPY" in lines[0] and "4 rows" in lines[0]
     assert "IWM" in lines[1] and "0 rows" in lines[1]
+
+
+# secrets never reach error text
+
+
+# The error names the variable (ALPACA_SECRET_KEY), so the echo check uses a distinct value.
+LEAKY = "T0PS3CRETVALUE"
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [f"{LEAKY}\n", f"{LEAKY}\r\n", f"T0PS\t{LEAKY}", f"{LEAKY}\x00"],
+    ids=["lf", "crlf", "tab", "nul"],
+)
+def test_from_env_rejects_a_key_with_control_characters_without_echoing_it(secret: str) -> None:
+    env = {"ALPACA_API_KEY": "key-id", "ALPACA_SECRET_KEY": secret}  # pragma: allowlist secret
+
+    with pytest.raises(AlpacaError) as excinfo:
+        AlpacaClient.from_env(env)
+
+    assert LEAKY not in str(excinfo.value)
+    assert "ALPACA_SECRET_KEY" in str(excinfo.value)
+
+
+def test_from_env_strips_surrounding_spaces() -> None:
+    env = {"ALPACA_API_KEY": "  key-id ", "ALPACA_SECRET_KEY": " value  "}
+
+    assert isinstance(AlpacaClient.from_env(env), AlpacaClient)
+
+
+def test_the_constructor_rejects_a_key_with_a_newline() -> None:
+    with pytest.raises(AlpacaError) as excinfo:
+        AlpacaClient("key-id", f"{LEAKY}\n", httpx.Client(transport=httpx.MockTransport(Router())))
+
+    assert LEAKY not in str(excinfo.value)
+
+
+def test_a_local_protocol_error_is_not_retried_and_not_echoed() -> None:
+    router = Router(failures=[httpx.LocalProtocolError("Illegal header value b'SECRET'")] * 6)
+
+    with pytest.raises(AlpacaError) as excinfo:
+        _client(router).latest_underlying_prices(["SPY"])
+
+    assert len(router.requests) == 1
+    assert "SECRET" not in str(excinfo.value)
+    assert "LocalProtocolError" in str(excinfo.value)
+    assert excinfo.value.__cause__ is None
+    assert excinfo.value.__suppress_context__
+
+
+def test_a_retried_transport_error_reports_only_its_class_name() -> None:
+    router = Router(failures=[httpx.ConnectError("SECRET in a message")] * 6)
+
+    with pytest.raises(AlpacaError) as excinfo:
+        _client(router).latest_underlying_prices(["SPY"])
+
+    assert len(router.requests) == 6
+    chain: BaseException | None = excinfo.value
+    while chain is not None:
+        assert "SECRET" not in str(chain)
+        chain = chain.__cause__ or (None if chain.__suppress_context__ else chain.__context__)
+    assert "ConnectError" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_an_auth_failure_does_not_repeat_the_response_body(status: int) -> None:
+    router = Router(failures=[httpx.Response(status, text="denied for key SECRET")])
+
+    with pytest.raises(AlpacaError) as excinfo:
+        _client(router).latest_underlying_prices(["SPY"])
+
+    assert "SECRET" not in str(excinfo.value)
+    assert str(status) in str(excinfo.value)
+
+
+# quotes must belong to the session
+
+
+def test_newest_quote_time_takes_the_latest_quote_or_trade(merged: dict[str, Any]) -> None:
+    # The latest of the fixtures' quote and trade times (SPY261016P00600000's quote).
+    assert newest_quote_time(merged) == datetime(2026, 10, 5, 19, 59, 59, 733000, tzinfo=UTC)
+
+
+def test_newest_quote_time_ignores_the_daily_bar_and_handles_nanoseconds() -> None:
+    payload = {
+        "snapshots": {
+            "SPY261016C00600000": {
+                "latestQuote": {"t": "2026-10-05T19:59:59.123456789Z", "bp": 1.0, "ap": 1.1},
+                "latestTrade": {"t": "2026-10-05T18:00:00Z", "p": 1.05},
+                "dailyBar": {"t": "2026-10-06T04:00:00Z", "v": 1},
+            }
+        }
+    }
+
+    assert newest_quote_time(payload) == datetime(2026, 10, 5, 19, 59, 59, 123456, tzinfo=UTC)
+
+
+def test_newest_quote_time_of_a_payload_without_quotes_is_none() -> None:
+    assert newest_quote_time({"snapshots": {}}) is None
+    assert newest_quote_time({"snapshots": {"X": {"greeks": {"delta": 0.1}}}}) is None
+
+
+def test_snapshot_chain_accepts_quotes_from_the_session() -> None:
+    frame = snapshot_chain(["SPY"], AS_OF, client=_client(Router()), ingested_at=INGESTED_AT)
+
+    assert len(frame) == 4
+
+
+def test_snapshot_chain_rejects_quotes_from_another_session() -> None:
+    next_session = date(2026, 10, 6)
+
+    with pytest.raises(AlpacaError) as excinfo:
+        snapshot_chain(["SPY"], next_session, client=_client(Router()), ingested_at=INGESTED_AT)
+
+    message = str(excinfo.value)
+    assert "2026-10-05" in message
+    assert "2026-10-06" in message
+
+
+def test_snapshot_chain_compares_dates_in_new_york_time() -> None:
+    # 2026-10-06T01:30Z is still 2026-10-05 in New York (UTC-4).
+    late = {"t": "2026-10-06T01:30:00Z", "bp": 1.0, "bs": 1, "ap": 1.1, "as": 1}
+    payload = {"snapshots": {"SPY261016C00600000": {"latestQuote": late}}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == TRADES_PATH:
+            return httpx.Response(200, json=_load("alpaca_latest_trades.json"))
+        return httpx.Response(200, json={**payload, "next_page_token": None})
+
+    frame = snapshot_chain(["SPY"], AS_OF, client=_client(handler), ingested_at=INGESTED_AT)
+
+    assert len(frame) == 1
+
+
+def test_snapshot_chain_can_skip_the_session_check() -> None:
+    frame = snapshot_chain(
+        ["SPY"],
+        date(2026, 10, 6),
+        client=_client(Router()),
+        ingested_at=INGESTED_AT,
+        require_session_match=False,
+    )
+
+    assert (frame["trade_date"] == date(2026, 10, 6)).all()

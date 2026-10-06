@@ -34,12 +34,16 @@ def log_failure(context: Context) -> None:
         context: The Airflow task context passed to ``on_failure_callback``.
     """
     task_instance = context.get("task_instance")
+    exception = context.get("exception")
+    # Type name and message only: the repr of some exceptions (an HTTP error carrying request
+    # headers, for example) can include credentials.
     logger.error(
-        "Task failed: dag_id=%s task_id=%s logical_date=%s exception=%r",
+        "Task failed: dag_id=%s task_id=%s logical_date=%s exception=%s: %s",
         task_instance.dag_id if task_instance else None,
         task_instance.task_id if task_instance else None,
         context.get("logical_date"),
-        context.get("exception"),
+        type(exception).__name__ if exception is not None else None,
+        exception,
     )
 
 

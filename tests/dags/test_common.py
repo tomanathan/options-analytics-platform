@@ -22,7 +22,7 @@ def test_log_failure_names_the_task_and_exception(caplog: pytest.LogCaptureFixtu
     message = caplog.records[0].getMessage()
     assert "dag_id=smoke" in message
     assert "task_id=import_oap" in message
-    assert "RuntimeError('boom')" in message
+    assert "exception=RuntimeError: boom" in message
 
 
 def test_log_failure_tolerates_a_context_without_task_instance(
@@ -32,6 +32,20 @@ def test_log_failure_tolerates_a_context_without_task_instance(
         log_failure(cast(Any, {}))
 
     assert "dag_id=None" in caplog.records[0].getMessage()
+
+
+class _LeakyError(Exception):
+    def __repr__(self) -> str:
+        return "LeakyError(headers={'APCA-API-SECRET-KEY': 'not-a-real-secret'})"
+
+
+def test_log_failure_never_logs_the_exception_repr(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.ERROR, logger="dags.common"):
+        log_failure(cast(Any, {"exception": _LeakyError("request failed")}))
+
+    message = caplog.records[0].getMessage()
+    assert "exception=_LeakyError: request failed" in message
+    assert "not-a-real-secret" not in message
 
 
 def test_default_args_wire_the_callback() -> None:
