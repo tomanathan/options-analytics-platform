@@ -1,0 +1,68 @@
+[project]
+name = "oap"
+version = "0.1.0"
+description = "Options analytics platform: options chains to Iceberg, dbt on Snowflake, and a put credit spread engine."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Aman Vishwanathan" }]
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff==0.16.10",
+    "mypy==2.4.0",
+    "pytest==9.1.1",
+    "hypothesis==6.168.5",
+    "pre-commit==4.6.2",
+    "detect-secrets==1.5.0",
+    "pyyaml>=6,<7",
+    "types-pyyaml>=6,<7",
+]
+airflow = ["apache-airflow==2.11.2"]
+dbt = [
+    "dbt-core>=1.10,<2",
+    "dbt-duckdb>=1.11,<2",
+    "dbt-snowflake>=1.12,<2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oap"]
+
+[tool.uv]
+default-groups = ["dev", "airflow", "dbt"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["dbt/dbt_packages", "dbt/target"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N", "D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["oap", "dags"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+files = ["src", "tests", "dags"]
+mypy_path = "src"
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = ["--import-mode=importlib", "-ra", "--strict-markers", "--strict-config"]
