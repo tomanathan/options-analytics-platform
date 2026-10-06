@@ -17,8 +17,11 @@ Tasks:
 
 Fetching and writing are separate because a bronze slice holds every underlying of a day:
 writing one symbol's rows on their own would replace the other symbols' rows (ADR 0003).
-``write_month`` therefore reads the slice, keeps the rows of underlyings this run did not
-request, replaces the rest with what DoltHub returned and overwrites the slice once. Writes
+``write_month`` therefore reads the slice, replaces the rows of each underlying that DoltHub
+returned rows for on that day, keeps every other row and overwrites the slice once. Absence
+is not information: a symbol whose fetch came back empty (a month with no data, or a
+transient empty response) keeps the rows already loaded for it, matching the daily DAG,
+which refuses an empty response rather than wiping a slice. Writes
 run one at a time so concurrent commits never race on the same slice, and a slice whose
 content did not change is not rewritten, which keeps a re-run from adding snapshots.
 ``write_month`` waits for every fetch to finish; a month with a failed fetch fails its
@@ -100,44 +103,32 @@ def month_jobs(jobs: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
     return list(months.values())
 
 
-def merge_into_slices(
-    table: "Table",
-    fetched: "pd.DataFrame | None",
-    *,
-    symbols: Sequence[str],
-    sessions: Sequence[date],
-) -> dict[str, int]:
-    """Replace the rows of ``symbols`` in each day's dolthub slice with the fetched rows.
+def merge_into_slices(table: "Table", fetched: "pd.DataFrame | None") -> dict[str, int]:
+    """Write fetched DoltHub rows into their daily dolthub slices, replacing only what was fetched.
 
-    For every session (and any other date present in ``fetched``) the slice is read, rows of
-    underlyings outside ``symbols`` are kept, rows of ``symbols`` are replaced by the fetched
-    rows for that day (none, if DoltHub returned none), and the slice is overwritten with one
-    ``write_partition`` call. A slice whose content would not change is not written.
+    For every date present in ``fetched`` the slice is read, the rows of each underlying that
+    has fetched rows on that date are replaced by them, every other row is kept, and the slice
+    is overwritten with one ``write_partition`` call. Absence is not information: an underlying
+    with no fetched rows for a date (an empty or partial DoltHub response) keeps whatever the
+    slice already holds for it, and dates with no fetched rows are not touched at all. A slice
+    whose content would not change is not written.
 
     Args:
         table: The bronze table.
-        fetched: DoltHub rows for ``symbols`` over the sessions, or None when DoltHub returned
-            nothing for any of them.
-        symbols: Underlyings this load is authoritative for.
-        sessions: Session days the load covers.
+        fetched: DoltHub rows, any underlyings and dates, or None when nothing was fetched.
 
     Returns:
         ``{"days": slices written, "unchanged": slices skipped, "rows": rows written}``.
     """
     from oap.ingest.iceberg_writer import content_hash, read_partition, write_partition
 
-    days = set(sessions)
-    fetched_days = None
-    if fetched is not None:
-        fetched_days = _session_dates(fetched)
-        days |= set(fetched_days)
     counts = {"days": 0, "unchanged": 0, "rows": 0}
-    for day in sorted(days):
+    if fetched is None or fetched.empty:
+        return counts
+    fetched_days = _session_dates(fetched)
+    for day in sorted(set(fetched_days)):
         existing = read_partition(table, trade_date=day, source=SOURCE)
-        fetched_day = None
-        if fetched is not None and fetched_days is not None:
-            fetched_day = fetched[(fetched_days == day).to_numpy()]
-        merged = merge_day(existing, fetched_day, symbols=symbols)
+        merged = merge_day(existing, fetched[(fetched_days == day).to_numpy()])
         if content_hash(merged) == content_hash(existing):
             counts["unchanged"] += 1
             continue
@@ -146,24 +137,23 @@ def merge_into_slices(
     return counts
 
 
-def merge_day(
-    existing: "pd.DataFrame", fetched_day: "pd.DataFrame | None", *, symbols: Sequence[str]
-) -> "pd.DataFrame":
-    """Combine one day's existing slice with freshly fetched rows for ``symbols``. Pure.
+def merge_day(existing: "pd.DataFrame", fetched_day: "pd.DataFrame") -> "pd.DataFrame":
+    """Combine one day's existing slice with the rows fetched for that day. Pure.
+
+    The underlyings to replace are the ones present in ``fetched_day``; rows of every other
+    underlying in ``existing`` are kept as they are.
 
     Args:
         existing: The slice as it is in the table (may be empty).
-        fetched_day: Fetched rows for this day, or None when DoltHub returned nothing.
-        symbols: Underlyings whose rows are replaced; rows of other underlyings are kept.
+        fetched_day: Fetched rows for this day (may be empty, which keeps ``existing``).
 
     Returns:
-        The new content of the slice: existing rows of other underlyings plus the fetched rows.
+        The new content of the slice.
     """
     import pandas as pd
 
-    parts = [existing[~existing["underlying"].isin(list(symbols))]]
-    if fetched_day is not None:
-        parts.append(fetched_day)
+    replaced = list(fetched_day["underlying"].unique())
+    parts = [existing[~existing["underlying"].isin(replaced)], fetched_day]
     parts = [part for part in parts if not part.empty]
     return pd.concat(parts, ignore_index=True) if parts else existing.iloc[0:0]
 
@@ -241,8 +231,6 @@ def backfill_chains() -> None:
         """Merge one month's staged symbols into its daily slices and overwrite them."""
         import pandas as pd
 
-        from oap.calendar import trading_days
-
         context = get_current_context()
         source_dir = staging_dir("backfill", context["run_id"], job["month"])
         symbols: list[str] = job["symbols"]
@@ -258,9 +246,10 @@ def backfill_chains() -> None:
             # Retrying cannot help: the fetches are finished. Re-run the DAG for this month.
             raise AirflowFailException(f"{job['month']}: fetch failed for {', '.join(missing)}")
 
-        sessions = trading_days(date.fromisoformat(job["start"]), date.fromisoformat(job["end"]))
-        fetched = pd.concat(frames, ignore_index=True) if frames else None
-        counts = merge_into_slices(bronze_table(), fetched, symbols=symbols, sessions=sessions)
+        if frames:
+            counts = merge_into_slices(bronze_table(), pd.concat(frames, ignore_index=True))
+        else:
+            counts = {"days": 0, "unchanged": 0, "rows": 0}
         shutil.rmtree(source_dir, ignore_errors=True)
         logger.info(
             "%s: wrote %d slices (%d rows), %d unchanged",
