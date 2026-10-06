@@ -7,7 +7,7 @@ Date: 2026-10-05
 
 The platform ingests a daily snapshot of every listed option contract for a watchlist of underlyings. A single underlying has thousands of contracts per day, and the planned intraday phase multiplies that. Three requirements drive the storage design.
 
-First, raw history must be kept in full and replayable. The spread engine calibrates its implied probability distribution against realized outcomes from 2019 onward. When a parsing rule or a data fix changes, the calibration has to be re-run against the same raw inputs, and an earlier result has to be reproducible exactly as it was run.
+First, raw history must be kept in full and replayable. The spread engine calibrates its implied probability distribution against realized outcomes from 2020 onward (the free history used in Phase 1 starts there; the original plan said 2019). When a parsing rule or a data fix changes, the calibration has to be re-run against the same raw inputs, and an earlier result has to be reproducible exactly as it was run.
 
 Second, the vendor schema will change. Alpaca adds fields over time, and we will add derived columns. Old data must stay readable without rewriting it.
 
@@ -25,12 +25,14 @@ Great Expectations validates data at each layer boundary before the next layer i
 
 Phase 0 creates the bucket, the Glue database and the IAM user. No Iceberg tables exist yet; Phase 1 adds them.
 
+Phase 1 note: the table is `bronze.option_chain`, partitioned by `day(trade_date)` and `source`, and a load replaces one (trade_date, source) slice rather than a whole date (ADR 0003). Locally the catalog is a SQLite file instead of Glue (ADR 0005).
+
 ## Consequences
 
 Good:
 
 - Schema evolution is a metadata operation. Adding or renaming a column does not rewrite old files, so a vendor change does not force a backfill.
-- Iceberg snapshots give time travel for as long as we retain them. A calibration run can record the snapshot id it read and be reproduced later. Snowflake Time Travel would not serve here: it is capped at 90 days, and the calibration window starts in 2019.
+- Iceberg snapshots give time travel for as long as we retain them. A calibration run can record the snapshot id it read and be reproduced later. Snowflake Time Travel would not serve here: it is capped at 90 days, and the calibration window starts in 2020.
 - The Glue Catalog is the interop point. Python writers (PyIceberg) and Snowflake (through an external volume and a Glue catalog integration) see the same tables, and Athena remains available for ad hoc inspection.
 - Raw history stays on S3 object pricing, with lifecycle tiering, instead of Snowflake storage. Reprocessing raw data does not require a running warehouse.
 
