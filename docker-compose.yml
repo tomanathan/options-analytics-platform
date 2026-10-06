@@ -1,0 +1,130 @@
+# Local Airflow 2.x stack (LocalExecutor + Postgres) for the options-analytics-platform DAGs.
+# Start with `make up` (UI at http://localhost:8080); the dbt tool runs on demand: `docker compose run --rm dbt compile`.
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.11.2-python3.12
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    PYTHONPATH: /opt/airflow:/opt/airflow/src
+    AWS_REGION: ${AWS_REGION:-}
+    OAP_S3_BUCKET: ${OAP_S3_BUCKET:-}
+    OAP_GLUE_DATABASE: ${OAP_GLUE_DATABASE:-}
+    ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+    ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+    ALPACA_PAPER: ${ALPACA_PAPER:-}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src:ro
+    - ./logs/airflow:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    command: version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    user: "0:0"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  dbt:
+    build:
+      context: .
+      dockerfile: docker/dbt.Dockerfile
+    profiles: ["tools"]
+    working_dir: /workspace/dbt
+    entrypoint: ["dbt"]
+    volumes:
+      - ./dbt:/workspace/dbt
+      - ./.dbt-local:/workspace/.dbt-local
+    environment:
+      DBT_PROFILES_DIR: /workspace/dbt
+      DBT_TARGET: ${DBT_TARGET:-dev}
+      OAP_DUCKDB_PATH: /workspace/.dbt-local/oap.duckdb
+      SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:-}
+      SNOWFLAKE_USER: ${SNOWFLAKE_USER:-}
+      SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD:-}
+      SNOWFLAKE_ROLE: ${SNOWFLAKE_ROLE:-}
+      SNOWFLAKE_WAREHOUSE: ${SNOWFLAKE_WAREHOUSE:-}
+      SNOWFLAKE_DATABASE: ${SNOWFLAKE_DATABASE:-}
+      SNOWFLAKE_SCHEMA: ${SNOWFLAKE_SCHEMA:-}
+
+  # Redpanda is reserved for intraday quote streaming in a later phase; uncomment when the ingest path needs it.
+  # redpanda:
+  #   image: redpandadata/redpanda:v24.2.7
+  #   command:
+  #     - redpanda
+  #     - start
+  #     - --mode=dev-container
+  #     - --smp=1
+  #     - --memory=1G
+  #     - --overprovisioned
+  #     - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+  #     - --advertise-kafka-addr=PLAINTEXT://localhost:9092
+  #     - --schema-registry-addr=0.0.0.0:8081
+  #   ports:
+  #     - "9092:9092"
+  #     - "8081:8081"
+  #     - "9644:9644"
+  #   profiles: ["streaming"]
+
+volumes:
+  postgres-db-volume:
