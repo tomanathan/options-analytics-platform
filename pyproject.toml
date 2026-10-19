@@ -42,6 +42,12 @@ dbt = [
     "pandas>=2.2,<3",
 ]
 report = ["matplotlib>=3.10,<4"]
+api = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.32,<1",
+    # Same DuckDB as the dbt writer (uv.lock and docker/requirements-dbt.txt); the file format must match.
+    "duckdb==1.5.6",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -51,12 +57,12 @@ build-backend = "hatchling.build"
 packages = ["src/oap"]
 
 [tool.uv]
-default-groups = ["dev", "airflow", "dbt", "report"]
+default-groups = ["dev", "airflow", "dbt", "report", "api"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["dbt/dbt_packages", "dbt/target"]
+extend-exclude = ["dbt/dbt_packages", "dbt/target", "apps/web/node_modules"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "N", "D"]
