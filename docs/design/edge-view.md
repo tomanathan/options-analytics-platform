@@ -41,8 +41,12 @@ I recomputed every row read-only with `chain_cdf`, `apply_calibration` and the p
 **Signatures**
 ```python
 RankBy = Literal["return", "edge", "reward_to_risk"]
-_STD_FLOOR: Final = 1e-9          # payoff_std <= _STD_FLOOR * width is treated as 0
-def put_spread_payoff_moments(cdf: RiskNeutralCdf, k_short: float, k_long: float) -> tuple[float, float]:
+_STD_FLOOR: Final = 1e-9  # payoff_std <= _STD_FLOOR * width is treated as 0
+
+
+def put_spread_payoff_moments(
+    cdf: RiskNeutralCdf, k_short: float, k_long: float
+) -> tuple[float, float]:
     """(E[h], E[h**2]) in $/sh and ($/sh)**2; E[h] is cdf.expected_payoff_put_spread(k_short, k_long) verbatim."""
 ```
 - `SpreadScore` (line 137): add required fields after `kelly_fraction`:
@@ -168,7 +172,9 @@ Describe every new column with units; the project test requires exact coverage. 
 **routers/spreads.py:20** adds the query parameters:
 ```python
 sort: Annotated[SpreadSort, Query(description="Row order.")] = "return"
-min_edge_pct: Annotated[float | None, Query(le=1, description="Minimum edge as a share of the mid credit.")] = None
+min_edge_pct: Annotated[
+    float | None, Query(le=1, description="Minimum edge as a share of the mid credit.")
+] = None
 ```
 
 **Tests** (`tests/api/test_spreads.py`, `test_routes_spreads.py`):
