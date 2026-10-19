@@ -54,7 +54,7 @@ function p95(values: number[]): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(0.95 * (sorted.length - 1)))] ?? 1;
 }
 
-/** POP against expected ROC. Highlighted underlyings take the three series colours and shapes. */
+/** POP against expected return on max loss. Highlighted underlyings take the three series colours and shapes. */
 export function SpreadScatter({
   rows,
   highlights,
@@ -203,7 +203,7 @@ export function SpreadScatter({
         width={width}
         height={height}
         margin={margin}
-        label="Spreads: probability of profit against expected return on risk. Use the table below for the same data."
+        label="Spreads: probability of profit against expected return on max loss. Use the table below for the same data."
         role="group"
         refreshing={refreshing}
         overlay={
@@ -214,7 +214,7 @@ export function SpreadScatter({
               containerWidth={width}
               lines={[
                 {
-                  value: `POP ${pct(hover.row.prob_profit)} · ROC ${pct(hover.row.expected_roc)}`,
+                  value: `POP ${pct(hover.row.prob_profit)} · E[R/max loss] ${pct(hover.row.expected_roc)}`,
                 },
               ]}
               footer={`${hover.row.underlying} ${strike(hover.row.short_strike)}/${strike(hover.row.long_strike)} · ${shortDate(hover.row.expiration)} · credit ${usd(hover.row.credit)}`}
@@ -244,7 +244,7 @@ export function SpreadScatter({
           POP, calibrated
         </text>
         <text x={-margin.left + 2} y={-4} fill="var(--ink-muted)" fontSize={10}>
-          E[ROC], holding period
+          Expected return on max loss, holding period
         </text>
 
         <line x1={0} x2={w} y1={yScale(0)} y2={yScale(0)} stroke="var(--axis)" strokeWidth={1} />

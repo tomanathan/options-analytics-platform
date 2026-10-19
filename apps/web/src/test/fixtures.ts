@@ -1,6 +1,6 @@
 /**
  * Deterministic API fixtures, typed from the response models. Distributions come from a lognormal
- * so charts look like real data; spreads include an ineligible extreme-ROC row for the pinned case.
+ * so charts look like real data; spreads include an ineligible extreme-return row for the pinned case.
  */
 import type {
   CalibrationSummary,

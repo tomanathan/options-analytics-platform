@@ -84,6 +84,12 @@ describe('SpreadScatter', () => {
     expect(screen.getByText('Other')).toBeInTheDocument();
   });
 
+  it('labels the y axis as the expected return on max loss', () => {
+    renderScatter();
+    expect(screen.getByText('Expected return on max loss, holding period')).toBeInTheDocument();
+    expect(screen.queryByText(/ROC|collateral/)).not.toBeInTheDocument();
+  });
+
   it('selects the nearest point on click', () => {
     const { container, onSelect } = renderScatter();
     const target = container.querySelector('circle[data-slot="other"]');

@@ -78,7 +78,7 @@ export function percentPointTick(value: number): string {
   return `${Math.round(value * 10) / 10}%`;
 }
 
-/** Ann. ROC can be huge or missing; cap the display rather than print 13 digits. */
+/** Annualised return on max loss can be huge or missing; cap the display rather than print 13 digits. */
 export function annualisedRoc(value: number | null | undefined): string {
   if (!finite(value)) return DASH;
   if (Math.abs(value) >= 100) return '>10,000%';

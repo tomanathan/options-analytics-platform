@@ -106,14 +106,14 @@ const COLUMNS: Column<SpreadRow>[] = [
   },
   {
     key: 'roc',
-    header: 'E[ROC]',
+    header: 'E[R/max loss]',
     align: 'right',
     sortValue: (r) => r.expected_roc,
     cell: (r) => pct(r.expected_roc, 2),
   },
   {
     key: 'ann_roc',
-    header: 'Ann. ROC',
+    header: 'Ann. R/max loss',
     align: 'right',
     sortValue: (r) => r.annualised_roc,
     cell: (r) => annualisedRoc(r.annualised_roc),
@@ -331,7 +331,7 @@ export default function SpreadsPage() {
                     />
                     <StatTile label="P(max loss)" value={pct(spread.prob_max_loss)} />
                     <StatTile
-                      label="E[ROC]"
+                      label="Exp. return on max loss"
                       value={signedPct(spread.expected_roc, 2)}
                       sub={`raw ${signedPct(spread.expected_roc_raw, 2)}`}
                     />

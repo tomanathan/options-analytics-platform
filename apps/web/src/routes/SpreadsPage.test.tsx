@@ -53,6 +53,13 @@ describe('SpreadsPage', () => {
     expect(within(rows[0] as HTMLElement).getByText('58.1%')).toBeInTheDocument();
     expect(within(rows[0] as HTMLElement).getByText('51.1%')).toBeInTheDocument();
     expect(within(rows[0] as HTMLElement).getByText('14.38%')).toBeInTheDocument();
+    expect(
+      within(table).getByRole('columnheader', { name: /^E\[R\/max loss\]/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole('columnheader', { name: /^Ann\. R\/max loss/ }),
+    ).toBeInTheDocument();
+    expect(within(table).queryByText(/ROC/)).not.toBeInTheDocument();
   });
 
   it('highlights the underlyings of the rank 1 to 3 rows by default', async () => {
@@ -114,6 +121,8 @@ describe('SpreadsPage', () => {
     expect(within(panel).getByText('Max loss')).toBeInTheDocument();
     expect(within(panel).getByText('P(max loss)')).toBeInTheDocument();
     expect(within(panel).getByText('Kelly')).toBeInTheDocument();
+    expect(within(panel).getByText('Exp. return on max loss')).toBeInTheDocument();
+    expect(within(panel).queryByText(/ROC|collateral/)).not.toBeInTheDocument();
     expect(await within(panel).findByTestId('payoff-line')).toBeInTheDocument();
     expect(within(panel).getByText(/P\(profit\) 58\.1%/)).toBeInTheDocument();
     expect(within(panel).getByText(/P\(loss\) 41\.9%/)).toBeInTheDocument();
