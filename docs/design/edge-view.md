@@ -297,4 +297,3 @@ min_edge_pct: Annotated[
 - **Cancellation in Var.** Clamped at 0, floored at 1e-9·W, and tested.
 - **Wording.** The brief's "overpriced (sell candidates)" conflicts with "no trade advice". Use the "credit above/below calibrated fair" copy and the no-buy/sell test. The owner should confirm that deviation.
 - **Schema change.** An old gold file returns 503 until it is rebuilt (see the runbook step).
-
