@@ -183,6 +183,7 @@ def test_the_markdown_states_both_picks_in_words(db: Path, tmp_path: Path) -> No
     text = cli.render_markdown(report)
     assert picks.best_overall is not None
     assert f"**Best overall: `{picks.best_overall}`.** Rank by" in text
+    assert "hold-out interval" in text
     if picks.best_roi is not None:
         assert f"**Best ROI: `{picks.best_roi}`.** Rank by" in text
     for phrase in (
@@ -193,6 +194,7 @@ def test_the_markdown_states_both_picks_in_words(db: Path, tmp_path: Path) -> No
         "held to expiry",
         "hindsight",
         "about 0.67 years",
+        "Only settled expiries are scored",
     ):
         assert phrase in text
     top = text.split("## Top 10 rules on dev")[1].split("##")[0]

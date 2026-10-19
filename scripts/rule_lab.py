@@ -415,7 +415,25 @@ def _pick_paragraph(report: LabReport, title: str, rule_id: str, why: str) -> st
         f"against a predicted {fmt_percent(row['mean_predicted_pop_holdout'])}, and returned "
         f"{_holdout_return(row)} per trade and {fmt_percent(row['total_return_holdout'], 2)} on "
         f"capital at risk (baseline {fmt_percent(base['mean_realised_return_holdout'], 2)} and "
-        f"{fmt_percent(base['total_return_holdout'], 2)})."
+        f"{fmt_percent(base['total_return_holdout'], 2)}). {_interval_sentence(row)}"
+    )
+
+
+def _interval_sentence(row: pd.Series) -> str:
+    """Say whether the hold-out interval of the mean realised return excludes zero."""
+    low, high = (
+        row["mean_realised_return_ci_low_holdout"],
+        row["mean_realised_return_ci_high_holdout"],
+    )
+    if fmt_missing(low) or fmt_missing(high):
+        return "The hold-out has too few trades for an interval."
+    if float(low) > 0:
+        return "Its hold-out interval lies above zero."
+    if float(high) < 0:
+        return "Its hold-out interval lies below zero."
+    return (
+        "Its hold-out interval includes zero, so a positive mean return is not established at "
+        "95% on the hold-out alone."
     )
 
 
@@ -588,6 +606,8 @@ def _caveats_section(report: LabReport) -> str:
         "a trader would see them only at the close. Fills are at the natural credit (short bid "
         "minus long ask) with no commissions or further slippage, and every spread is held to "
         "expiry and settled at the settlement close, with no early management or assignment. "
+        "Only settled expiries are scored, so the last hold-out sessions hold short-dated "
+        "spreads only and a long-DTE rule's hold-out ends weeks before the baseline's. "
         "The universe is today's large caps (hindsight in the universe biases realised losses "
         "low), and only ok snapshots are scored. This is a historical measurement of selection "
         "rules, not trade advice."
