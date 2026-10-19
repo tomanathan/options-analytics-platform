@@ -18,9 +18,14 @@ DBT_LOCAL_ENV := OAP_DBT_SOURCE=iceberg OAP_ICEBERG_LOCAL_DIR=$(CURDIR)/.iceberg
 # The explorer API reads the local gold schema read-only and binds 127.0.0.1 only (vendor terms: personal analysis).
 API_ENV := OAP_DUCKDB_PATH=$(CURDIR)/.dbt-local/oap.duckdb
 
+# The nightly cloud refresh (ADR 0012): .github/workflows/nightly.yml builds gold and uploads the DuckDB file.
+NIGHTLY_WORKFLOW := nightly.yml
+GOLD_DB := .dbt-local/oap.duckdb
+
 .PHONY: help install lint format typecheck test dbt-deps synthetic-bronze dbt-compile dbt-build dbt-build-local report check \
 	tf-fmt tf-validate compose-config lock-export lock-check airflow-build up down reset logs \
-	backfill iceberg-count clean api web web-install app web-build web-check api-schema serve
+	backfill iceberg-count clean api web web-install app web-build web-check api-schema serve \
+	gold-max-date pull-gold nightly-run nightly-status
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -150,6 +155,35 @@ backfill: ## Backfill DoltHub history: make backfill START=YYYY-MM-DD END=YYYY-M
 
 iceberg-count: ## Bronze rows per slice and underlying; ARGS="--summary" or "--hash" or "--source dolthub"
 	docker compose exec -T airflow-scheduler python /opt/airflow/scripts/iceberg_count.py $(ARGS)
+
+# Opens the file read-only, so it works while the explorer API is up but not while a writer holds it.
+GOLD_MAX_DATE = uv run python -c 'import duckdb, sys; print(duckdb.connect(sys.argv[1], read_only=True).sql("select max(trade_date) from gold.fct_option_quote").fetchone()[0])' $(GOLD_DB)
+
+gold-max-date: ## Print the latest trade_date in gold.fct_option_quote of .dbt-local/oap.duckdb
+	@$(GOLD_MAX_DATE)
+
+# The old file and its WAL are kept beside it as .bak. The download goes to a directory inside .dbt-local so the
+# final mv is a rename on one filesystem. A gold file pulled over a laptop warehouse that is older than the cloud's
+# is not safe to build on incrementally; see the runbook.
+pull-gold: ## Replace .dbt-local/oap.duckdb with the gold file of the latest successful nightly run (needs gh)
+	@command -v gh >/dev/null || { echo "pull-gold needs the GitHub CLI: install gh and run gh auth login" >&2; exit 1; }
+	@echo "warning: stop make serve, make app and the Airflow stack (dbt_build, score_spreads) first; only one process may use $(GOLD_DB)" >&2
+	@mkdir -p .dbt-local
+	@run=$$(gh run list --workflow $(NIGHTLY_WORKFLOW) --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty') && \
+	if [ -z "$$run" ]; then echo "no successful nightly run found: make nightly-run, then make nightly-status" >&2; exit 1; fi && \
+	tmp=$$(mktemp -d .dbt-local/pull-gold.XXXXXX) && \
+	{ gh run download "$$run" --name gold-duckdb --dir "$$tmp" || { rm -rf "$$tmp"; echo "run $$run has no gold-duckdb artifact (artifacts expire after 14 days): make nightly-run" >&2; exit 1; }; } && \
+	{ test -f "$$tmp/oap.duckdb" || { rm -rf "$$tmp"; echo "artifact of run $$run holds no oap.duckdb" >&2; exit 1; }; } && \
+	{ if [ -f $(GOLD_DB) ]; then mv $(GOLD_DB) $(GOLD_DB).bak; fi; } && \
+	{ if [ -f $(GOLD_DB).wal ]; then mv $(GOLD_DB).wal $(GOLD_DB).bak.wal; fi; } && \
+	mv "$$tmp/oap.duckdb" $(GOLD_DB) && rmdir "$$tmp" && \
+	echo "pulled run $$run; gold max trade_date: $$($(GOLD_MAX_DATE))"
+
+nightly-run: ## Trigger the nightly refresh: make nightly-run [START=YYYY-MM-DD] [END=YYYY-MM-DD] [FULL=1] (needs gh)
+	gh workflow run $(NIGHTLY_WORKFLOW) $(if $(START),-f start=$(START)) $(if $(END),-f end=$(END)) $(if $(FULL),-f full_history=true)
+
+nightly-status: ## Show the last five nightly runs (needs gh)
+	gh run list --workflow $(NIGHTLY_WORKFLOW) --limit 5
 
 clean: ## Remove local caches and build artefacts
 	rm -rf .venv .mypy_cache .ruff_cache .pytest_cache .hypothesis dbt/target dbt/dbt_packages dbt/logs .dbt-local infra/.terraform
