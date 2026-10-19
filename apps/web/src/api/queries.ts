@@ -71,6 +71,9 @@ export function spreadSearchParams(query: SpreadQuery): URLSearchParams {
   params.set('min_pop', String(query.minPop));
   params.set('min_credit', String(query.minCredit));
   params.set('eligible_only', String(query.eligibleOnly));
+  if (query.minEdgePct !== null) params.set('min_edge_pct', String(query.minEdgePct));
+  params.set('sort', query.sort);
+  if (query.limit !== null) params.set('limit', String(query.limit));
   return params;
 }
 
@@ -144,6 +147,24 @@ export function useSpreads(query: SpreadQuery) {
     queryFn: ({ signal }) => fetchJson<SpreadsResponse>(paths.spreads(query), signal),
     staleTime: TABLE_STALE_TIME,
   });
+}
+
+/** The "Top 10 to enter" list: the entry order over eligible spreads, whatever the page filters say. */
+export const ENTRY_QUERY: SpreadQuery = {
+  underlying: [],
+  expiration: null,
+  minWidth: null,
+  maxWidth: null,
+  minPop: 0,
+  minCredit: 0,
+  eligibleOnly: true,
+  minEdgePct: null,
+  sort: 'entry',
+  limit: 10,
+};
+
+export function useEntrySpreads() {
+  return useSpreads(ENTRY_QUERY);
 }
 
 export function useSpreadDetail(key: string | null) {

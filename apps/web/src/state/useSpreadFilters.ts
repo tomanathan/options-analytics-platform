@@ -1,10 +1,21 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { IsoDate, SpreadQuery } from '../api/types';
+import type { IsoDate, SpreadQuery, SpreadSort } from '../api/types';
 import { assignSlots } from '../lib/colors';
 import type { SeriesSlot } from '../lib/colors';
 
 export const MAX_HIGHLIGHTS = 3;
+
+export const DEFAULT_SORT: SpreadSort = 'return';
+const SORTS: readonly SpreadSort[] = [
+  'return',
+  'edge',
+  'reward_to_risk',
+  'kelly',
+  'pop',
+  'pop_gap',
+  'entry',
+];
 
 export interface SpreadFilters {
   underlyings: string[];
@@ -14,6 +25,9 @@ export interface SpreadFilters {
   minPop: number;
   minCredit: number;
   eligibleOnly: boolean;
+  rankBy: SpreadSort;
+  /** Smallest edge as a share of the mid credit (0.2 is 20%), or null. */
+  minEdgePct: number | null;
   /** Explicit highlight list, or null to use the underlyings of the rank 1 to 3 rows. */
   highlights: string[] | null;
   selected: string | null;
@@ -25,11 +39,15 @@ function numberParam(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function sortParam(value: string | null): SpreadSort {
+  return SORTS.find((sort) => sort === value) ?? DEFAULT_SORT;
+}
+
 function listParam(value: string | null): string[] {
   return value ? value.split(',').filter((item) => item !== '') : [];
 }
 
-/** Read the filter state from the URL (`u, exp, wmin, wmax, pop, credit, elig, hl, sel`). */
+/** Read the filter state from the URL (`u, exp, wmin, wmax, pop, credit, elig, by, edge, hl, sel`). */
 export function parseSpreadFilters(search: URLSearchParams): SpreadFilters {
   return {
     underlyings: listParam(search.get('u')),
@@ -39,6 +57,8 @@ export function parseSpreadFilters(search: URLSearchParams): SpreadFilters {
     minPop: numberParam(search.get('pop')) ?? 0,
     minCredit: numberParam(search.get('credit')) ?? 0,
     eligibleOnly: search.get('elig') !== '0',
+    rankBy: sortParam(search.get('by')),
+    minEdgePct: numberParam(search.get('edge')),
     highlights: search.has('hl') ? listParam(search.get('hl')).slice(0, MAX_HIGHLIGHTS) : null,
     selected: search.get('sel'),
   };
@@ -54,6 +74,9 @@ export function toSpreadQuery(filters: SpreadFilters): SpreadQuery {
     minPop: filters.minPop,
     minCredit: filters.minCredit,
     eligibleOnly: filters.eligibleOnly,
+    minEdgePct: filters.minEdgePct,
+    sort: filters.rankBy,
+    limit: null,
   };
 }
 
@@ -92,6 +115,15 @@ export function useSpreadFilters() {
           if (patch.minCredit !== undefined)
             write('credit', patch.minCredit > 0 ? String(patch.minCredit) : null);
           if (patch.eligibleOnly !== undefined) write('elig', patch.eligibleOnly ? null : '0');
+          if (patch.rankBy !== undefined)
+            write('by', patch.rankBy === DEFAULT_SORT ? null : patch.rankBy);
+          if ('minEdgePct' in patch)
+            write(
+              'edge',
+              patch.minEdgePct === null || patch.minEdgePct === undefined
+                ? null
+                : String(patch.minEdgePct),
+            );
           if ('highlights' in patch) {
             if (patch.highlights === null || patch.highlights === undefined) next.delete('hl');
             else next.set('hl', patch.highlights.slice(0, MAX_HIGHLIGHTS).join(','));

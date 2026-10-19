@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from './client';
 import {
+  ENTRY_QUERY,
   isSessionReady,
   MAX_BUSY_RETRIES,
   paths,
@@ -58,6 +59,9 @@ describe('query keys and paths', () => {
       minPop: 0,
       minCredit: 0,
       eligibleOnly: true,
+      minEdgePct: null,
+      sort: 'return',
+      limit: null,
     };
     const client = new QueryClient();
     client.setQueryData(qk.spreads(query), { rows: [] });
@@ -77,11 +81,47 @@ describe('query keys and paths', () => {
       minPop: 0.5,
       minCredit: 0,
       eligibleOnly: false,
+      minEdgePct: null,
+      sort: 'return',
+      limit: null,
     });
     expect(params.getAll('underlying')).toEqual(['SPY', 'XLF']);
     expect(params.get('min_width')).toBe('2.5');
     expect(params.has('max_width')).toBe(false);
     expect(params.get('eligible_only')).toBe('false');
+    expect(params.get('sort')).toBe('return');
+    expect(params.has('min_edge_pct')).toBe(false);
+    expect(params.has('limit')).toBe(false);
+  });
+
+  it('sends sort always, min_edge_pct and limit only when set', () => {
+    const params = spreadSearchParams({
+      ...ENTRY_QUERY,
+      underlying: ['SPY'],
+      minEdgePct: 0.2,
+      sort: 'edge',
+      limit: null,
+    });
+    expect(params.get('sort')).toBe('edge');
+    expect(params.get('min_edge_pct')).toBe('0.2');
+    expect(params.has('limit')).toBe(false);
+  });
+
+  it('asks for the entry list with a fixed query, whatever the filters', () => {
+    const params = spreadSearchParams(ENTRY_QUERY);
+    expect(params.get('sort')).toBe('entry');
+    expect(params.get('limit')).toBe('10');
+    expect(params.get('eligible_only')).toBe('true');
+    expect(params.has('underlying')).toBe(false);
+    expect(params.has('min_edge_pct')).toBe(false);
+  });
+
+  it('keys different sorts and edge floors separately', () => {
+    const client = new QueryClient();
+    client.setQueryData(qk.spreads(ENTRY_QUERY), { rows: [] });
+    expect(client.getQueryData(qk.spreads({ ...ENTRY_QUERY, sort: 'edge' }))).toBeUndefined();
+    expect(client.getQueryData(qk.spreads({ ...ENTRY_QUERY, minEdgePct: 0.1 }))).toBeUndefined();
+    expect(client.getQueryData(qk.spreads({ ...ENTRY_QUERY }))).toEqual({ rows: [] });
   });
 });
 

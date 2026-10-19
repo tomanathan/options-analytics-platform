@@ -8,8 +8,10 @@ import {
   num,
   pct,
   pctTick,
+  ratio,
   shortDate,
   signedPct,
+  signedPoints,
   strike,
   usd,
 } from './format';
@@ -47,6 +49,22 @@ describe('format', () => {
   it('formats fixed decimals', () => {
     expect(num(0.4567, 2)).toBe('0.46');
     expect(num(null)).toBe(DASH);
+  });
+
+  it('formats a ratio to two decimals and a dash for missing', () => {
+    expect(ratio(0.1472)).toBe('0.15');
+    expect(ratio(-0.0279)).toBe('-0.03');
+    expect(ratio(2, 1)).toBe('2.0');
+    expect(ratio(null)).toBe(DASH);
+    expect(ratio(Number.NaN)).toBe(DASH);
+  });
+
+  it('signs differences of probabilities in percentage points', () => {
+    expect(signedPoints(0.087)).toBe('+8.7');
+    expect(signedPoints(-0.131)).toBe('-13.1');
+    expect(signedPoints(0)).toBe('0.0');
+    expect(signedPoints(-0.0004)).toBe('0.0');
+    expect(signedPoints(null)).toBe(DASH);
   });
 
   it('formats dates without a time-zone shift', () => {

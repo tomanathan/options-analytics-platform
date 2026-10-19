@@ -808,10 +808,36 @@ main {
   font-size: 11px;
 }
 
-/* Wide screens: scatter beside the detail panel */
+.entry__rule {
+  margin: 0 0 4px;
+  color: var(--ink-2);
+}
+
+.entry__caveat {
+  margin: 0 0 10px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.detail__note {
+  margin: 0 0 12px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.scatter__region {
+  margin: 4px 0 0;
+}
+
+/* Wide screens: three charts stacked beside the detail panel */
 @media (min-width: 1100px) {
   .spreads-grid {
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  }
+
+  .spreads-grid > .detail {
+    grid-column: 2;
+    grid-row: 1 / span 3;
   }
 }
 
@@ -852,6 +878,12 @@ main {
   .controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* A long segmented toggle (Rank by) scrolls inside its field instead of widening the page. */
+  .controls > .field {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .multiselect__button,

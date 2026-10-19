@@ -1,40 +1,30 @@
 import { useMemo, useState } from 'react';
-import type { PointerEvent } from 'react';
 import { AxisBottom, AxisLeft } from '@visx/axis';
-import { localPoint } from '@visx/event';
 import { GridColumns, GridRows } from '@visx/grid';
 import { scaleLinear, scaleSqrt } from '@visx/scale';
-import { voronoi } from '@visx/voronoi';
 import type { SpreadRow } from '../api/types';
 import { Legend } from '../components/Legend';
-import type { LegendItem } from '../components/Legend';
-import { SERIES_SHAPES, SERIES_VARS } from '../lib/colors';
-import type { SeriesSlot } from '../lib/colors';
 import { pct, percentPointTick, shortDate, strike, usd } from '../lib/format';
-import { axisBase, bottomTickLabel, gridStroke, leftTickLabel, markerPath, plotArea } from './axes';
+import { axisBase, bottomTickLabel, gridStroke, leftTickLabel, plotArea } from './axes';
 import type { Margin } from './axes';
 import { ChartFrame } from './ChartFrame';
 import { ChartTooltip } from './ChartTooltip';
+import {
+  highlightLegend,
+  HoverRing,
+  MAX_RADIUS,
+  MIN_RADIUS,
+  p95,
+  pointMarks,
+  ScatterHit,
+  SelectionRing,
+} from './scatterLayer';
+import type { Highlight, PlotPoint } from './scatterLayer';
+
+export type { Highlight } from './scatterLayer';
 
 /** Rows beyond this return are pinned to the edge so an outlier cannot flatten the plot. */
 export const ROC_CLAMP_PCT = 100;
-const HOVER_RADIUS = 24;
-const MIN_RADIUS = 4;
-const MAX_RADIUS = 12;
-
-export interface Highlight {
-  symbol: string;
-  slot: SeriesSlot;
-}
-
-interface PlotPoint {
-  row: SpreadRow;
-  px: number;
-  py: number;
-  r: number;
-  slot: SeriesSlot | null;
-  pinned: 'up' | 'down' | null;
-}
 
 interface SpreadScatterProps {
   rows: readonly SpreadRow[];
@@ -46,12 +36,6 @@ interface SpreadScatterProps {
   width: number;
   height: number;
   refreshing?: boolean;
-}
-
-function p95(values: number[]): number {
-  if (values.length === 0) return 1;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(0.95 * (sorted.length - 1)))] ?? 1;
 }
 
 /** POP against expected return on max loss. Highlighted underlyings take the three series colours and shapes. */
@@ -111,89 +95,12 @@ export function SpreadScatter({
     return { xScale: x, yScale: y, points: plotted, pinnedCount: pinned };
   }, [rows, highlights, minProbProfit, w, h]);
 
-  const diagram = useMemo(
-    () => voronoi<PlotPoint>({ x: (d) => d.px, y: (d) => d.py, width: w, height: h })(points),
-    [points, w, h],
-  );
-
-  // Draw muted points first so highlighted ones sit on top.
-  const layer = useMemo(() => {
-    const ordered = [...points].sort((a, b) => Number(a.slot !== null) - Number(b.slot !== null));
-    return ordered.map((p) => {
-      const key = p.row.spread_key;
-      if (p.pinned) {
-        const flip = p.pinned === 'down' ? `rotate(180 ${p.px} ${p.py})` : undefined;
-        return (
-          <path
-            key={key}
-            d={markerPath('triangle', p.px, p.py, 5)}
-            transform={flip}
-            className={p.slot === null ? 'pt pt--other pt--pinned' : 'pt pt--pinned'}
-            data-testid="pt-pinned"
-            data-underlying={p.row.underlying}
-            data-key={p.row.spread_key}
-            data-slot={p.slot === null ? 'other' : String(p.slot + 1)}
-            fill={p.slot === null ? 'var(--ink-muted)' : SERIES_VARS[p.slot]}
-            fillOpacity={p.slot === null ? 0.6 : 1}
-            stroke="var(--surface-1)"
-            strokeWidth={2}
-          />
-        );
-      }
-      if (p.slot === null) {
-        return (
-          <circle
-            key={key}
-            cx={p.px}
-            cy={p.py}
-            r={p.r}
-            className="pt pt--other"
-            data-testid="pt"
-            data-underlying={p.row.underlying}
-            data-key={p.row.spread_key}
-            data-slot="other"
-            fill="var(--ink-muted)"
-            fillOpacity={0.35}
-          />
-        );
-      }
-      return (
-        <path
-          key={key}
-          d={markerPath(SERIES_SHAPES[p.slot] ?? 'circle', p.px, p.py, p.r)}
-          className="pt"
-          data-testid="pt"
-          data-underlying={p.row.underlying}
-          data-key={p.row.spread_key}
-          data-slot={String(p.slot + 1)}
-          fill={SERIES_VARS[p.slot]}
-          stroke="var(--surface-1)"
-          strokeWidth={2}
-        />
-      );
-    });
-  }, [points]);
+  const layer = useMemo(() => pointMarks(points), [points]);
 
   const selected =
     selectedKey === null ? null : (points.find((p) => p.row.spread_key === selectedKey) ?? null);
 
-  const find = (event: PointerEvent<SVGRectElement>): PlotPoint | null => {
-    const point = localPoint(event);
-    if (!point) return null;
-    const site = diagram.find(point.x - margin.left, point.y - margin.top, HOVER_RADIUS);
-    return site ? site.data : null;
-  };
-
-  const legendItems: LegendItem[] = [
-    ...[...highlights]
-      .sort((a, b) => a.slot - b.slot)
-      .map((item) => ({
-        label: item.symbol,
-        color: SERIES_VARS[item.slot],
-        mark: SERIES_SHAPES[item.slot] ?? ('circle' as const),
-      })),
-    { label: 'Other', color: 'var(--ink-muted)', mark: 'circle', muted: true },
-  ];
+  const legendItems = highlightLegend(highlights);
 
   const eligibleX = xScale(minProbProfit * 100);
 
@@ -270,52 +177,17 @@ export function SpreadScatter({
 
         <g>{layer}</g>
 
-        {selected && (
-          <g pointerEvents="none" data-testid="selected-ring">
-            <circle
-              cx={selected.px}
-              cy={selected.py}
-              r={selected.r + 3}
-              fill="none"
-              stroke="var(--surface-1)"
-              strokeWidth={2}
-            />
-            <circle
-              cx={selected.px}
-              cy={selected.py}
-              r={selected.r + 5}
-              fill="none"
-              stroke="var(--ink-1)"
-              strokeWidth={2}
-            />
-          </g>
-        )}
-        {hover && (
-          <circle
-            cx={hover.px}
-            cy={hover.py}
-            r={hover.r + 3}
-            fill="none"
-            stroke="var(--ink-1)"
-            strokeWidth={1.5}
-            pointerEvents="none"
-          />
-        )}
+        {selected && <SelectionRing point={selected} />}
+        {hover && <HoverRing point={hover} />}
 
-        <rect
-          x={0}
-          y={0}
-          width={w}
-          height={h}
-          fill="transparent"
-          data-testid="scatter-hit"
-          style={{ cursor: hover ? 'pointer' : 'default' }}
-          onPointerMove={(event) => setHover(find(event))}
-          onPointerLeave={() => setHover(null)}
-          onClick={(event) => {
-            const point = find(event as unknown as PointerEvent<SVGRectElement>);
-            if (point) onSelect(point.row);
-          }}
+        <ScatterHit
+          points={points}
+          w={w}
+          h={h}
+          margin={margin}
+          hovering={hover !== null}
+          onHover={setHover}
+          onSelect={onSelect}
         />
       </ChartFrame>
       <div className="scatter__foot">
