@@ -31,6 +31,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from oap.analytics.config import DEFAULT_CONFIG, DTE_BUCKETS
+from oap.analytics.scoring import ENTRY_RULE
 
 REQUIRED_TABLES: Final[tuple[str, ...]] = (
     "fct_option_quote",
@@ -99,6 +100,8 @@ class ReportData:
         snapshots_per_expiration: Mean number of chain snapshots per distinct expiration date
             in ``calibration_sample`` (the cluster of the bootstrap interval), or None when
             the sample is empty.
+        tail_breaches: ``(breaches, predictions)`` among the out-of-sample predictions whose
+            raw probability is below ``TAIL_RAW_PROBABILITY``, or None when there are none.
     """
 
     as_of: date | None
@@ -110,6 +113,7 @@ class ReportData:
     scores: pd.DataFrame
     flags: pd.DataFrame
     snapshots_per_expiration: float | None
+    tail_breaches: tuple[int, int] | None = None
 
 
 # --- loading ---------------------------------------------------------------------------------
@@ -151,10 +155,20 @@ order by any_value(fold) nulls last, map_id
 _SCORES_SQL = """
 select "rank", underlying, trade_date, expiration, dte_days, short_strike, long_strike, credit,
     credit_natural, prob_profit, prob_profit_raw, expected_roc, expected_roc_raw,
-    annualised_roc, annualised_roc_raw, cash_apy
+    annualised_roc, annualised_roc_raw, cash_apy, fair_credit, edge, edge_natural, edge_pct,
+    reward_to_risk, pop_implied, pop_gap, rank_edge, rank_entry
 from gold.spread_scores
 where eligible
 order by "rank"
+"""
+
+TAIL_RAW_PROBABILITY: Final = 0.02
+"""Raw predicted probabilities below this count as the far tail."""
+
+_TAIL_SQL = f"""
+select count(*) as n, coalesce(sum(cast(realised as integer)), 0) as breaches
+from gold.calibration_sample
+where is_out_of_sample and predicted_raw < {TAIL_RAW_PROBABILITY}
 """
 
 _FLAGS_SQL = """
@@ -196,6 +210,7 @@ def load_report_data(con: duckdb.DuckDBPyConnection, *, top: int) -> ReportData:
         raise ValueError("top must be at least 1")
     row = con.execute("select max(trade_date) from gold.spread_scores").fetchone()
     cluster = con.execute(_CLUSTER_SQL).fetchone()
+    tail = con.execute(_TAIL_SQL).fetchone()
     return ReportData(
         as_of=None if row is None or row[0] is None else _as_date(row[0]),
         coverage=con.execute(_COVERAGE_SQL).df(),
@@ -206,6 +221,7 @@ def load_report_data(con: duckdb.DuckDBPyConnection, *, top: int) -> ReportData:
         scores=con.execute(_SCORES_SQL).df(),
         flags=con.execute(_FLAGS_SQL).df(),
         snapshots_per_expiration=None if cluster is None else _num(cluster[0]),
+        tail_breaches=None if tail is None or not tail[0] else (int(tail[1]), int(tail[0])),
     )
 
 
@@ -506,6 +522,146 @@ SPREAD_HEADERS: Final[tuple[str, ...]] = (
 )
 
 
+def _points(value: object) -> str:
+    """Format a probability difference as signed percentage points, or ``n/a`` when missing."""
+    number = _num(value)
+    return "n/a" if number is None else f"{number * 100:+.1f} pp"
+
+
+ENTRY_TOP: Final = 10
+"""Rows of the entry table."""
+
+ENTRY_HEADERS: Final[tuple[str, ...]] = (
+    "Rank",
+    "Underlying",
+    "Session",
+    "Expiration",
+    "DTE",
+    "Short/long",
+    "Natural credit",
+    "Mid credit",
+    "POP calibrated",
+    "Expected return on max loss",
+    "Annualised return on max loss",
+    "Edge (% of mid)",
+    "Reward/risk",
+)
+
+EDGE_TOP: Final = 5
+"""Rows of the edge table."""
+
+EDGE_HEADERS: Final[tuple[str, ...]] = (
+    "Rank (edge)",
+    "Underlying",
+    "Expiration",
+    "Short/long",
+    "Mid credit",
+    "Natural credit",
+    "Fair credit",
+    "Edge",
+    "Edge (% of mid)",
+    "POP calibrated",
+    "POP risk-neutral",
+    "Price-implied POP",
+    "POP gap",
+    "Reward/risk",
+)
+
+
+def _ranked(scores: pd.DataFrame, column: str, limit: int) -> pd.DataFrame:
+    """Return the first ``limit`` rows that have a rank in ``column``, best first."""
+    return scores.dropna(subset=[column]).sort_values(column).head(limit)
+
+
+def _entry_rows(scores: pd.DataFrame) -> list[list[str]]:
+    """Return the entry table rows for the ranked spreads in ``scores``."""
+    return [
+        [
+            _count(r["rank_entry"]),
+            str(r["underlying"]),
+            _day(r["trade_date"]),
+            _day(r["expiration"]),
+            _count(r["dte_days"]),
+            f"{_num(r['short_strike']):g}/{_num(r['long_strike']):g}",
+            _fixed(r["credit_natural"], 2),
+            _fixed(r["credit"], 2),
+            _percent(r["prob_profit"]),
+            _percent(r["expected_roc"], 2),
+            _percent(r["annualised_roc"]),
+            _percent(r["edge_pct"]),
+            _fixed(r["reward_to_risk"], 2),
+        ]
+        for _, r in scores.iterrows()
+    ]
+
+
+def _entry_section(data: ReportData) -> str:
+    """Render the Top 10 to enter table under the rule that selects and orders it."""
+    as_of = "no session" if data.as_of is None else data.as_of.isoformat()
+    head = f"## Top {ENTRY_TOP} to enter ({as_of})\n\n{ENTRY_RULE}\n\n"
+    ranked = _ranked(data.scores, "rank_entry", ENTRY_TOP)
+    if ranked.empty:
+        return head + "No spread passes the entry guards on the latest session."
+    body = _table(ENTRY_HEADERS, _entry_rows(ranked)) + "\n\n"
+    body += (
+        "This is a ranking of a historical calibration, not trade advice: it orders spreads by "
+        "what one pooled calibration map says happened on average, and that map is optimistic "
+        "(see the caveats). Credits are dollars per share; the edge is the mid credit minus the "
+        "calibrated fair credit, as a share of the mid credit; reward/risk is per trade."
+    )
+    return head + body
+
+
+def _edge_rows(scores: pd.DataFrame) -> list[list[str]]:
+    """Return the edge table rows for the ranked spreads in ``scores``."""
+    return [
+        [
+            _count(r["rank_edge"]),
+            str(r["underlying"]),
+            _day(r["expiration"]),
+            f"{_num(r['short_strike']):g}/{_num(r['long_strike']):g}",
+            _fixed(r["credit"], 2),
+            _fixed(r["credit_natural"], 2),
+            _fixed(r["fair_credit"], 2),
+            _signed(r["edge"], 2),
+            _percent(r["edge_pct"]),
+            _percent(r["prob_profit"]),
+            _percent(r["prob_profit_raw"]),
+            _percent(r["pop_implied"]),
+            _points(r["pop_gap"]),
+            _fixed(r["reward_to_risk"], 2),
+        ]
+        for _, r in scores.iterrows()
+    ]
+
+
+def _edge_section(data: ReportData) -> str:
+    """Render the top spreads by edge, with the reading that goes with them."""
+    as_of = "no session" if data.as_of is None else data.as_of.isoformat()
+    head = f"## Top spreads by edge ({as_of})\n\n"
+    ranked = _ranked(data.scores, "rank_edge", EDGE_TOP)
+    if ranked.empty:
+        return head + "No spread passes the edge guards on the latest session."
+    body = _table(EDGE_HEADERS, _edge_rows(ranked)) + "\n\n"
+    body += (
+        "Edge measures the mid credit against one pooled calibration map, so it is the historical "
+        "variance risk premium applied to this chain, not a contract-specific mispricing; it is "
+        "correlated across strikes, concentrated in the far tail, and partly the half-spread the "
+        "natural credit gives up. Price-implied POP is the maximum loss over the width, the "
+        "probability of profit at which the price breaks even, and the POP gap is the calibrated "
+        "POP minus it: the same information as the edge in probability units."
+    )
+    if data.tail_breaches is not None:
+        breaches, predictions = data.tail_breaches
+        noun = "breach" if breaches == 1 else "breaches"
+        body += (
+            f" Out of sample, predictions with a raw probability under "
+            f"{_percent(TAIL_RAW_PROBABILITY, 0)} saw {_count(breaches)} {noun} in "
+            f"{_count(predictions)}, which is how thin the evidence for the far tail is."
+        )
+    return head + body
+
+
 def _spreads_section(data: ReportData, top: int) -> str:
     """Render the top spreads table and the figure link."""
     as_of = "no session" if data.as_of is None else data.as_of.isoformat()
@@ -613,7 +769,9 @@ def render_markdown(data: ReportData, *, top: int) -> str:
         _status_section(data),
         _calibration_section(data),
         _reliability_section(data),
+        _entry_section(data),
         _spreads_section(data, top),
+        _edge_section(data),
         _reading_section(data),
         _caveats_section(data),
     ]

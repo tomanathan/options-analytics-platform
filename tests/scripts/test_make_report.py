@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from oap.analytics.config import DEFAULT_CONFIG
+from oap.analytics.scoring import ENTRY_RULE
 from scripts import make_report as report
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -17,7 +18,9 @@ HEADINGS = [
     "## Snapshot exclusions",
     "## Calibration: risk-neutral vs calibrated",
     "## Reliability",
+    "## Top 10 to enter (2024-06-14)",
     "## Top put credit spreads (2024-06-14)",
+    "## Top spreads by edge (2024-06-14)",
     "## How to read this",
     "## Caveats",
 ]
@@ -93,6 +96,10 @@ def _scores_frame() -> pd.DataFrame:
     for i in range(14):
         underlying = UNDERLYINGS[i % 3]
         rank = i + 1 if i < 12 else None
+        # The edge order is the reverse of the return order; eleven spreads pass the entry
+        # guards and they are ordered like the return ranking.
+        rank_edge = 12 - i if i < 12 else None
+        rank_entry = i + 1 if i < 11 else None
         rows.append(
             {
                 "spread_key": f"{underlying}|2024-06-14|2024-07-19|{100 - i:.3f}|{90 - i:.3f}",
@@ -113,9 +120,18 @@ def _scores_frame() -> pd.DataFrame:
                 "eligible": rank is not None,
                 "rank": rank,
                 "cash_apy": 0.036,
+                "fair_credit": 0.5 + 0.05 * i,
+                "edge": 0.5 - 0.02 * i,
+                "edge_natural": 0.4 - 0.02 * i,
+                "edge_pct": 0.2 + 0.02 * i,
+                "reward_to_risk": None if i == 11 else 0.3 - 0.01 * i,
+                "pop_implied": 0.8 + 0.001 * i,
+                "pop_gap": 0.05 - 0.002 * i,
+                "rank_edge": rank_edge,
+                "rank_entry": rank_entry,
             }
         )
-    return pd.DataFrame(rows).astype({"rank": "Int64"})
+    return pd.DataFrame(rows).astype({"rank": "Int64", "rank_edge": "Int64", "rank_entry": "Int64"})
 
 
 def _write_gold(path: Path, *, with_oos: bool = True, omit: tuple[str, ...] = ()) -> None:
@@ -148,6 +164,9 @@ def _write_gold(path: Path, *, with_oos: bool = True, omit: tuple[str, ...] = ()
                 "expiration": date(2024, 7, 19),
                 "moneyness": m,
                 "cdf_flags": "monotonicity_repaired,right_tail_uncovered" if u == "SPY" else "",
+                "predicted_raw": 0.01 if m == 0.95 else 0.5,
+                "realised": u == "SPY" and m == 0.95,
+                "is_out_of_sample": True,
             }
             for u in UNDERLYINGS
             for m in (0.95, 1.0)
@@ -160,6 +179,9 @@ def _write_gold(path: Path, *, with_oos: bool = True, omit: tuple[str, ...] = ()
                 "expiration": e,
                 "moneyness": 1.0,
                 "cdf_flags": "",
+                "predicted_raw": 0.5,
+                "realised": False,
+                "is_out_of_sample": True,
             }
             for u, t, e in (
                 ("TSLA", date(2024, 6, 14), date(2024, 7, 19)),
@@ -203,6 +225,12 @@ def db(tmp_path: Path) -> Path:
     path = tmp_path / "oap.duckdb"
     _write_gold(path)
     return path
+
+
+def _section(out: Path, heading: str) -> str:
+    """Return the text of one section of ``results.md``, from its heading to the next one."""
+    text = (out / "results.md").read_text()
+    return text.split(heading)[1].split("\n## ")[0]
 
 
 def _run(db: Path, out: Path, *extra: str) -> int:
@@ -249,8 +277,7 @@ def test_the_source_line_names_the_gold_schema_and_the_as_of_session(
 
 def test_the_top_table_has_at_most_ten_rows_in_rank_order(db: Path, tmp_path: Path) -> None:
     _run(db, tmp_path)
-    section = (tmp_path / "results.md").read_text().split("## Top put credit spreads")[1]
-    section = section.split("## How to read this")[0]
+    section = _section(tmp_path, "## Top put credit spreads")
 
     rows = [line for line in section.splitlines() if re.match(r"\| \d+ \|", line)]
     ranks = [int(line.split("|")[1]) for line in rows]
@@ -262,7 +289,7 @@ def test_the_top_table_has_at_most_ten_rows_in_rank_order(db: Path, tmp_path: Pa
 
 def test_top_limits_the_table(db: Path, tmp_path: Path) -> None:
     _run(db, tmp_path, "--top", "3")
-    section = (tmp_path / "results.md").read_text().split("## Top put credit spreads")[1]
+    section = _section(tmp_path, "## Top put credit spreads")
 
     assert len([line for line in section.splitlines() if re.match(r"\| \d+ \|", line)]) == 3
 
@@ -333,8 +360,7 @@ def test_snapshot_exclusions_and_caveat_counts_come_from_the_database(
 
 def test_the_top_table_shows_the_session_of_every_row(db: Path, tmp_path: Path) -> None:
     _run(db, tmp_path)
-    section = (tmp_path / "results.md").read_text().split("## Top put credit spreads")[1]
-    section = section.split("## How to read this")[0]
+    section = _section(tmp_path, "## Top put credit spreads")
 
     header = next(line for line in section.splitlines() if line.startswith("| Rank"))
     rows = [line for line in section.splitlines() if re.match(r"\| \d+ \|", line)]
@@ -353,7 +379,11 @@ def test_the_spread_return_columns_and_prose_say_return_on_max_loss(
 ) -> None:
     _run(db, tmp_path)
     text = (tmp_path / "results.md").read_text()
-    header = next(line for line in text.splitlines() if line.startswith("| Rank"))
+    header = next(
+        line
+        for line in _section(tmp_path, "## Top put credit spreads").splitlines()
+        if line.startswith("| Rank")
+    )
 
     assert report.SPREAD_HEADERS[-2:] == (
         "Expected return on max loss",
@@ -491,3 +521,150 @@ def test_render_markdown_is_pure(db: Path) -> None:
         con.close()
 
     assert report.render_markdown(data, top=10) == report.render_markdown(data, top=10)
+
+
+def _table_rows(section: str) -> list[list[str]]:
+    return [
+        [cell.strip() for cell in line.strip("|").split("|")]
+        for line in section.splitlines()
+        if re.match(r"\| \d+ \|", line)
+    ]
+
+
+def test_the_entry_section_precedes_the_top_table_and_states_the_rule(
+    db: Path, tmp_path: Path
+) -> None:
+    _run(db, tmp_path)
+    text = (tmp_path / "results.md").read_text()
+    section = _section(tmp_path, "## Top 10 to enter")
+
+    assert text.index("## Top 10 to enter") < text.index("## Top put credit spreads")
+    assert section.lstrip().split("\n")[0].startswith("(2024-06-14)")
+    assert ENTRY_RULE in section
+    assert section.index(ENTRY_RULE) < section.index("| Rank")
+    assert "not trade advice" in section
+
+
+def test_the_entry_table_has_ten_rows_in_entry_rank_order(db: Path, tmp_path: Path) -> None:
+    _run(db, tmp_path)
+    section = _section(tmp_path, "## Top 10 to enter")
+    header = next(line for line in section.splitlines() if line.startswith("| Rank"))
+    rows = _table_rows(section)
+
+    assert [cell.strip() for cell in header.strip("|").split("|")] == list(report.ENTRY_HEADERS)
+    assert [int(r[0]) for r in rows] == list(range(1, 11))
+    assert len(rows) == 10
+    # Rank 1 is the first spread: natural credit 0.90, mid 1.00, POP 90.0%, edge 20.0%.
+    assert rows[0][1:] == [
+        "AAPL",
+        "2024-06-14",
+        "2024-07-19",
+        "35",
+        "100/90",
+        "0.90",
+        "1.00",
+        "90.0%",
+        "2.00%",
+        "25.0%",
+        "20.0%",
+        "0.30",
+    ]
+
+
+def test_the_entry_table_skips_spreads_without_an_entry_rank(db: Path, tmp_path: Path) -> None:
+    con = duckdb.connect(str(db))
+    con.execute("update gold.spread_scores set rank_entry = null")
+    con.execute('update gold.spread_scores set rank_entry = 1 where "rank" = 5')
+    con.close()
+    _run(db, tmp_path)
+    rows = _table_rows(_section(tmp_path, "## Top 10 to enter"))
+
+    assert len(rows) == 1
+    assert rows[0][1:5] == ["SPY", "2024-06-14", "2024-07-19", "35"]
+    assert rows[0][5] == "96/86"
+
+
+def test_the_entry_table_says_so_when_nothing_passes(db: Path, tmp_path: Path) -> None:
+    con = duckdb.connect(str(db))
+    con.execute("update gold.spread_scores set rank_entry = null")
+    con.close()
+    _run(db, tmp_path)
+    section = _section(tmp_path, "## Top 10 to enter")
+
+    assert ENTRY_RULE in section
+    assert "No spread passes the entry guards on the latest session." in section
+    assert not _table_rows(section)
+
+
+def test_the_edge_section_lists_five_spreads_in_edge_order(db: Path, tmp_path: Path) -> None:
+    _run(db, tmp_path)
+    section = _section(tmp_path, "## Top spreads by edge")
+    header = next(line for line in section.splitlines() if line.startswith("| Rank"))
+    rows = _table_rows(section)
+
+    assert [cell.strip() for cell in header.strip("|").split("|")] == list(report.EDGE_HEADERS)
+    assert "Price-implied POP" in header
+    assert "POP gap" in header
+    assert [int(r[0]) for r in rows] == [1, 2, 3, 4, 5]
+    # The edge rank runs against the return rank: edge rank 1 is the twelfth return rank.
+    assert rows[0][1:] == [
+        "TSLA",
+        "2024-07-19",
+        "89/79",
+        "2.10",
+        "2.00",
+        "1.05",
+        "+0.28",
+        "42.0%",
+        "68.0%",
+        "66.0%",
+        "81.1%",
+        "+2.8 pp",
+        "n/a",
+    ]
+    assert rows[1][1] == "SPY"
+
+
+def test_the_edge_section_carries_the_caveat_and_the_tail_count(db: Path, tmp_path: Path) -> None:
+    _run(db, tmp_path)
+    section = _section(tmp_path, "## Top spreads by edge")
+
+    assert (
+        "Edge measures the mid credit against one pooled calibration map, so it is the historical "
+        "variance risk premium applied to this chain, not a contract-specific mispricing; it is "
+        "correlated across strikes, concentrated in the far tail, and partly the half-spread the "
+        "natural credit gives up."
+    ) in section
+    assert "the same information as the edge in probability units" in section
+    assert "predictions with a raw probability under 2% saw 1 breach in 3" in section
+    for word in ("buy", "sell", "recommend", "overpriced"):
+        assert not re.search(rf"\b{word}\b", section, flags=re.IGNORECASE)
+
+
+def test_the_tail_count_is_omitted_without_out_of_sample_tail_rows(tmp_path: Path) -> None:
+    path = tmp_path / "notail.duckdb"
+    _write_gold(path)
+    con = duckdb.connect(str(path))
+    con.execute("update gold.calibration_sample set is_out_of_sample = false")
+    con.close()
+
+    assert _run(path, tmp_path / "out") == 0
+
+    section = _section(tmp_path / "out", "## Top spreads by edge")
+    assert "saw" not in section
+
+
+def test_the_readme_excerpt_has_no_edge_columns(db: Path) -> None:
+    con = duckdb.connect(str(db), read_only=True)
+    try:
+        data = report.load_report_data(con, top=10)
+    finally:
+        con.close()
+
+    excerpt = report.readme_excerpt(data)
+    spread_header = "| " + " | ".join(report.SPREAD_HEADERS[:-1]) + " |"
+
+    assert spread_header in excerpt
+    assert len([line for line in excerpt.splitlines() if re.match(r"\| [123] \|", line)]) == 3
+    for text in ("Fair credit", "Edge", "Reward/risk", "Price-implied", "POP gap", "to enter"):
+        assert text not in excerpt
