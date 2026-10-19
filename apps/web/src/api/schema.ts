@@ -780,12 +780,12 @@ export interface components {
         SpreadDetail: {
             /**
              * Annualised Roc
-             * @description Calibrated annualised return on collateral; null when not finite.
+             * @description Calibrated annualised return on max loss (collateral); null when not finite.
              */
             annualised_roc: number | null;
             /**
              * Annualised Roc Raw
-             * @description Raw annualised return on collateral; null when not finite.
+             * @description Raw annualised return on max loss (collateral); null when not finite.
              */
             annualised_roc_raw: number | null;
             /**
@@ -845,12 +845,12 @@ export interface components {
             expected_payoff: number;
             /**
              * Expected Roc
-             * @description Calibrated expected return on collateral over the holding period.
+             * @description Calibrated expected return on max loss (collateral) over the holding period.
              */
             expected_roc: number;
             /**
              * Expected Roc Raw
-             * @description Raw expected return on collateral over the holding period.
+             * @description Raw expected return on max loss (collateral) over the holding period.
              */
             expected_roc_raw: number;
             /**
@@ -992,7 +992,7 @@ export interface components {
         SpreadRow: {
             /**
              * Annualised Roc
-             * @description Calibrated annualised return on collateral; null when not finite.
+             * @description Calibrated annualised return on max loss (collateral); null when not finite.
              */
             annualised_roc: number | null;
             /**
@@ -1022,12 +1022,12 @@ export interface components {
             eligible: boolean;
             /**
              * Expected Roc
-             * @description Calibrated expected return on collateral over the holding period.
+             * @description Calibrated expected return on max loss (collateral) over the holding period.
              */
             expected_roc: number;
             /**
              * Expected Roc Raw
-             * @description Raw expected return on collateral over the holding period.
+             * @description Raw expected return on max loss (collateral) over the holding period.
              */
             expected_roc_raw: number;
             /**

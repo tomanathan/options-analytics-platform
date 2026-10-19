@@ -3,7 +3,7 @@
 Pure functions over frames and CDFs: no I/O and no state.
 
 Units: strikes, credits, losses and widths are in dollars per share ($/sh); probabilities and
-returns on collateral are decimals; time is in years (ACT/365); densities are probability per
+returns on max loss are decimals; time is in years (ACT/365); densities are probability per
 dollar (1/$).
 """
 

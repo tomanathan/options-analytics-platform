@@ -954,7 +954,7 @@
                 "type": "null"
               }
             ],
-            "description": "Calibrated annualised return on collateral; null when not finite.",
+            "description": "Calibrated annualised return on max loss (collateral); null when not finite.",
             "title": "Annualised Roc"
           },
           "annualised_roc_raw": {
@@ -966,7 +966,7 @@
                 "type": "null"
               }
             ],
-            "description": "Raw annualised return on collateral; null when not finite.",
+            "description": "Raw annualised return on max loss (collateral); null when not finite.",
             "title": "Annualised Roc Raw"
           },
           "breakeven": {
@@ -1034,12 +1034,12 @@
             "type": "number"
           },
           "expected_roc": {
-            "description": "Calibrated expected return on collateral over the holding period.",
+            "description": "Calibrated expected return on max loss (collateral) over the holding period.",
             "title": "Expected Roc",
             "type": "number"
           },
           "expected_roc_raw": {
-            "description": "Raw expected return on collateral over the holding period.",
+            "description": "Raw expected return on max loss (collateral) over the holding period.",
             "title": "Expected Roc Raw",
             "type": "number"
           },
@@ -1277,7 +1277,7 @@
                 "type": "null"
               }
             ],
-            "description": "Calibrated annualised return on collateral; null when not finite.",
+            "description": "Calibrated annualised return on max loss (collateral); null when not finite.",
             "title": "Annualised Roc"
           },
           "breakeven": {
@@ -1306,12 +1306,12 @@
             "type": "boolean"
           },
           "expected_roc": {
-            "description": "Calibrated expected return on collateral over the holding period.",
+            "description": "Calibrated expected return on max loss (collateral) over the holding period.",
             "title": "Expected Roc",
             "type": "number"
           },
           "expected_roc_raw": {
-            "description": "Raw expected return on collateral over the holding period.",
+            "description": "Raw expected return on max loss (collateral) over the holding period.",
             "title": "Expected Roc Raw",
             "type": "number"
           },

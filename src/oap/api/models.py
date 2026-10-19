@@ -1,7 +1,7 @@
 """Response models of the explorer API.
 
 Units: strikes, prices, credits and closes are in dollars per share ($/sh); implied volatility
-is a decimal (0.20, not 20%); probabilities and returns on collateral are decimals in [0, 1]
+is a decimal (0.20, not 20%); probabilities and returns on max loss are decimals in [0, 1]
 (returns may leave that range); densities are probability per dollar (1/$); times are in
 calendar days or in years (ACT/365).
 
@@ -229,13 +229,13 @@ class SpreadRow(ApiModel):
     prob_profit_raw: float = Field(description="Raw probability of profit, a decimal.")
     prob_max_loss: float = Field(description="Calibrated probability of the maximum loss.")
     expected_roc: float = Field(
-        description="Calibrated expected return on collateral over the holding period."
+        description="Calibrated expected return on max loss (collateral) over the holding period."
     )
     expected_roc_raw: float = Field(
-        description="Raw expected return on collateral over the holding period."
+        description="Raw expected return on max loss (collateral) over the holding period."
     )
     annualised_roc: float | None = Field(
-        description="Calibrated annualised return on collateral; null when not finite."
+        description="Calibrated annualised return on max loss (collateral); null when not finite."
     )
     kelly_fraction: float = Field(description="Kelly fraction of capital, a decimal in [0, 1].")
     eligible: bool = Field(description="True when the spread passes the eligibility rules.")
@@ -290,7 +290,7 @@ class SpreadDetail(SpreadRow):
     expected_payoff: float = Field(description="Calibrated expected payoff in dollars ($/sh).")
     interest: float = Field(description="Interest on the collateral in dollars ($/sh).")
     annualised_roc_raw: float | None = Field(
-        description="Raw annualised return on collateral; null when not finite."
+        description="Raw annualised return on max loss (collateral); null when not finite."
     )
     calibrated: bool = Field(description="True when a non-identity map was applied.")
     map_id: str = Field(description="Calibration map the scores were computed with.")
