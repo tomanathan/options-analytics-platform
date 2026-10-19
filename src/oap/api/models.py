@@ -306,7 +306,10 @@ class SpreadDetail(SpreadRow):
 class MetricValue(ApiModel):
     """One out-of-sample calibration metric."""
 
-    metric: str = Field(description="brier, log_loss or ece.")
+    metric: str = Field(
+        description="Metric name in gold.calibration_metrics: brier_score, log_loss or "
+        "expected_calibration_error."
+    )
     variant: Literal["raw", "calibrated", "delta"]
     value: float | None
     ci_low: float | None = Field(description="Lower end of the 95% cluster-bootstrap interval.")

@@ -19,6 +19,7 @@ from oap.api.models import ErrorBody, HealthResponse
 from oap.api.routers import landscape, meta, spreads
 from oap.api.settings import ApiSettings
 from oap.api.static import SPAStaticFiles
+from oap.api.store import GoldStore
 
 GZIP_MINIMUM_SIZE = 1000
 """Responses below this size in bytes are not compressed."""
@@ -68,6 +69,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         generate_unique_id_function=_operation_id,
     )
     app.state.settings = cfg
+    store = GoldStore(cfg)
+    app.state.store = store
     app.add_middleware(GZipMiddleware, minimum_size=GZIP_MINIMUM_SIZE)
     if cfg.cors_origins:
         app.add_middleware(
@@ -88,9 +91,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         Returns:
             Always HTTP 200: ``db`` says whether the file can be read.
         """
-        return HealthResponse(
-            status="ok", db="missing", db_path=str(cfg.duckdb_path), last_good_signature_at=None
-        )
+        return store.health()
 
     index = cfg.web_dist / "index.html"
     if index.is_file():
