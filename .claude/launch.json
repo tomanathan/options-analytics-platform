@@ -1,0 +1,28 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "explorer",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PATH=/Users/mackbook/.local/bin:/usr/bin:/bin:/usr/local/bin",
+        "OAP_DUCKDB_PATH=/Users/mackbook/Documents/options-analytics-platform/.dbt-local/oap.duckdb",
+        "uv",
+        "run",
+        "uvicorn",
+        "oap.api.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/web", "run", "dev", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    }
+  ]
+}
