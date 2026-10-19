@@ -32,12 +32,19 @@ make iceberg-count            # rows per (trade_date, source) in the local table
 
 ## Data
 
-Bronze is one Iceberg table, `bronze.option_chain`, partitioned by `day(trade_date)` and `source`, one row per contract per day per source. Two sources feed it:
+Bronze is two Iceberg tables, both partitioned by `day(trade_date)` and `source`. Three feeds write to them.
 
-| Source | Role | Provides | Lacks |
+| Source | Table and tag | Provides | Lacks |
 | --- | --- | --- | --- |
-| [DoltHub](https://www.dolthub.com/repositories/post-no-preference/options) `post-no-preference/options` | History. Free, no auth, SQL API. Tag `dolthub`. | Bid, ask, implied volatility, delta, gamma, theta, vega, rho. About 150 rows per symbol per day across 3 to 4 expirations. Coverage for the watchlist starts in 2020, with scattered missing trading days. | Last price, volume, open interest and underlying price; stored as nulls. |
-| Alpaca options snapshots, `feed=indicative` | Daily snapshots after the NYSE close. Free tier, API key. Tag `alpaca_indicative`. | Bid, ask, last, volume, greeks, implied volatility, underlying price. | Open interest (null). Indicative quotes are derived from OPRA and are not the real NBBO, so spreads can be wider or narrower than a fill. |
+| [DoltHub](https://www.dolthub.com/repositories/post-no-preference/options) `post-no-preference/options`. Free, no auth, SQL API. | `bronze.option_chain`, `dolthub` | History. Bid, ask, implied volatility, delta, gamma, theta, vega, rho. About 150 rows per symbol per day across 3 to 4 expirations. Coverage runs from 2020-01-06 to 2026-10-02 with roughly three sessions a week present; 1,476,854 rows were loaded before the DIA and XLF backfill. | Last price, volume, open interest and underlying price; stored as nulls. |
+| [DoltHub](https://www.dolthub.com/repositories/post-no-preference/stocks) `post-no-preference/stocks`, table `ohlcv`. Same API. | `bronze.underlying_price`, `dolthub_stocks` | Daily open, high, low, close and volume for each watchlist symbol. | Split and dividend adjustment, by design (below). |
+| Alpaca options snapshots, `feed=indicative`. Free tier, API key. | `bronze.option_chain`, `alpaca_indicative` | Daily snapshots after the NYSE close: bid, ask, last, volume, greeks, implied volatility, underlying price. | Open interest (null). Indicative quotes are derived from OPRA and are not the real NBBO, so spreads can be wider or narrower than a fill. |
+
+The watchlist (`dbt/seeds/watchlist.csv`) has 11 symbols: SPY, DIA, XLF, AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA and AMD. QQQ and IWM were replaced by DIA and XLF because DoltHub has no options history for them.
+
+**Prices are as traded.** Closes are not adjusted for splits or dividends: AAPL closed at 499.23 on 2020-08-28 and 129.04 on 2020-08-31. That is the price option strikes are quoted against, which is what moneyness and expiration outcomes need. The `split` table is not applied, so `fct_underlying_daily` returns are wrong across split days (a warn-level test lists them) and the strike-range test `assert_close_within_strike_range` guards the unit ([ADR 0007](docs/decisions/0007-unadjusted-underlying-prices.md)).
+
+**Price caveats.** DoltHub publishes session D at about 05:30 UTC on D+1, so `daily_prices` lags one session and re-fetches the last five. The `open` column is not range-checked, because the feed holds a row with an open above its high. Before 2022-06-09 the `META` ticker in this database is a different security (the Roundhill Metaverse ETF) and the FB history is not loaded; the loaded META chains start on 2022-07-01, so they never meet those rows, but META returns before the rename are not meaningful.
 
 Both sources are for personal analysis only; their terms do not allow redistribution. For that reason no raw data is ever committed: the local Iceberg warehouse (`.iceberg-local/`) and `data/` are gitignored, and API keys live in `.env`, which is gitignored too. Vendor implied volatility and greeks are kept as received ([ADR 0004](docs/decisions/0004-keep-source-greeks.md)).
 
@@ -45,40 +52,41 @@ Both sources are for personal analysis only; their terms do not allow redistribu
 
 | Path | Contents |
 | --- | --- |
-| `src/oap/` | The Python package: `calendar.py` (NYSE trading days and half days), `ingest/` (DoltHub and Alpaca clients, bronze schema, Iceberg writer, local catalog), `quality/` (the bronze Great Expectations suite), `engine/` (pure pricing and scoring functions; documented stubs until Phase 3). |
-| `tests/` | pytest tests for the package, the DAGs and the dbt project, in paths that mirror the code. |
-| `dags/` | Airflow DAGs, their shared defaults and the timetable class, mounted into the containers: `backfill_chains`, `daily_chain_snapshot`, `iceberg_maintenance` and a `smoke` DAG. |
-| `plugins/` | Airflow plugins. `oap_timetables.py` registers `NYSECloseTimetable` (defined in `dags/timetables.py`), which schedules the daily DAG at 16:30 America/New_York on NYSE trading days only. |
-| `dbt/` | dbt project `oap`: seeds, staging and mart models, and a `profiles.yml` with a DuckDB `dev` and a Snowflake `prod` target. |
+| `src/oap/` | The Python package. `calendar.py`: NYSE trading days and half days. `ingest/`: the DoltHub (`dolthub`, `dolthub_stocks`) and Alpaca clients, the bronze contracts (`schema`, `price_schema`), `tables` (one `TableSpec` per bronze table), the Iceberg writer, `merge` and the local catalog. `quality/`: the bronze Great Expectations suite. `engine/`: pure numpy functions for the spread engine: `conventions`, `black_scholes`, `implied_distribution`, `calibration`, `spread_scoring`. |
+| `tests/` | pytest and hypothesis tests for the package, the DAGs, the scripts and the dbt project, in paths that mirror the code. The engine has 156, including a lognormal-recovery property test. |
+| `dags/` | Airflow DAGs: `backfill_chains`, `daily_chain_snapshot`, `backfill_prices`, `daily_prices`, `iceberg_maintenance`, `dbt_build` and `smoke`. Shared code: `common.py` (defaults, the `bronze_writers` pool name, `fail_fast`), `datasets.py` (the two bronze Datasets that schedule `dbt_build`) and `timetables.py`. |
+| `plugins/` | Airflow plugins. `oap_timetables.py` registers `NYSECloseTimetable`, which schedules the daily DAGs at 16:30 America/New_York on NYSE trading days only. |
+| `dbt/` | dbt project `oap`. The watchlist seed; `models/staging` and `models/intermediate` (silver, mostly views); `models/marts` (gold: two dimensions and three facts, one incremental); `macros/register_bronze.sql`, which pins the Iceberg snapshot dbt reads; singular tests in `tests/`; and `profiles.yml` with a DuckDB `dev` and a Snowflake `prod` target. |
+| `scripts/` | `iceberg_count.py` (`make iceberg-count`), `make_synthetic_bronze.py` (the catalog `make dbt-build` runs on) and `image_requirements.py` (picks the lock pins the Airflow image installs). |
 | `infra/` | Terraform for the S3 bucket, Glue catalog database and a scoped IAM user. |
-| `docker/` | `airflow.Dockerfile` (official Airflow image plus `pip install .`, tagged `oap-airflow:dev`; rebuild with `make airflow-build`) and the Dockerfile for the on-demand dbt container. |
-| `scripts/` | `iceberg_count.py`, run by `make iceberg-count`. |
+| `docker/` | `airflow.Dockerfile` (official Airflow image, dependencies installed from `uv.lock`, a separate dbt virtualenv; tagged `oap-airflow:dev`), the generated `requirements.txt` and `requirements-dbt.txt` it installs from (`make lock-export`), and the Dockerfile for the on-demand dbt container. |
 | `docs/` | Architecture notes, the operator runbook and decision records. |
-| `.github/workflows/` | CI: the `check` job (`make check`) and the `infra` job (Terraform and Compose validation, and the dbt and Airflow image builds). |
+| `.github/workflows/` | CI: the `check` job (`make check`, then `pre-commit`) and the `infra` job (Terraform and Compose validation, and the dbt and Airflow image builds). |
 | `.claude/` | Claude Code hooks, slash commands and agents for working in this repo. |
 
 ## Checks
 
-`make check` runs the checks below and must pass before every commit. CI runs the same target (with the deterministic `ci` hypothesis profile) and then `pre-commit` over every file.
+`make check` runs the checks below and must pass before every commit. It needs no credentials and no vendor data. CI runs the same target (with the deterministic `ci` hypothesis profile) and then `pre-commit` over every file.
 
 | Check | What it guards |
 | --- | --- |
+| `make lock-check` | `docker/requirements.txt` and `docker/requirements-dbt.txt` match `uv.lock`, so the Airflow image installs the versions CI tested. Fix: `make lock-export`. |
 | `make lint` | `ruff` lint and format check: style drift and common bugs. |
-| `make typecheck` | `mypy --strict` on `src/`, `tests/` and `dags/`: untyped or wrongly typed code, which matters most in the engine. |
-| `make test` | `pytest`: package, DAG and dbt-project conventions. `hypothesis` profiles are registered for the property tests the engine will need. |
+| `make typecheck` | `mypy --strict` on `src/`, `tests/`, `dags/`, `plugins/` and `scripts/`: untyped or wrongly typed code, which matters most in the engine. |
+| `make test` | `pytest`: package, DAG, script and dbt-project conventions, plus the `hypothesis` property tests of the engine. |
 | `make dbt-compile` | `dbt compile` on DuckDB: Jinja, refs and YAML in every model. |
-| `make dbt-build` | `dbt build` on DuckDB: seeds, runs and tests every model locally. It does not prove the SQL on Snowflake (see ADR 0002). |
+| `make dbt-build` | `make synthetic-bronze`, then `dbt build` twice on that synthetic Iceberg catalog (the second pass runs the incremental branch). It exercises the real bronze read path, every model and every test, including exact row counts. It does not prove the SQL on Snowflake (ADR 0002). |
 
-`make tf-fmt`, `make tf-validate` and `make compose-config` check the Terraform and Compose files and run in the CI `infra` job. `pre-commit` (install once with `uv run pre-commit install`) runs `detect-secrets`, ruff and file hygiene hooks on each commit.
+Outside `make check`: `make dbt-build-local` builds silver and gold from the real local bronze tables into `.dbt-local/oap.duckdb` (stop `dbt_build` first; only one process may write that file). `make tf-fmt`, `make tf-validate` and `make compose-config` check the Terraform and Compose files and run in the CI `infra` job. `pre-commit` (install once with `uv run pre-commit install`) runs `detect-secrets`, ruff and file hygiene hooks on each commit.
 
 ## Roadmap
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | 0 | Scaffolding: tooling, CI, Airflow stack, dbt skeleton, Terraform. | Done |
-| 1 | Ingest DoltHub history and daily Alpaca snapshots into Iceberg bronze, with a quality gate. | Built; history backfill pending |
-| 2 | dbt silver and gold models on Snowflake, with Great Expectations gates between layers. | Planned |
-| 3 | Spread engine: implied distribution, calibration against 2020+ outcomes, expected return on collateral. | Planned |
+| 1 | Ingest DoltHub history, DoltHub daily prices and daily Alpaca snapshots into Iceberg bronze, with a quality gate. | Done. The chain history is loaded; the price loaders are built. |
+| 2 | dbt silver and gold models with tests as the silver-to-gold gate, scheduled from the bronze Datasets. | Built on DuckDB. Snowflake is not provisioned and no model has run on it. |
+| 3 | Spread engine: implied distribution, calibration against 2020+ outcomes, expected return on collateral. | In progress. The engine functions are built and tested; the backtest, scoring runs and report are being added. |
 
 Intraday streaming (a Redpanda service is stubbed out, commented, in `docker-compose.yml`) comes after Phase 3.
 
@@ -86,9 +94,12 @@ Intraday streaming (a Redpanda service is stubbed out, commented, in `docker-com
 
 - [0001: Medallion layering with Iceberg bronze on S3](docs/decisions/0001-medallion-on-iceberg.md). Raw history stays replayable and schema-flexible outside the warehouse.
 - [0002: DuckDB as the local and CI dbt target](docs/decisions/0002-duckdb-for-local-dbt.md). `make check` works on a fresh clone with no credentials.
-
 - [0003: Overwrite the (trade_date, source) slice on every bronze write](docs/decisions/0003-partition-overwrite-for-idempotency.md). Backfills and re-runs are idempotent.
 - [0004: Keep vendor implied volatility and greeks in bronze](docs/decisions/0004-keep-source-greeks.md). Bronze is as received, and the vendor values check our own model later.
 - [0005: A standard-library SQLite catalog for local Iceberg](docs/decisions/0005-stdlib-sqlite-local-catalog.md). Airflow 2.11 and pyiceberg's `SqlCatalog` cannot share SQLAlchemy.
+- [0006: Install the Airflow image's dependencies from the lock](docs/decisions/0006-image-dependencies-from-the-lock.md). The image runs the versions CI tested, without moving Airflow's own pins.
+- [0007: Store underlying prices as traded](docs/decisions/0007-unadjusted-underlying-prices.md). Prices and option strikes are in the same unit on every date.
+- [0008: dbt reads the Iceberg bronze tables through DuckDB](docs/decisions/0008-dbt-reads-iceberg-via-duckdb.md). Models and tests see one pinned snapshot, with no Snowflake account.
+- [0009: Engine conventions](docs/decisions/0009-engine-conventions.md). APY rates, ACT/365 years and numpy only.
 
-Architecture and data flow: [docs/architecture.md](docs/architecture.md). License: MIT.
+Architecture and data flow: [docs/architecture.md](docs/architecture.md). Operating the stack: [docs/runbook.md](docs/runbook.md). License: MIT.
