@@ -520,6 +520,11 @@ main {
   font-size: 12px;
 }
 
+.stat__unit {
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
 .stat__value {
   font-size: 20px;
   font-weight: 600;
@@ -645,6 +650,20 @@ main {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px var(--gutter);
+}
+
+/* Buttons and the range: the part that stays on screen on phones (see the narrow-screen block). */
+.scrubber__transport {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px var(--gutter);
+}
+
+/* Speed and Stride sit in the same row as the transport on wide screens. */
+.scrubber__options {
+  display: contents;
 }
 
 .scrubber__buttons {
@@ -796,11 +815,37 @@ main {
   }
 }
 
-/* Single column and a bottom-sticky scrubber on phones and narrow tablets */
+/*
+ * Single column on phones and narrow tablets. Only the transport (buttons and range) is sticky
+ * at the bottom; the sparklines and the Speed and Stride toggles are separate cards that scroll
+ * with the page. The playbar and scrubber wrappers drop out of the box tree so that the sticky
+ * element's containing block is the whole page rather than the playbar card.
+ */
 @media (max-width: 767px) {
-  .playbar {
+  .playbar,
+  .scrubber {
+    display: contents;
+  }
+
+  .playbar__context,
+  .scrubber__options,
+  .scrubber__transport {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+  }
+
+  .scrubber__options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .scrubber__transport {
     position: sticky;
     bottom: 0;
+    z-index: 5;
     box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.5);
   }
 

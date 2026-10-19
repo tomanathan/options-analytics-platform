@@ -68,6 +68,23 @@ describe('LandscapePage', () => {
     expect(screen.getByText('map: production')).toBeInTheDocument();
   });
 
+  it('offers a replay at the latest session and keeps only the transport sticky on phones', async () => {
+    renderPage();
+    await screen.findAllByRole('heading', { level: 3 });
+    expect(await screen.findByRole('button', { name: 'Replay' })).toBeInTheDocument();
+
+    const playbar = document.querySelector('.playbar') as HTMLElement;
+    const transport = playbar.querySelector('.scrubber__transport') as HTMLElement;
+    // The sticky element holds the buttons and the range, not the sparklines, Speed or Stride.
+    expect(within(transport).getByRole('slider', { name: 'Session date' })).toBeInTheDocument();
+    expect(within(transport).getByRole('button', { name: 'Replay' })).toBeInTheDocument();
+    expect(transport.querySelector('.sparklines')).toBeNull();
+    expect(within(transport).queryByRole('radiogroup', { name: 'Speed' })).toBeNull();
+    expect(within(transport).queryByRole('radiogroup', { name: 'Stride' })).toBeNull();
+    expect(playbar.querySelector('.playbar__context .sparklines')).not.toBeNull();
+    expect(transport.parentElement?.querySelector('.scrubber__options')).not.toBeNull();
+  });
+
   it('honours d and map from the URL', async () => {
     renderPage('/landscape?d=2026-09-28&map=walk_forward');
     await screen.findByText('map: fold_2026');
