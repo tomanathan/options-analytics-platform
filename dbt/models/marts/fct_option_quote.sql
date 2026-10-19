@@ -8,6 +8,9 @@ select {{ dbt_utils.generate_surrogate_key(['occ_symbol', 'trade_date']) }} as o
     dte_days, dte_years, source, trade_date_ingested_at
 from {{ ref('int_option_quotes') }}
 {% if is_incremental() %}
-where trade_date_ingested_at > (select max(trade_date_ingested_at) from {{ this }})
+-- Inclusive on purpose: every slice written by one merge call shares one stamp, so a build that
+-- pinned bronze mid-write would otherwise never pick up the rest of that batch. delete+insert on
+-- trade_date makes reprocessing the newest batch idempotent.
+where trade_date_ingested_at >= (select max(trade_date_ingested_at) from {{ this }})
    or not exists (select 1 from {{ this }})
 {% endif %}
