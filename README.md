@@ -34,7 +34,17 @@ make report                          # after score_spreads finishes: docs/result
 ## Results
 
 <!-- results:start -->
-Run `make report` to fill this section from the gold tables.
+| Out-of-sample metric | Risk-neutral | Calibrated | Change |
+| --- | ---: | ---: | ---: |
+| Brier score | 0.1267 | 0.1293 | +0.0025 |
+| Log loss (nats) | 0.3920 | 0.3964 | +0.0044 |
+| Expected calibration error | 0.0352 | 0.0167 | -0.0185 |
+
+| Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected ROC |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | TSLA | 2026-10-02 | 2026-10-16 | 14 | 370/367.5 | 1.22 | 1.00 | 58.1% | 51.1% | 14.38% |
+| 2 | MSFT | 2026-10-02 | 2026-10-16 | 14 | 512.5/507.5 | 1.90 | 1.15 | 70.0% | 61.5% | 12.90% |
+| 3 | TSLA | 2026-10-02 | 2026-10-16 | 14 | 370/362.5 | 3.34 | 3.15 | 60.7% | 54.6% | 12.72% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)

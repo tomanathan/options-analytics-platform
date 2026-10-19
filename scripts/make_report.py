@@ -631,7 +631,9 @@ def readme_excerpt(data: ReportData) -> str:
     """
     metric_rows = _overall_rows(_index_metrics(data.metrics))
     metrics = _table(["Out-of-sample metric", "Risk-neutral", "Calibrated", "Change"], metric_rows)
-    spreads = _table(SPREAD_HEADERS, _spread_rows(data.scores.head(3)))
+    # The README shows per-trade return only: annualising a 14-day spread return multiplies it
+    # by ~26 and reads as a claim rather than a ranking statistic (docs/results.md keeps it).
+    spreads = _table(SPREAD_HEADERS[:-1], [row[:-1] for row in _spread_rows(data.scores.head(3))])
     return metrics + "\n\n" + spreads
 
 
