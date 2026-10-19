@@ -1,0 +1,367 @@
+version: 2
+
+models:
+  - name: calibration_snapshot
+    description: "{{ doc('calibration_snapshot') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [underlying, trade_date, expiration]
+    columns:
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: trade_date
+        description: Exchange session date of the chain snapshot.
+      - name: expiration
+        description: Expiration date of the snapshot's contracts.
+      - name: dte_days
+        description: Calendar days from trade date to expiration.
+      - name: underlying_close
+        description: Official close of the underlying in dollars on the trade date; null when no close exists.
+      - name: n_usable_puts
+        description: Number of puts with a positive bid and an ask at or above the bid.
+        data_tests:
+          - not_null
+      - name: n_usable_calls
+        description: Number of calls with a positive bid and an ask at or above the bid.
+      - name: settlement_date
+        description: Session whose close settles the expiration; null when the expiration has not settled.
+      - name: settlement_close
+        description: Close of the underlying in dollars on settlement_date, as traded; null when unsettled.
+      - name: status
+        description: Whether the snapshot enters the calibration sample (ok) or the first exclusion rule that failed.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - ok
+                  - ticker_reused
+                  - too_short
+                  - no_close
+                  - too_few_puts
+                  - unsettled
+                  - split_in_window
+
+  - name: calibration_prediction
+    description: "{{ doc('calibration_prediction') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [underlying, trade_date, expiration, moneyness]
+    columns:
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: trade_date
+        description: Exchange session date of the snapshot the prediction was made on.
+      - name: expiration
+        description: Expiration date of the contracts.
+      - name: settlement_date
+        description: Session whose close settles the expiration.
+      - name: dte_days
+        description: Calendar days from trade date to expiration.
+      - name: dte_years
+        description: Time to expiration in years, calendar days divided by 365.
+      - name: dte_bucket
+        description: Bucket of dte_days, one of <=20d, 21-35d, 36-50d and >50d.
+      - name: fold
+        description: Calendar year of the trade date; the walk-forward fold the row is tested in.
+        data_tests:
+          - not_null
+      - name: moneyness
+        description: Target strike divided by the underlying close, a point of the grid from 0.800 to 1.100.
+      - name: target_strike
+        description: Target strike K in dollars, moneyness times the underlying close.
+      - name: underlying_close
+        description: Official close of the underlying in dollars on the trade date.
+      - name: settlement_close
+        description: Close of the underlying in dollars on the settlement date, as traded.
+      - name: predicted_raw
+        description: Risk-neutral probability P(S_T < K) in [0, 1] from the snapshot's implied CDF.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: realised
+        description: True when the settlement close was strictly below the target strike.
+        data_tests:
+          - not_null
+      - name: n_knots
+        description: Number of knots of the implied CDF the prediction was read from.
+      - name: forward
+        description: Forward price of the underlying in dollars used by the CDF, from put-call parity or the carry model.
+      - name: cdf_flags
+        description: Sorted, comma-separated quality flags of the implied CDF; empty when none were raised.
+
+  - name: calibration_map
+    description: "{{ doc('calibration_map') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [map_id, knot_index]
+    columns:
+      - name: map_id
+        description: Identifier of the map, fold_<year> for a walk-forward fold or production.
+        data_tests:
+          - not_null
+      - name: fold
+        description: Calendar year the fold map is applied to; null for the production map.
+      - name: train_cutoff
+        description: First date the map's training rows may not reach, 1 January of the fold year; null for production.
+      - name: train_max_expiration
+        description: Latest expiration among the training rows; null when there were none.
+      - name: knot_index
+        description: Position of the knot within the map, from 0 in increasing predicted order.
+      - name: predicted
+        description: Knot position on the raw probability axis, in [0, 1].
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: calibrated
+        description: Calibrated probability at the knot, in [0, 1], non-decreasing in predicted.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: n_samples
+        description: Number of training predictions the map was fitted on.
+      - name: is_identity
+        description: True when the map leaves probabilities unchanged because there were too few training rows.
+
+  - name: calibration_sample
+    description: "{{ doc('calibration_sample') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [underlying, trade_date, expiration, moneyness]
+    columns:
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: trade_date
+        description: Exchange session date of the snapshot the prediction was made on.
+      - name: expiration
+        description: Expiration date of the contracts.
+      - name: settlement_date
+        description: Session whose close settles the expiration.
+      - name: dte_days
+        description: Calendar days from trade date to expiration.
+      - name: dte_years
+        description: Time to expiration in years, calendar days divided by 365.
+      - name: dte_bucket
+        description: Bucket of dte_days, one of <=20d, 21-35d, 36-50d and >50d.
+      - name: fold
+        description: Calendar year of the trade date; the walk-forward fold the row is tested in.
+      - name: moneyness
+        description: Target strike divided by the underlying close, a point of the grid from 0.800 to 1.100.
+      - name: target_strike
+        description: Target strike K in dollars, moneyness times the underlying close.
+      - name: underlying_close
+        description: Official close of the underlying in dollars on the trade date.
+      - name: settlement_close
+        description: Close of the underlying in dollars on the settlement date, as traded.
+      - name: predicted_raw
+        description: Risk-neutral probability P(S_T < K) in [0, 1] from the snapshot's implied CDF.
+      - name: realised
+        description: True when the settlement close was strictly below the target strike.
+      - name: n_knots
+        description: Number of knots of the implied CDF the prediction was read from.
+      - name: forward
+        description: Forward price of the underlying in dollars used by the CDF.
+      - name: cdf_flags
+        description: Sorted, comma-separated quality flags of the implied CDF; empty when none were raised.
+      - name: map_id
+        description: Identifier of the fold map applied to the row; joins to calibration_map.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('calibration_map')
+                field: map_id
+      - name: predicted_calibrated
+        description: Probability P(S_T < K) in [0, 1] after the fold map; equals predicted_raw under an identity map.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: is_out_of_sample
+        description: True when the fold is a test year and its map was fitted on earlier data; only these rows enter the metrics.
+
+  - name: calibration_metrics
+    description: "{{ doc('calibration_metrics') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [segment_type, segment, variant, metric]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "value >= 0"
+          config:
+            where: "variant <> 'delta'"
+    columns:
+      - name: segment_type
+        description: Kind of segment, one of overall, underlying, dte_bucket and fold.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [overall, underlying, dte_bucket, fold]
+      - name: segment
+        description: Value of the segment, such as SPY, 21-35d or 2024; all for the overall row.
+      - name: variant
+        description: Which probabilities were scored, raw, calibrated or delta (calibrated minus raw, Brier only).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [raw, calibrated, delta]
+      - name: metric
+        description: Name of the metric, one of brier_score, log_loss and expected_calibration_error.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [brier_score, log_loss, expected_calibration_error]
+      - name: value
+        description: Value of the metric; Brier and ECE are in [0, 1], log loss in nats, and a delta is negative when calibration helps.
+      - name: ci_low
+        description: Lower end of the 95% cluster-bootstrap interval over expiration dates; null except for the overall Brier rows.
+      - name: ci_high
+        description: Upper end of the 95% cluster-bootstrap interval over expiration dates; null except for the overall Brier rows.
+      - name: n_predictions
+        description: Number of out-of-sample predictions in the segment.
+      - name: n_snapshots
+        description: Number of distinct (underlying, trade date, expiration) snapshots in the segment.
+      - name: n_clusters
+        description: Number of distinct expiration dates in the segment, the effective sample size of the bootstrap.
+
+  - name: calibration_bins
+    description: "{{ doc('calibration_bins') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [variant, bin_index]
+    columns:
+      - name: variant
+        description: Which probabilities were binned, raw or calibrated.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [raw, calibrated]
+      - name: bin_index
+        description: Position of the bin from 0 for the lowest probabilities.
+      - name: lower
+        description: Lower edge of the bin as a probability in [0, 1].
+      - name: upper
+        description: Upper edge of the bin as a probability in [0, 1].
+      - name: n
+        description: Number of out-of-sample predictions in the bin.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: mean_predicted
+        description: Mean predicted probability in the bin, in [0, 1]; null for an empty bin.
+      - name: frequency_realised
+        description: Share of predictions in the bin whose event occurred, in [0, 1]; null for an empty bin.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+
+  - name: spread_scores
+    description: "{{ doc('spread_scores') }}"
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "long_strike < short_strike and credit > 0 and credit < width"
+    columns:
+      - name: spread_key
+        description: Natural key, underlying|trade_date|expiration|short strike|long strike.
+        data_tests:
+          - unique
+          - not_null
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: trade_date
+        description: Session date of the quotes the spread was priced from, the underlying's latest session.
+      - name: expiration
+        description: Expiration date of both legs.
+      - name: dte_days
+        description: Calendar days from trade date to expiration.
+      - name: years
+        description: Time to expiration in years, calendar days divided by 365.
+      - name: underlying_close
+        description: Close of the underlying in dollars on the trade date.
+      - name: short_strike
+        description: Strike of the sold put in dollars.
+      - name: long_strike
+        description: Strike of the bought put in dollars, below the short strike.
+      - name: width
+        description: Short strike minus long strike in dollars per share.
+      - name: credit
+        description: Mid credit in dollars per share, short mid minus long mid.
+      - name: credit_natural
+        description: Natural credit in dollars per share, short bid minus long ask; sold at the bid, bought at the ask.
+      - name: max_loss
+        description: Maximum loss in dollars per share, width minus credit.
+      - name: breakeven
+        description: Underlying price in dollars at which the spread breaks even, short strike minus credit.
+      - name: short_moneyness
+        description: Short strike divided by the underlying close.
+      - name: prob_profit
+        description: Probability in [0, 1] that the underlying settles above the breakeven, under the production calibration map.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: prob_profit_raw
+        description: Probability in [0, 1] that the underlying settles above the breakeven, under the risk-neutral CDF alone.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: prob_max_loss
+        description: Probability in [0, 1] that the underlying settles below the long strike, under the calibrated distribution.
+      - name: expected_payoff
+        description: Expected payoff at expiry in dollars per share, undiscounted, under the calibrated distribution.
+      - name: interest
+        description: Interest in dollars per share earned on the collateral over the life of the trade at the cash rate.
+      - name: expected_roc
+        description: Expected return on collateral over the trade as a decimal (0.01 is 1%), calibrated.
+      - name: expected_roc_raw
+        description: Expected return on collateral over the trade as a decimal, risk-neutral.
+      - name: annualised_roc
+        description: Calibrated expected return on collateral per year as a decimal.
+      - name: annualised_roc_raw
+        description: Risk-neutral expected return on collateral per year as a decimal.
+      - name: kelly_fraction
+        description: Two-outcome Kelly fraction of capital, a decimal in [0, 1], from the calibrated probability of profit.
+      - name: calibrated
+        description: True when the production map is not the identity map, so prob_profit differs from prob_profit_raw.
+      - name: extrapolated
+        description: True when the long strike is below the lowest knot of the implied CDF, so the maximum-loss probability relies on flat extrapolation.
+      - name: flags
+        description: Sorted, comma-separated quality flags of the implied CDF; empty when none were raised.
+      - name: eligible
+        description: True when the spread is not extrapolated, has a positive natural credit, a short strike below the close and a calibrated probability of profit at or above the minimum.
+      - name: rank
+        description: Position among eligible spreads by calibrated annualised return, 1 for the best; null when not eligible.
+        data_tests:
+          - unique
+      - name: map_id
+        description: Identifier of the calibration map used, production.
+      - name: cash_apy
+        description: Annual cash rate as a decimal used for interest on collateral.
+      - name: risk_free_apy
+        description: Annual risk-free rate as a decimal used to build the implied CDF.

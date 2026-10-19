@@ -17,7 +17,7 @@ clean-targets:
   - target
   - dbt_packages
 
-# Bronze views are registered once per invocation, pinned to one Iceberg snapshot (ADR 0006).
+# Bronze views are registered once per invocation, pinned to one Iceberg snapshot (ADR 0008).
 on-run-start:
   - "{{ register_bronze() }}"
 
@@ -32,6 +32,13 @@ models:
     marts:
       +materialized: table
       +schema: gold
+    # Python models over the pure oap.analytics package. dbt-duckdb runs them in process; Snowflake stays
+    # compile-only until Phase N ships them as Snowpark Python models, so they are disabled off DuckDB.
+    analytics:
+      +schema: gold
+      +materialized: table
+      +tags: ["analytics"]
+      +enabled: "{{ target.type == 'duckdb' }}"
 
 seeds:
   oap:

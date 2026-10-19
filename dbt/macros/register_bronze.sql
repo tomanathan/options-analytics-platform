@@ -1,5 +1,5 @@
 {#
-  Bronze registration (ADR 0006). dbt reads the Iceberg bronze tables through DuckDB's iceberg_scan.
+  Bronze registration (ADR 0008). dbt reads the Iceberg bronze tables through DuckDB's iceberg_scan.
   Once per invocation this hook reads each table's committed metadata_location from the local
   catalog (a stdlib sqlite file), pins that metadata version, and creates the views
   bronze.option_chain and bronze.underlying_price over it. The model build and its tests therefore
