@@ -265,7 +265,6 @@ function spread(
   return {
     pop_implied: popImplied,
     pop_gap: round(row.prob_profit - popImplied, 4),
-    pop_gap_raw: round(row.prob_profit_raw - popImplied, 4),
     ...row,
   };
 }
@@ -276,7 +275,7 @@ function spreadBase(
   short: number,
   width: number,
   overrides: Partial<SpreadRow>,
-): Omit<SpreadRow, 'pop_implied' | 'pop_gap' | 'pop_gap_raw'> {
+): Omit<SpreadRow, 'pop_implied' | 'pop_gap'> {
   const credit = round(0.4 + width * 0.12 + (rank ?? 9) * 0.02, 2);
   const edgePct = rank === null ? 0.1 : (EDGE_PCT_BY_RANK[rank - 1] ?? 0.2);
   const edge = round(credit * edgePct, 4);
@@ -454,6 +453,7 @@ export function makeSpreadDetail(key: string): SpreadDetail | null {
     expected_payoff: row.edge,
     fair_credit_raw: round(row.fair_credit + 0.04, 4),
     edge_raw: round(row.edge - 0.04, 4),
+    pop_gap_raw: round(row.prob_profit_raw - row.pop_implied, 4),
     interest: 0.0017,
     annualised_roc_raw: 2.9,
     calibrated: true,

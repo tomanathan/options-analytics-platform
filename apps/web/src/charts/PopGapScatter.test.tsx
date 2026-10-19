@@ -19,7 +19,7 @@ function row(key: string, pop: number, implied: number, width = 5): SpreadRow {
     prob_profit: pop,
     pop_implied: implied,
     pop_gap: pop - implied,
-    pop_gap_raw: pop - implied - 0.08,
+    prob_profit_raw: pop - 0.08,
     width,
   };
 }

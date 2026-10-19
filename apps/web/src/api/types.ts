@@ -21,35 +21,10 @@ export type ExpiryDistribution = Schemas['ExpiryDistribution'];
 export type DistributionResponse = Schemas['DistributionResponse'];
 export type HeatmapRow = Schemas['HeatmapRow'];
 export type HeatmapResponse = Schemas['HeatmapResponse'];
-/**
- * Edge fields of the API (dollars per share unless stated). Declared here until the generated
- * schema carries them; the type then comes from `Schemas` alone.
- */
-interface EdgeRowFields {
-  fair_credit: number;
-  edge: number;
-  edge_natural: number;
-  edge_pct: number;
-  edge_pop: number;
-  payoff_std: number;
-  reward_to_risk: number | null;
-  rank_edge: number | null;
-  rank_rr: number | null;
-  rank_entry: number | null;
-  pop_implied: number;
-  pop_gap: number;
-  pop_gap_raw: number;
-}
-export type SpreadSort =
-  'return' | 'edge' | 'reward_to_risk' | 'kelly' | 'pop' | 'pop_gap' | 'entry';
-export type SpreadRow = Schemas['SpreadRow'] & EdgeRowFields;
-export type SpreadsResponse = Omit<Schemas['SpreadsResponse'], 'rows'> & {
-  rows: SpreadRow[];
-  sort: SpreadSort;
-  entry_rule: string;
-};
-export type SpreadDetail = Schemas['SpreadDetail'] &
-  EdgeRowFields & { fair_credit_raw: number; edge_raw: number };
+export type SpreadRow = Schemas['SpreadRow'];
+export type SpreadsResponse = Schemas['SpreadsResponse'];
+export type SpreadSort = SpreadsResponse['sort'];
+export type SpreadDetail = Schemas['SpreadDetail'];
 export type PayoffPoint = Schemas['PayoffPoint'];
 export type MetricValue = Schemas['MetricValue'];
 export type CalibrationSummary = Schemas['CalibrationSummary'];

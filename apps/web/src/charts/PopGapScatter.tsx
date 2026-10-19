@@ -102,7 +102,7 @@ export function PopGapScatter({
               containerWidth={width}
               lines={[
                 {
-                  value: `POP cal ${pct(hover.row.prob_profit)} · price-implied ${pct(hover.row.pop_implied)} · gap ${signedPoints(hover.row.pop_gap)} pts · raw gap ${signedPoints(hover.row.pop_gap_raw)} pts`,
+                  value: `POP cal ${pct(hover.row.prob_profit)} · price-implied ${pct(hover.row.pop_implied)} · gap ${signedPoints(hover.row.pop_gap)} pts · raw gap ${signedPoints(hover.row.prob_profit_raw - hover.row.pop_implied)} pts`,
                 },
               ]}
               footer={`${hover.row.underlying} ${strike(hover.row.short_strike)}/${strike(hover.row.long_strike)} · ${shortDate(hover.row.expiration)}`}
