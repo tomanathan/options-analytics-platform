@@ -66,7 +66,6 @@ SYMBOL_PATTERN = re.compile(r"[A-Z][A-Z0-9.\-]{0,5}")
 """A well-formed ticker: 1 to 6 of ``A-Z``, digits, ``.`` and ``-``, starting with a letter.
 Symbols are interpolated into SQL, so nothing else may reach a query."""
 
-_SYMBOL = SYMBOL_PATTERN
 _COLUMNS = (
     "date",
     "act_symbol",
