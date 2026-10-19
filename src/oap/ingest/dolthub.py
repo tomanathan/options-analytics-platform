@@ -21,10 +21,11 @@ dollars per share, implied volatility a decimal. A date with no rows is normal (
 gaps) and is not an error.
 """
 
+import functools
 import logging
 import re
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -48,6 +49,9 @@ logger = logging.getLogger(__name__)
 DOLTHUB_BASE_URL = "https://www.dolthub.com/api/v1alpha1/post-no-preference/options/master"
 """SQL read endpoint of the ``options`` database on its ``master`` branch."""
 
+DOLTHUB_STOCKS_URL = "https://www.dolthub.com/api/v1alpha1/post-no-preference/stocks/master"
+"""SQL read endpoint of the ``stocks`` database on its ``master`` branch."""
+
 PAGE_SIZE = 1000
 """Rows per page; DoltHub returns at most 1000 rows per response."""
 
@@ -58,7 +62,11 @@ MAX_ATTEMPTS = 6
 SOURCE = "dolthub"
 """Value of ``source`` on every row this module produces."""
 
-_SYMBOL = re.compile(r"[A-Z][A-Z0-9.\-]{0,5}")
+SYMBOL_PATTERN = re.compile(r"[A-Z][A-Z0-9.\-]{0,5}")
+"""A well-formed ticker: 1 to 6 of ``A-Z``, digits, ``.`` and ``-``, starting with a letter.
+Symbols are interpolated into SQL, so nothing else may reach a query."""
+
+_SYMBOL = SYMBOL_PATTERN
 _COLUMNS = (
     "date",
     "act_symbol",
@@ -86,8 +94,19 @@ class _RetryableError(Exception):
     """A failure worth another attempt: transport error, HTTP 429/5xx or a query timeout."""
 
 
-def _number(row: Mapping[str, str | None], column: str) -> float | None:
-    """Parse an optional decimal string column as a float."""
+def optional_float(row: Mapping[str, str | None], column: str) -> float | None:
+    """Parse an optional decimal string column of a DoltHub row as a float.
+
+    Args:
+        row: A DoltHub row: column name to string or None.
+        column: The column to read.
+
+    Returns:
+        The value, or None when the column is missing, null or empty.
+
+    Raises:
+        ValueError: If the value is present but not a number.
+    """
     value = row.get(column)
     if value is None or value == "":
         return None
@@ -97,7 +116,19 @@ def _number(row: Mapping[str, str | None], column: str) -> float | None:
         raise ValueError(f"column {column!r} is not a number: {value!r}") from e
 
 
-def _required(row: Mapping[str, str | None], column: str) -> str:
+def required_text(row: Mapping[str, str | None], column: str) -> str:
+    """Read a column of a DoltHub row that must be present.
+
+    Args:
+        row: A DoltHub row: column name to string or None.
+        column: The column to read.
+
+    Returns:
+        The non-empty value.
+
+    Raises:
+        ValueError: If the column is missing, null or empty.
+    """
     value = row.get(column)
     if value is None or value == "":
         raise ValueError(f"row lacks {column!r}: {dict(row)}")
@@ -106,15 +137,15 @@ def _required(row: Mapping[str, str | None], column: str) -> str:
 
 def _parse_row(row: Mapping[str, str | None], ingested_at: datetime) -> dict[str, Any]:
     """Map one DoltHub row to a bronze record."""
-    underlying = _required(row, "act_symbol")
-    call_put = _required(row, "call_put")
+    underlying = required_text(row, "act_symbol")
+    call_put = required_text(row, "call_put")
     if call_put not in _RIGHTS:
         raise ValueError(f"unknown call_put {call_put!r}")
     right = _RIGHTS[call_put]
-    trade_date = date.fromisoformat(_required(row, "date"))
-    expiration = date.fromisoformat(_required(row, "expiration"))
+    trade_date = date.fromisoformat(required_text(row, "date"))
+    expiration = date.fromisoformat(required_text(row, "expiration"))
     try:
-        strike = Decimal(_required(row, "strike"))
+        strike = Decimal(required_text(row, "strike"))
     except InvalidOperation as e:
         raise ValueError(f"strike is not a number: {row.get('strike')!r}") from e
     record: dict[str, Any] = {
@@ -124,18 +155,18 @@ def _parse_row(row: Mapping[str, str | None], ingested_at: datetime) -> dict[str
         "expiration": expiration,
         "strike": strike,
         "right": right,
-        "bid": _number(row, "bid"),
-        "ask": _number(row, "ask"),
+        "bid": optional_float(row, "bid"),
+        "ask": optional_float(row, "ask"),
         "last": None,
         "volume": None,
         "open_interest": None,
-        "iv": _number(row, "vol"),
+        "iv": optional_float(row, "vol"),
         "underlying_price": None,
         "source": SOURCE,
         "ingested_at": ingested_at,
     }
     for greek in _GREEKS:
-        record[greek] = _number(row, greek)
+        record[greek] = optional_float(row, greek)
     return record
 
 
@@ -164,7 +195,7 @@ def build_query(symbol: str, dates: Sequence[date], offset: int) -> str:
         raise ValueError("dates must not be empty")
     if offset < 0:
         raise ValueError(f"offset must not be negative, got {offset}")
-    if not _SYMBOL.fullmatch(symbol):
+    if not SYMBOL_PATTERN.fullmatch(symbol):
         raise ValueError(f"unsafe or malformed symbol: {symbol!r}")
     in_list = ", ".join(f"'{d.isoformat()}'" for d in sorted(set(dates)))
     return (
@@ -238,7 +269,7 @@ class DoltHubClient:
         http: Client to send requests with; tests pass one built on ``httpx.MockTransport``.
             A default client with a 60-second timeout is created when omitted.
         base_url: SQL endpoint of the database branch.
-        page_pause_s: Seconds to wait between consecutive page requests in ``fetch_chain``,
+        page_pause_s: Seconds to wait between consecutive page requests in ``query_pages``,
             to stay polite to a free API. Zero disables the pause.
         retry_wait: tenacity wait strategy between attempts. Defaults to
             ``wait_random_exponential(multiplier=1, max=60)``; tests pass ``wait_none()``.
@@ -299,6 +330,36 @@ class DoltHubClient:
             raise DoltHubError(
                 f"DoltHub query failed after {self._max_attempts} attempts: {cause}"
             ) from cause
+
+    def query_pages(self, page_sql: Callable[[int], str]) -> list[dict[str, str | None]]:
+        """Run a paged query to the end and return every row.
+
+        Calls ``page_sql(offset)`` for the SQL of each page, starting at offset 0 and
+        advancing the offset by the rows actually received. Waits ``page_pause_s`` before
+        every page after the first. Stops on an empty page, or on a short page whose status
+        is ``Success``. A full page reported as ``Success`` (what DoltHub returns when the
+        query carries its own ``LIMIT``) and any ``RowLimit`` page, even a short one truncated
+        by the server, continue the loop.
+
+        Args:
+            page_sql: Builds the SQL of the page that starts at the given row offset.
+
+        Returns:
+            The rows of all pages, in order.
+
+        Raises:
+            DoltHubError: If a query fails (see ``query``).
+        """
+        rows: list[dict[str, str | None]] = []
+        offset = 0
+        while True:
+            if offset and self.page_pause_s > 0:
+                time.sleep(self.page_pause_s)
+            status, page = self.query(page_sql(offset))
+            rows.extend(page)
+            if not page or (len(page) < PAGE_SIZE and status == "Success"):
+                return rows
+            offset += len(page)
 
     def _query_once(self, sql: str) -> tuple[str, list[dict[str, str | None]]]:
         """Send one request; raise ``_RetryableError`` for failures worth retrying."""
@@ -369,16 +430,7 @@ def fetch_chain(
     stamp = ingested_at if ingested_at is not None else datetime.now(UTC)
     rows: list[dict[str, str | None]] = []
     for month in month_chunks(sessions):
-        month_rows: list[dict[str, str | None]] = []
-        offset = 0
-        while True:
-            if offset and client.page_pause_s > 0:
-                time.sleep(client.page_pause_s)
-            status, page = client.query(build_query(symbol, month, offset))
-            month_rows.extend(page)
-            if not page or (len(page) < PAGE_SIZE and status == "Success"):
-                break
-            offset += len(page)
+        month_rows = client.query_pages(functools.partial(build_query, symbol, month))
         logger.info(
             "dolthub %s %s: %d rows over %d sessions",
             symbol,
