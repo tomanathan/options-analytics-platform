@@ -68,6 +68,11 @@ Continuing the worked example (credit 2.00, hand CDF): ``E[h] = 2.0625`` so the 
 and ``payoff_std = 2.2398498`` dollars; the edge is -0.0625 dollars, ``edge_pct = -0.03125``
 and ``reward_to_risk = -0.0279037``.
 
+Price-implied probability of profit. Under the binary approximation the credit and the max
+loss are the odds, so the breakeven probability of profit is ``max_loss / width``
+(``PutCreditSpread.pop_implied``, a decimal). The gap between a model probability of profit
+and this number is the probability-space counterpart of ``edge_pct``.
+
 Credits are in dollars per share and times are in years, so scores are comparable across
 underlyings, widths and expiries.
 """
@@ -158,6 +163,16 @@ class PutCreditSpread:
     def collateral(self) -> float:
         """Cash held against the spread, in dollars per share: equal to the maximum loss."""
         return self.max_loss
+
+    @property
+    def pop_implied(self) -> float:
+        """Probability of profit implied by the price, a decimal in (0, 1).
+
+        Under the binary approximation (win the credit, or lose the maximum loss) the odds
+        are ``credit / max_loss``, so the breakeven probability of profit is
+        ``max_loss / (max_loss + credit) = max_loss / width = 1 - credit / width``.
+        """
+        return self.max_loss / self.width
 
     @property
     def breakeven(self) -> float:

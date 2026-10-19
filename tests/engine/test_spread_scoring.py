@@ -483,3 +483,20 @@ def test_fair_credit_and_risk_scale_with_the_price_level(
         if math.isnan(a.reward_to_risk):
             continue
         assert b.reward_to_risk == pytest.approx(a.reward_to_risk, rel=1e-6, abs=1e-9)
+
+
+def test_pop_implied_worked_example() -> None:
+    # Width 5, credit 2, max loss 3: odds 2 to 3, breakeven probability 3 / 5.
+    assert _spread().pop_implied == pytest.approx(0.6, abs=1e-15)
+
+
+@given(_f(1, 1000), _f(0.01, 100), _f(0.001, 0.999))
+def test_pop_implied_is_one_minus_credit_share_of_width(
+    short: float, width: float, credit_share: float
+) -> None:
+    long = short - width
+    if long <= 0:
+        return
+    spread = PutCreditSpread("SPY", EXPIRY, short, long, credit_share * width, YEARS)
+    assert 0.0 < spread.pop_implied < 1.0
+    assert spread.pop_implied == pytest.approx(1.0 - spread.credit / spread.width, abs=1e-12)
