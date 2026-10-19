@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExpiryDistribution } from '../api/types';
 import { makeDistribution } from '../test/fixtures';
 import { CdfOverlay, CdfPanel } from './CdfPanel';
-import { MONEYNESS_DOMAIN } from './options';
+import { MONEYNESS_DOMAIN, overlayDomain } from './options';
 import type { PlotSeries, View } from './options';
 
 const dist = makeDistribution();
@@ -124,5 +124,66 @@ describe('CdfOverlay', () => {
     expect(screen.getAllByTestId('cdf-calibrated')).toHaveLength(4);
     const labels = Array.from(container.querySelectorAll('text')).map((t) => t.textContent);
     ['7d', '14d', '21d', '49d'].forEach((label) => expect(labels).toContain(label));
+  });
+
+  it('puts four near-identical medians on four distinct label heights', () => {
+    const base = settled.curve as NonNullable<ExpiryDistribution['curve']>;
+    const series: PlotSeries[] = [7, 8, 9, 10].map((dte, i) => ({
+      expiry: { ...settled, expiration: `2026-10-${10 + i}`, dte_days: dte },
+      curve: base,
+      color: `var(--ord-${i + 1})`,
+    }));
+    const { container } = render(
+      <CdfOverlay
+        series={series}
+        view="calibrated"
+        xMode="moneyness"
+        xDomain={overlayDomain(series, 'moneyness')}
+        width={600}
+        height={320}
+      />,
+    );
+    const ys = ['7d', '8d', '9d', '10d'].map((label) => {
+      const node = Array.from(container.querySelectorAll('text')).find(
+        (t) => t.textContent === label,
+      );
+      expect(node).toBeDefined();
+      return Number(node?.getAttribute('y'));
+    });
+    expect(new Set(ys).size).toBe(4);
+    // Labels step upward by series index, never overlapping a 11 px label.
+    ys.slice(1).forEach((y, i) => expect((ys[i] ?? 0) - y).toBeGreaterThanOrEqual(12));
+  });
+
+  it('draws the median dot where the curve crosses 0.5, not at the nearest knot', () => {
+    const curve = {
+      knots: [90, 100, 110],
+      moneyness: [0.9, 1, 1.1],
+      cdf: [0.2, 0.4, 0.9],
+      raw_cdf: [0.2, 0.4, 0.9],
+      cdf_calibrated: [0.2, 0.4, 0.9],
+      density_mid: [95, 105],
+      density: [0.01, 0.05],
+      density_calibrated: [0.01, 0.05],
+    };
+    const series: PlotSeries[] = [7, 14].map((dte, i) => ({
+      expiry: { ...settled, expiration: `2026-10-${10 + i}`, dte_days: dte },
+      curve,
+      color: `var(--ord-${i + 1})`,
+    }));
+    const { container } = render(
+      <CdfOverlay
+        series={series}
+        view="calibrated"
+        xMode="moneyness"
+        xDomain={[0.9, 1.1]}
+        width={458}
+        height={320}
+      />,
+    );
+    // Plot width is 458 - 44 - 14 = 400; 0.5 sits 0.2 of the way from 1.0 to 1.1, so m = 1.02.
+    const dots = Array.from(container.querySelectorAll('circle'));
+    expect(dots).toHaveLength(2);
+    dots.forEach((dot) => expect(Number(dot.getAttribute('cx'))).toBeCloseTo(240, 6));
   });
 });

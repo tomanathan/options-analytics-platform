@@ -31,12 +31,14 @@ import type { Margin } from './axes';
 import { ChartFrame } from './ChartFrame';
 import { ChartTooltip } from './ChartTooltip';
 import type { TooltipLine } from './ChartTooltip';
-import { curveX, levelX, showsCalibrated, showsRaw } from './options';
+import { crossingX, curveX, levelX, showsCalibrated, showsRaw } from './options';
 import type { PlotSeries, View, XMode } from './options';
 
 const CDF_TICKS = [0, 0.25, 0.5, 0.75, 1];
 const GAP = 16;
 const DENSITY_SHARE = 0.35;
+/** Vertical distance between the median labels of the overlay, so near-equal medians stay legible. */
+const MEDIAN_LABEL_STEP = 14;
 
 interface Point {
   x: number;
@@ -430,9 +432,8 @@ export function CdfPlot({
           const item = series[s];
           if (!item) return null;
           const values = showsCalibrated(view) ? g.cal : g.raw;
-          const i = nearestIndex(values as number[], 0.5);
-          const x = g.xs[i];
-          if (x === undefined || !inDomain(x)) return null;
+          const x = crossingX(g.xs, values, 0.5);
+          if (x === null || !inDomain(x)) return null;
           return (
             <g key={`label-${item.expiry.expiration}`}>
               <circle
@@ -445,7 +446,7 @@ export function CdfPlot({
               />
               <text
                 x={xScale(x) - 7}
-                y={yCdf(0.5) - 8}
+                y={yCdf(0.5) - 8 - s * MEDIAN_LABEL_STEP}
                 fill="var(--ink-1)"
                 fontSize={11}
                 className="halo"
@@ -597,7 +598,7 @@ interface CdfOverlayProps {
   refreshing?: boolean;
 }
 
-/** All expiries on one CDF plot, each labelled directly at its median. */
+/** All expiries on one CDF plot, each labelled at its interpolated median (F = 0.5), stacked by series. */
 export function CdfOverlay({
   series,
   view,
