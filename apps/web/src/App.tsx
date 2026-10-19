@@ -1,9 +1,10 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { CalibrationBadge } from './components/CalibrationBadge';
 import { DataStatus } from './components/DataStatus';
 
 /** The shell: wordmark, route tabs, calibration badge and data status. */
 export default function App() {
+  const { pathname } = useLocation();
   return (
     <div className="shell">
       <header className="topbar">
@@ -12,9 +13,13 @@ export default function App() {
           <NavLink to="/landscape" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Landscape
           </NavLink>
+          <NavLink to="/spreads" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Spreads
+          </NavLink>
         </nav>
         <div className="topbar__right">
-          <CalibrationBadge />
+          {/* The spreads page shows the full out-of-sample line itself. */}
+          {pathname.startsWith('/spreads') ? null : <CalibrationBadge />}
           <DataStatus />
         </div>
       </header>

@@ -10,6 +10,7 @@ import './theme/tokens.css';
 import './theme/global.css';
 
 const LandscapePage = lazy(() => import('./routes/LandscapePage'));
+const SpreadsPage = lazy(() => import('./routes/SpreadsPage'));
 
 const queryClient = createQueryClient();
 const loading = <EmptyState title="Loading…" />;
@@ -29,6 +30,14 @@ createRoot(container).render(
               element={
                 <Suspense fallback={loading}>
                   <LandscapePage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="spreads"
+              element={
+                <Suspense fallback={loading}>
+                  <SpreadsPage />
                 </Suspense>
               }
             />
