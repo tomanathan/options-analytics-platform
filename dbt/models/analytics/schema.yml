@@ -338,13 +338,13 @@ models:
       - name: interest
         description: Interest in dollars per share earned on the collateral over the life of the trade at the cash rate.
       - name: expected_roc
-        description: Expected return on collateral over the trade as a decimal (0.01 is 1%), calibrated.
+        description: Expected return on max loss over the trade as a decimal (0.01 is 1%), calibrated. Collateral equals max loss, so this is also the return on collateral.
       - name: expected_roc_raw
-        description: Expected return on collateral over the trade as a decimal, risk-neutral.
+        description: Expected return on max loss over the trade as a decimal, risk-neutral. Collateral equals max loss, so this is also the return on collateral.
       - name: annualised_roc
-        description: Calibrated expected return on collateral per year as a decimal.
+        description: Calibrated expected return on max loss per year as a decimal. Collateral equals max loss, so this is also the return on collateral.
       - name: annualised_roc_raw
-        description: Risk-neutral expected return on collateral per year as a decimal.
+        description: Risk-neutral expected return on max loss per year as a decimal. Collateral equals max loss, so this is also the return on collateral.
       - name: kelly_fraction
         description: Two-outcome Kelly fraction of capital, a decimal in [0, 1], from the calibrated probability of profit.
       - name: calibrated

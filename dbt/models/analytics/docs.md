@@ -56,8 +56,8 @@ out-of-sample row yet.
 Put credit spreads of the latest session in gold (the global maximum trade date, so an underlying whose feed stopped is not ranked beside fresh ones), scored twice: under the risk-neutral CDF
 (`*_raw` columns) and under the CDF passed through the production calibration map. One row per
 (underlying, expiration, short strike, long strike) with the mid `credit`, the `credit_natural`
-(sold at the bid, bought at the ask), probabilities, expected and annualised return on collateral
-and the Kelly fraction. `eligible` marks spreads that are not extrapolated, have a positive natural
+(sold at the bid, bought at the ask), probabilities, expected and annualised return on max loss
+(collateral equals max loss; the columns are `expected_roc` and `annualised_roc`) and the Kelly fraction. `eligible` marks spreads that are not extrapolated, have a positive natural
 credit, a short strike below the close and `prob_profit` at or above 0.5; `rank` orders the eligible
 ones by calibrated annualised return. Under the risk-neutral CDF built from the same mids the
 expected return is roughly the cash rate by construction, so any edge comes from the calibration

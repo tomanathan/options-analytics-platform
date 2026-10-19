@@ -1,4 +1,4 @@
-"""Expected return on collateral for put credit spreads.
+"""Expected return on max loss for put credit spreads.
 
 A put credit spread is short a higher-strike put and long a lower-strike put with the same
 expiry. Per share, in dollars:
@@ -21,6 +21,11 @@ the underlying price at expiry:
 * the return on collateral is ``(expected_payoff + interest) / collateral``, and the
   annualised return is ``(1 + roc) ** (1 / years) - 1``.
 
+For a cash-secured spread the collateral held equals the maximum loss, so the return on
+collateral (the identifier ``expected_return_on_collateral``, ``expected_roc`` downstream) is
+the expected return on max loss. Both names denote the same number; users see "return on max
+loss".
+
 Worked example. The chain has strikes 90, 95, 100 and 105 with put mids 0.50, 1.50, 3.50
 and 7.00 dollars, 30 days (30 / 365 years) to expiry and a rate of 0. Its CDF has knots
 92.5, 97.5 and 102.5 at probabilities 0.2, 0.4 and 0.7. Sell the 100 put and buy the 95
@@ -32,8 +37,8 @@ put for a credit of 2.00 dollars with cash at 3.6% APY:
 * the expected payoff of the long 100/95 put spread is 2.0625 dollars (the integral of
   ``F`` from 95 to 100), so the expected payoff is ``2.00 - 2.0625 = -0.0625`` dollars;
 * interest is ``3.00 * (1.036 ** (30 / 365) - 1) = 0.008733`` dollars;
-* return on collateral is ``(-0.0625 + 0.008733) / 3.00 = -0.017922``, which is
-  ``-0.1975`` annualised;
+* return on collateral, which is the return on max loss because the two are equal here, is
+  ``(-0.0625 + 0.008733) / 3.00 = -0.017922``, which is ``-0.1975`` annualised;
 * the Kelly fraction is 0 because the edge is negative.
 
 Credits are in dollars per share and times are in years, so scores are comparable across
@@ -119,7 +124,7 @@ class PutCreditSpread:
 
     @property
     def collateral(self) -> float:
-        """Cash held against the spread, in dollars per share: the maximum loss."""
+        """Cash held against the spread, in dollars per share: equal to the maximum loss."""
         return self.max_loss
 
     @property
@@ -139,8 +144,10 @@ class SpreadScore:
         expected_payoff: Expected payoff at expiry in dollars per share, undiscounted.
         interest: Interest on the collateral over ``years`` in dollars per share.
         expected_return_on_collateral: Expected payoff plus interest over collateral, as
-            a decimal for the holding period.
-        annualised_return: Return on collateral compounded to one year, as a decimal.
+            a decimal for the holding period. Collateral equals the maximum loss for a
+            cash-secured spread, so this is the expected return on max loss.
+        annualised_return: Return on collateral (max loss) compounded to one year, as a
+            decimal.
         kelly_fraction: Two-outcome Kelly fraction of capital, in [0, 1].
         calibrated: True if a calibration map was applied.
         extrapolated: True if the long strike is below the lowest CDF knot, so the
@@ -195,7 +202,9 @@ def score_spread(
         calibration: Optional map applied to the CDF before scoring.
 
     Returns:
-        The score; see ``SpreadScore`` for units.
+        The score; see ``SpreadScore`` for units. Collateral equals the maximum loss for a
+        cash-secured spread, so ``expected_return_on_collateral`` is the expected return on
+        max loss.
 
     Raises:
         EngineInputError: If ``years`` differ between spread and CDF by more than 1e-9, or

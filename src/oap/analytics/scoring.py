@@ -4,12 +4,14 @@ For every underlying and expiration in the latest session the risk-neutral CDF c
 ``oap.analytics.sample.chain_cdf``, the same function the backtest uses, so the
 calibration map is applied to the distribution it was trained on. Every candidate spread
 is scored twice, once on the raw CDF and once on the CDF recomposed with the calibration
-map, and ranked by calibrated annualised return on collateral.
+map, and ranked by calibrated annualised return on max loss.
 
 Units: prices, strikes, credits and losses are in dollars per share; ``years`` is in
 years (calendar days / 365); rates are decimal APYs; probabilities are decimals in [0, 1];
-returns on collateral are decimals (0.02 is 2%) over the holding period, or per year when
-annualised.
+returns on max loss are decimals (0.02 is 2%) over the holding period, or per year when
+annualised. Collateral equals the maximum loss for a cash-secured spread, so the engine's
+``expected_return_on_collateral``, stored as ``expected_roc``, is the expected return on max
+loss.
 """
 
 from typing import Final
