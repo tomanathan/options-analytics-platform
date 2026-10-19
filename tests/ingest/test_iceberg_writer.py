@@ -32,7 +32,9 @@ from oap.ingest.iceberg_writer import (
 )
 from oap.ingest.local_catalog import LocalCatalog
 from oap.ingest.schema import BRONZE_FRAME, BRONZE_SCHEMA, empty_frame, to_arrow
+from oap.ingest.tables import BRONZE_TABLES, OPTION_CHAIN, UNDERLYING_PRICE, TableSpec
 from tests.bronze_factory import bronze_frame
+from tests.ingest.price_factory import price_frame
 
 D1 = date(2024, 1, 2)
 D2 = date(2024, 1, 3)
@@ -521,3 +523,130 @@ def test_a_three_decimal_strike_round_trips_through_bronze(table: Table) -> None
     stored = read_partition(table, trade_date=as_of, source="alpaca_indicative")
     assert stored["strike"].tolist() == [Decimal("12.625")]
     assert stored["occ_symbol"].tolist() == ["SPY261016C00012625"]
+
+
+# the second table: bronze.underlying_price
+
+
+def _prices(
+    day: date, underlyings: tuple[str, ...] = ("SPY", "QQQ"), seed: int = 0
+) -> pd.DataFrame:
+    return price_frame(day, underlyings, seed)
+
+
+def test_both_tables_coexist_in_one_catalog(catalog: Catalog) -> None:
+    ensure_table(catalog, spec=UNDERLYING_PRICE)
+    ensure_table(catalog)
+
+    assert sorted(catalog.list_tables("bronze")) == [
+        ("bronze", "option_chain"),
+        ("bronze", "underlying_price"),
+    ]
+
+
+def test_ensure_table_detects_the_spec_from_the_identifier(catalog: Catalog) -> None:
+    table = ensure_table(catalog, ("bronze", "underlying_price"))
+
+    assert len(table.schema().fields) == len(UNDERLYING_PRICE.arrow_schema) == 9
+    assert [field.name for field in table.spec().fields] == ["trade_date_day", "source"]
+
+
+def test_ensure_table_rejects_a_mismatched_spec_and_identifier(catalog: Catalog) -> None:
+    with pytest.raises(ValueError, match="underlying_price"):
+        ensure_table(catalog, ("bronze", "option_chain"), spec=UNDERLYING_PRICE)
+
+
+def test_ensure_table_rejects_a_name_that_is_not_a_bronze_table(catalog: Catalog) -> None:
+    with pytest.raises(ValueError, match="no bronze table named"):
+        ensure_table(catalog, ("bronze", "quotes"))
+
+
+def test_ensure_table_reports_a_price_table_with_another_schema(catalog: Catalog) -> None:
+    catalog.create_namespace_if_not_exists("bronze")
+    catalog.create_table(
+        ("bronze", "underlying_price"),
+        schema=Schema(NestedField(1, "trade_date", DateType(), required=True)),
+    )
+
+    with pytest.raises(ValueError, match="does not match the bronze schema"):
+        ensure_table(catalog, spec=UNDERLYING_PRICE)
+
+
+def test_price_write_round_trip_and_idempotence(catalog: Catalog) -> None:
+    table = ensure_table(catalog, spec=UNDERLYING_PRICE)
+    frame = _prices(D1)
+
+    assert write_partition(table, frame, trade_date=D1, source="dolthub_stocks") == 2
+    stored = read_partition(table, trade_date=D1, source="dolthub_stocks")
+    first = content_hash(stored, spec=UNDERLYING_PRICE)
+
+    assert first == content_hash(frame, spec=UNDERLYING_PRICE)
+    assert list(stored.columns) == UNDERLYING_PRICE.arrow_schema.names
+    write_partition(table, frame, trade_date=D1, source="dolthub_stocks")
+    again = read_partition(table, trade_date=D1, source="dolthub_stocks")
+    assert content_hash(again, spec=UNDERLYING_PRICE) == first
+    assert len(read_range(table, start=D1, end=D1, spec=UNDERLYING_PRICE)) == 2
+
+
+def test_price_content_hash_changes_with_a_close() -> None:
+    frame = _prices(D1)
+    changed = frame.assign(close=frame["close"] + 0.01)
+
+    assert content_hash(changed, spec=UNDERLYING_PRICE) != content_hash(
+        frame, spec=UNDERLYING_PRICE
+    )
+
+
+def test_write_partition_rejects_a_spec_that_is_not_the_tables(catalog: Catalog) -> None:
+    table = ensure_table(catalog, spec=UNDERLYING_PRICE)
+
+    with pytest.raises(ValueError, match="does not belong"):
+        write_partition(
+            table, _prices(D1), trade_date=D1, source="dolthub_stocks", spec=OPTION_CHAIN
+        )
+    with pytest.raises(ValueError, match="does not belong"):
+        read_partition(table, trade_date=D1, source="dolthub_stocks", spec=OPTION_CHAIN)
+    assert _row_count(table) == 0
+
+
+def test_write_partition_rejects_an_option_source_on_the_price_table(catalog: Catalog) -> None:
+    table = ensure_table(catalog, spec=UNDERLYING_PRICE)
+
+    with pytest.raises(ValueError, match="unknown source"):
+        write_partition(table, _prices(D1), trade_date=D1, source="dolthub")
+    with pytest.raises(ValueError, match="unknown source"):
+        read_range(table, start=D1, end=D1, source="alpaca_indicative")
+    assert _row_count(table) == 0
+
+
+def test_write_partition_rejects_a_price_frame_with_another_source(catalog: Catalog) -> None:
+    table = ensure_table(catalog, spec=UNDERLYING_PRICE)
+
+    with pytest.raises(pandera.errors.SchemaErrors):
+        write_partition(
+            table, _prices(D1).assign(source="dolthub"), trade_date=D1, source="dolthub_stocks"
+        )
+
+
+def test_partition_file_counts_per_table(catalog: Catalog) -> None:
+    options = ensure_table(catalog)
+    prices = ensure_table(catalog, spec=UNDERLYING_PRICE)
+    write_partition(options, _dolthub(D1), trade_date=D1, source="dolthub")
+    write_partition(prices, _prices(D1), trade_date=D1, source="dolthub_stocks")
+    write_partition(prices, _prices(D1), trade_date=D1, source="dolthub_stocks")
+
+    assert partition_file_counts(options) == {(D1, "dolthub"): 1}
+    assert partition_file_counts(prices) == {(D1, "dolthub_stocks"): 1}
+
+
+def test_table_identifier_for_prices_on_glue() -> None:
+    env = {"OAP_ICEBERG_CATALOG": "glue", "OAP_GLUE_DATABASE": "oap_bronze"}
+
+    assert table_identifier(env, spec=UNDERLYING_PRICE) == ("oap_bronze", "underlying_price")
+    assert table_identifier({}, spec=UNDERLYING_PRICE) == ("bronze", "underlying_price")
+    assert table_identifier({}) == ("bronze", "option_chain")
+
+
+@pytest.mark.parametrize("spec", BRONZE_TABLES, ids=lambda spec: spec.name)
+def test_table_identifier_names_every_bronze_table(spec: TableSpec) -> None:
+    assert table_identifier({}, spec=spec) == ("bronze", spec.name)

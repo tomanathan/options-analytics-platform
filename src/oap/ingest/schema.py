@@ -185,37 +185,40 @@ def parse_occ_symbol(symbol: str) -> tuple[str, date, str, Decimal]:
     return root, expiration, right, Decimal(int(thousandths)) / 1000
 
 
-def empty_frame() -> pd.DataFrame:
+def empty_frame(schema: pa.Schema = BRONZE_SCHEMA) -> pd.DataFrame:
     """Return a bronze frame with no rows.
 
+    Args:
+        schema: Arrow schema of the table; the option chain's when omitted.
+
     Returns:
-        A DataFrame with BRONZE_SCHEMA's columns in order, each with the matching
-        ``pd.ArrowDtype``, that passes ``BRONZE_FRAME.validate``.
+        A DataFrame with ``schema``'s columns in order, each with the matching
+        ``pd.ArrowDtype``, that passes the table's pandera schema (``BRONZE_FRAME`` by
+        default).
     """
-    return BRONZE_SCHEMA.empty_table().to_pandas(types_mapper=pd.ArrowDtype)
+    return schema.empty_table().to_pandas(types_mapper=pd.ArrowDtype)
 
 
-def to_arrow(frame: pd.DataFrame) -> pa.Table:
-    """Convert a bronze frame to an Arrow table with exactly BRONZE_SCHEMA.
+def to_arrow(frame: pd.DataFrame, schema: pa.Schema = BRONZE_SCHEMA) -> pa.Table:
+    """Convert a bronze frame to an Arrow table with exactly ``schema``.
 
-    The frame is not validated here; callers validate with ``BRONZE_FRAME`` first. The index
-    is dropped.
+    The frame is not validated here; callers validate with the table's pandera schema
+    first. The index is dropped.
 
     Args:
-        frame: A frame with BRONZE_SCHEMA's columns.
+        frame: A frame with ``schema``'s columns.
+        schema: Arrow schema of the table; the option chain's when omitted.
 
     Returns:
-        An Arrow table whose schema equals BRONZE_SCHEMA (names, types, nullability, order).
+        An Arrow table whose schema equals ``schema`` (names, types, nullability, order).
 
     Raises:
-        pyarrow.ArrowInvalid: If a column cannot be cast to its BRONZE_SCHEMA type or a
+        pyarrow.ArrowInvalid: If a column cannot be cast to its ``schema`` type or a
             non-nullable column holds a null.
-        KeyError: If a BRONZE_SCHEMA column is missing from the frame.
+        KeyError: If a ``schema`` column is missing from the frame.
     """
-    table = pa.Table.from_pandas(
-        frame[BRONZE_SCHEMA.names], schema=BRONZE_SCHEMA, preserve_index=False
-    )
-    for field in BRONZE_SCHEMA:
+    table = pa.Table.from_pandas(frame[schema.names], schema=schema, preserve_index=False)
+    for field in schema:
         if not field.nullable and table.column(field.name).null_count:
             raise pa.ArrowInvalid(f"non-nullable column {field.name!r} holds nulls")
     return table.replace_schema_metadata(None)
@@ -265,22 +268,25 @@ def split_crossed_quotes(
     return kept, dropped
 
 
-def frame_from_records(records: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
-    """Build a bronze-shaped frame from row dicts keyed by BRONZE_SCHEMA's column names.
+def frame_from_records(
+    records: Sequence[Mapping[str, Any]], schema: pa.Schema = BRONZE_SCHEMA
+) -> pd.DataFrame:
+    """Build a bronze-shaped frame from row dicts keyed by ``schema``'s column names.
 
     Missing keys become nulls. The frame is not validated.
 
     Args:
         records: One dict per row, values as Python objects (``date``, ``Decimal``,
             ``float``, ``int``, ``str``, timezone-aware ``datetime`` or None).
+        schema: Arrow schema of the table; the option chain's when omitted.
 
     Returns:
-        A frame with BRONZE_SCHEMA's columns and dtypes; ``empty_frame()`` for no records.
+        A frame with ``schema``'s columns and dtypes; ``empty_frame(schema)`` for no records.
 
     Raises:
         pyarrow.ArrowInvalid: If a value cannot be converted to its column type.
     """
     if not records:
-        return empty_frame()
-    table = pa.Table.from_pylist(list(records), schema=BRONZE_SCHEMA)
+        return empty_frame(schema)
+    table = pa.Table.from_pylist(list(records), schema=schema)
     return table.to_pandas(types_mapper=pd.ArrowDtype)
