@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -64,6 +64,48 @@ def test_loading_one_symbol_keeps_the_other_symbols_of_the_slice(table: Table) -
     assert _hash(stored[stored["underlying"] == "SPY"]) == _hash(_spy(D1, seed=1))
     qqq = price_frame(D1, ("SPY", "QQQ"))
     assert _hash(stored[stored["underlying"] == "QQQ"]) == _hash(qqq[qqq["underlying"] == "QQQ"])
+
+
+def test_merged_rows_are_stamped_when_the_slice_is_written(table: Table) -> None:
+    fetch_stamp = price_frame(D1)["ingested_at"].iloc[0]
+    before = datetime.now(UTC)
+
+    merge_into_slices(
+        table, pd.concat([_spy(D1, seed=1), _spy(D2, seed=1)], ignore_index=True), source=SOURCE
+    )
+
+    after = datetime.now(UTC)
+    for day in (D1, D2):
+        stamps = read_partition(table, trade_date=day, source=SOURCE)["ingested_at"]
+        assert (stamps > fetch_stamp).all()
+        assert (stamps >= pd.Timestamp(before)).all()
+        assert (stamps <= pd.Timestamp(after)).all()
+    # One instant per call, shared by every slice it writes.
+    first = read_partition(table, trade_date=D1, source=SOURCE)["ingested_at"].iloc[0]
+    second = read_partition(table, trade_date=D2, source=SOURCE)["ingested_at"].iloc[0]
+    assert first == second
+
+
+def test_an_unchanged_slice_is_not_rewritten_and_keeps_its_stamp(table: Table) -> None:
+    fetched = _spy(D1, seed=1)
+    merge_into_slices(table, fetched, source=SOURCE)
+    stamp = read_partition(table, trade_date=D1, source=SOURCE)["ingested_at"].iloc[0]
+    snapshots = len(table.refresh().metadata.snapshots)
+
+    counts = merge_into_slices(table, fetched, source=SOURCE)
+
+    assert counts == {"days": 0, "unchanged": 1, "rows": 0}
+    assert len(table.refresh().metadata.snapshots) == snapshots
+    assert read_partition(table, trade_date=D1, source=SOURCE)["ingested_at"].iloc[0] == stamp
+
+
+def test_restamping_does_not_modify_the_callers_frame(table: Table) -> None:
+    fetched = _spy(D1, seed=1)
+    original = fetched["ingested_at"].copy()
+
+    merge_into_slices(table, fetched, source=SOURCE)
+
+    assert fetched["ingested_at"].equals(original)
 
 
 def test_reloading_the_same_data_commits_nothing(table: Table) -> None:
