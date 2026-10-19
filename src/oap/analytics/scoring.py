@@ -73,29 +73,6 @@ SPREAD_COLUMNS: Final[tuple[str, ...]] = (
 )
 
 
-def latest_session(quotes: pd.DataFrame, *, min_dte_days: int) -> pd.DataFrame:
-    """Keep each underlying's most recent session, without near-expiry options.
-
-    Sessions are per underlying because the data has gaps: one symbol's latest trade date
-    can be earlier than another's.
-
-    Args:
-        quotes: Quote rows with ``underlying``, ``trade_date`` and ``dte_days``.
-        min_dte_days: Shortest time to expiration kept, in calendar days.
-
-    Returns:
-        The rows on each underlying's own latest ``trade_date`` with
-        ``dte_days >= min_dte_days``, on a fresh index.
-
-    Raises:
-        ValueError: If a required column is missing.
-    """
-    require_columns(quotes, ("underlying", "trade_date", "dte_days"), "quotes")
-    newest = quotes.groupby("underlying")["trade_date"].transform("max")
-    keep = (quotes["trade_date"] == newest) & (quotes["dte_days"] >= min_dte_days)
-    return quotes.loc[keep].reset_index(drop=True)
-
-
 def _natural_credits(puts: pd.DataFrame, shorts: list[float], longs: list[float]) -> list[float]:
     """Return the credit at fillable prices for each spread.
 
@@ -234,7 +211,8 @@ def score_latest_session(
     a null rank.
 
     Args:
-        quotes: Quote rows as in ``classify_snapshots``, normally from ``latest_session``.
+        quotes: Quote rows as in ``classify_snapshots``, normally the global latest session
+            from ``oap.analytics.io.read_latest_quotes``.
         cmap: Calibration map; the identity map gives calibrated equal to raw.
         config: Analytics parameters.
         map_id: Identifier recorded on every row.

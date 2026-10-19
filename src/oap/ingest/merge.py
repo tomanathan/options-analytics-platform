@@ -6,6 +6,13 @@ would therefore delete the others' (ADR 0003). ``merge_into_slices`` reads each 
 slice, swaps in the fetched rows for the underlyings they cover, keeps everything else and
 overwrites the slice once.
 
+``ingested_at`` on a merged row means "this slice was committed at", not "this row was
+fetched at": ``merge_into_slices`` restamps every fetched row with the write time (one UTC
+instant per call) before merging, because downstream models use the stamp as a commit
+watermark and a fetch can sit staged for hours before it is written. Rows kept from the
+existing slice keep their own stamp. ``content_hash`` ignores ``ingested_at``, so the
+restamp does not make an unchanged slice look changed.
+
 Absence is not deletion: only underlyings present in ``fetched`` on a day are replaced. An
 underlying the vendor returned nothing for (a month without data, a partial or empty
 response) keeps the rows already loaded, and days with no fetched rows are not touched. A
@@ -15,6 +22,7 @@ slice whose content would not change is not written, so a re-run adds no snapsho
 """
 
 import logging
+from datetime import UTC, datetime
 
 import pandas as pd
 from pyiceberg.table import Table
@@ -60,6 +68,12 @@ def merge_into_slices(
     with no fetched rows are not touched at all. A slice whose content would not change is
     not written.
 
+    Every fetched row is restamped with ``ingested_at`` set to the write time (one
+    timezone-aware UTC ``datetime.now`` per call, shared by all slices of the call), so the
+    stamp means "the slice was written at" rather than "the row was fetched at". Rows kept
+    from the existing slice keep their stamp. ``content_hash`` ignores ``ingested_at``, so an
+    unchanged slice is still skipped and its stamps stay as they were.
+
     Args:
         table: A bronze table.
         fetched: Fetched rows of any underlyings and dates, all from ``source``, or None when
@@ -77,6 +91,12 @@ def merge_into_slices(
     counts = {"days": 0, "unchanged": 0, "rows": 0}
     if fetched is None or fetched.empty:
         return counts
+    write_time = datetime.now(UTC)
+    fetched = fetched.assign(
+        ingested_at=pd.Series(
+            [write_time] * len(fetched), index=fetched.index, dtype=fetched["ingested_at"].dtype
+        )
+    )
     fetched_days = pd.to_datetime(fetched["trade_date"].astype(str)).dt.date
     for day in sorted(set(fetched_days)):
         existing = read_partition(table, trade_date=day, source=source, spec=spec)

@@ -13,7 +13,8 @@ Tasks:
   and stages it as a parquet file. It is skipped when DoltHub has no rows for it.
 * ``write_month`` (mapped per month, one at a time, in the one-slot ``bronze_writers`` pool
   so it never commits alongside the daily DAG) merges the staged symbols into each
-  day's ``(trade_date, "dolthub")`` slice and writes it with ``write_partition``.
+  day's ``(trade_date, "dolthub")`` slice through ``oap.ingest.merge.merge_into_slices``,
+  which also stamps ``ingested_at`` with the write time.
 * ``summarize`` logs the totals.
 
 Every task fails at once, without retries, on an error that retrying cannot fix (see
@@ -21,8 +22,9 @@ Every task fails at once, without retries, on an error that retrying cannot fix 
 
 Fetching and writing are separate because a bronze slice holds every underlying of a day:
 writing one symbol's rows on their own would replace the other symbols' rows (ADR 0003).
-``write_month`` therefore reads the slice, replaces the rows of each underlying that DoltHub
-returned rows for on that day, keeps every other row and overwrites the slice once. Absence
+``write_month`` therefore reads the slice (``merge_into_slices``), replaces the rows of each
+underlying that DoltHub returned rows for on that day, keeps every other row and overwrites
+the slice once. Absence
 is not information: a symbol whose fetch came back empty (a month with no data, or a
 transient empty response) keeps the rows already loaded for it, matching the daily DAG,
 which refuses an empty response rather than wiping a slice. Writes
@@ -57,7 +59,6 @@ from dags.datasets import BRONZE_OPTION_CHAIN
 
 if TYPE_CHECKING:
     import pandas as pd
-    from pyiceberg.table import Table
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +89,13 @@ def plan_jobs(start: date, end: date, symbols: Sequence[str]) -> list[dict[str, 
             a well-formed ticker (checked here so a typo fails the plan, not every fetch).
     """
     from oap.calendar import trading_days
-    from oap.ingest.dolthub import _SYMBOL, month_chunks
+    from oap.ingest.dolthub import SYMBOL_PATTERN, month_chunks
 
     not_strings = [symbol for symbol in symbols if not isinstance(symbol, str)]
     if not_strings:
         raise ValueError(f"symbols must be strings, got {not_strings!r}")
     tickers = normalize_symbols(symbols) or read_watchlist()
-    bad = [symbol for symbol in tickers if not _SYMBOL.fullmatch(symbol)]
+    bad = [symbol for symbol in tickers if not SYMBOL_PATTERN.fullmatch(symbol)]
     if bad:
         raise ValueError(
             f"malformed symbols {bad}: expected 1-6 of A-Z, 0-9, '.', '-' starting with a letter"
@@ -123,61 +124,6 @@ def month_jobs(jobs: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
         )
         entry["symbols"].append(job["symbol"])
     return list(months.values())
-
-
-def merge_into_slices(table: "Table", fetched: "pd.DataFrame | None") -> dict[str, int]:
-    """Write fetched DoltHub rows into their daily dolthub slices, replacing only what was fetched.
-
-    For every date present in ``fetched`` the slice is read, the rows of each underlying that
-    has fetched rows on that date are replaced by them, every other row is kept, and the slice
-    is overwritten with one ``write_partition`` call. Absence is not information: an underlying
-    with no fetched rows for a date (an empty or partial DoltHub response) keeps whatever the
-    slice already holds for it, and dates with no fetched rows are not touched at all. A slice
-    whose content would not change is not written.
-
-    Args:
-        table: The bronze table.
-        fetched: DoltHub rows, any underlyings and dates, or None when nothing was fetched.
-
-    Returns:
-        ``{"days": slices written, "unchanged": slices skipped, "rows": rows written}``.
-    """
-    from oap.ingest.iceberg_writer import content_hash, read_partition, write_partition
-
-    counts = {"days": 0, "unchanged": 0, "rows": 0}
-    if fetched is None or fetched.empty:
-        return counts
-    fetched_days = _session_dates(fetched)
-    for day in sorted(set(fetched_days)):
-        existing = read_partition(table, trade_date=day, source=SOURCE)
-        merged = merge_day(existing, fetched[(fetched_days == day).to_numpy()])
-        if content_hash(merged) == content_hash(existing):
-            counts["unchanged"] += 1
-            continue
-        counts["rows"] += write_partition(table, merged, trade_date=day, source=SOURCE)
-        counts["days"] += 1
-    return counts
-
-
-def merge_day(existing: "pd.DataFrame", fetched_day: "pd.DataFrame") -> "pd.DataFrame":
-    """Combine one day's existing slice with the rows fetched for that day. Pure.
-
-    The underlyings to replace are the ones present in ``fetched_day``; rows of every other
-    underlying in ``existing`` are kept as they are.
-
-    Args:
-        existing: The slice as it is in the table (may be empty).
-        fetched_day: Fetched rows for this day (may be empty, which keeps ``existing``).
-
-    Returns:
-        The new content of the slice.
-    """
-    import pandas as pd
-
-    replaced = list(fetched_day["underlying"].unique())
-    parts = [existing[~existing["underlying"].isin(replaced)], fetched_day]
-    parts = [part for part in parts if not part.empty]
-    return pd.concat(parts, ignore_index=True) if parts else existing.iloc[0:0]
 
 
 @dag(
@@ -261,6 +207,9 @@ def backfill_chains() -> None:
         """Merge one month's staged symbols into its daily slices and overwrite them."""
         import pandas as pd
 
+        from oap.ingest.merge import merge_into_slices
+        from oap.ingest.tables import OPTION_CHAIN
+
         context = get_current_context()
         source_dir = staging_dir("backfill", context["run_id"], job["month"])
         symbols: list[str] = job["symbols"]
@@ -277,7 +226,12 @@ def backfill_chains() -> None:
             raise AirflowFailException(f"{job['month']}: fetch failed for {', '.join(missing)}")
 
         if frames:
-            counts = merge_into_slices(bronze_table(), pd.concat(frames, ignore_index=True))
+            counts = merge_into_slices(
+                bronze_table(),
+                pd.concat(frames, ignore_index=True),
+                source=SOURCE,
+                spec=OPTION_CHAIN,
+            )
         else:
             counts = {"days": 0, "unchanged": 0, "rows": 0}
         shutil.rmtree(source_dir, ignore_errors=True)

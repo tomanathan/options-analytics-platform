@@ -21,9 +21,12 @@ QUOTE_SELECT: Final = (
     "cast(underlying_close as double) as underlying_close, dte_days from quotes"
 )
 QUOTES_SQL: Final = QUOTE_SELECT + " where underlying = '{underlying}'"
-LATEST_QUOTES_SQL: Final = (
-    QUOTE_SELECT + " qualify trade_date = max(trade_date) over (partition by underlying)"
-)
+LATEST_QUOTES_SQL: Final = QUOTE_SELECT + " qualify trade_date = max(trade_date) over ()"
+"""The quotes of the single latest ``trade_date`` across all underlyings.
+
+One session for every underlying: an underlying with no quotes on that date (a symbol the
+vendor skipped, a delisting) is absent from the scores rather than ranked on a stale chain.
+"""
 OUTCOMES_SQL: Final = (
     "select underlying, expiration, settlement_date, "
     "cast(settlement_close as double) as settlement_close from outcomes"
@@ -231,13 +234,17 @@ def read_quotes(rel: Relation, underlying: str) -> pd.DataFrame:
 
 
 def read_latest_quotes(rel: Relation) -> pd.DataFrame:
-    """Read each underlying's latest session from ``gold.fct_option_quote``.
+    """Read the latest session from ``gold.fct_option_quote``.
+
+    The session is the one global maximum ``trade_date`` over all underlyings, so spreads
+    of different underlyings are ranked on the same day and a stale underlying is left out.
 
     Args:
         rel: The ``fct_option_quote`` relation.
 
     Returns:
-        Quote rows on each underlying's own maximum ``trade_date``.
+        Quote rows on the maximum ``trade_date`` of the whole relation; empty when the
+        relation is empty.
     """
     return read_table(rel.query("quotes", LATEST_QUOTES_SQL))
 

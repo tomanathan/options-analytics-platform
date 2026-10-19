@@ -5,7 +5,7 @@ decimal annual percentage yields (0.045 is 4.5% APY), times are in years or whol
 days, probabilities are decimals in [0, 1], and moneyness is a strike divided by the
 underlying close, a dimensionless ratio.
 
-Rate source. ``risk_free_apy`` is one documented constant. Phase N will load the daily
+Rate source. ``risk_free_apy`` is one documented constant. Phase 4 will load the daily
 3-month T-bill yield (FRED DTB3) into bronze and use the rate of each trade date. The
 bias of a constant is small: the rate enters the CDF through the growth factor
 ``g = (1 + rate) ** years``, which scales the forward and the slopes by ``g``. Using 4.5%

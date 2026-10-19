@@ -32,7 +32,7 @@ from oap.analytics.sample import (
     build_predictions,
     classify_snapshots,
 )
-from oap.analytics.scoring import SPREAD_COLUMNS, latest_session, score_latest_session
+from oap.analytics.scoring import SPREAD_COLUMNS, score_latest_session
 from oap.engine.calibration import CalibrationMap
 from tests.analytics.frames import (
     daily_frame,
@@ -113,12 +113,22 @@ def test_malicious_or_malformed_symbols_are_rejected(
         read_quotes(con.table("fct_option_quote"), symbol)
 
 
-def test_latest_quotes_use_each_underlyings_own_maximum(con: duckdb.DuckDBPyConnection) -> None:
+def test_latest_quotes_are_the_global_latest_session_only(
+    con: duckdb.DuckDBPyConnection,
+) -> None:
     latest = read_latest_quotes(con.table("fct_option_quote"))
-    by_underlying = latest.groupby("underlying")["trade_date"].agg(["min", "max"])
-    assert by_underlying.loc["SPY", "min"] == pd.Timestamp("2024-01-05")
-    assert by_underlying.loc["AAPL", "max"] == pd.Timestamp("2024-01-04")
-    assert len(latest) == 4
+
+    # AAPL's own latest date (2024-01-04) is older than the global one, so it is left out
+    # instead of being ranked next to a session that is a day newer.
+    assert set(latest["trade_date"]) == {pd.Timestamp("2024-01-05")}
+    assert sorted(latest["underlying"]) == ["BRK.B", "SPY", "SPY"]
+    assert len(latest) == 3
+
+
+def test_latest_quotes_of_an_empty_relation_are_empty(con: duckdb.DuckDBPyConnection) -> None:
+    con.execute("delete from fct_option_quote")
+
+    assert read_latest_quotes(con.table("fct_option_quote")).empty
 
 
 def test_outcomes_and_daily(con: duckdb.DuckDBPyConnection) -> None:
@@ -256,9 +266,7 @@ def test_real_outputs_pass_through_to_output(con: duckdb.DuckDBPyConnection) -> 
         "calibration_sample": sample,
         "calibration_metrics": calibration_metrics(sample),
         "calibration_bins": calibration_bins(sample),
-        "spread_scores": score_latest_session(
-            latest_session(quotes, min_dte_days=7), CalibrationMap.identity(0)
-        ),
+        "spread_scores": score_latest_session(quotes, CalibrationMap.identity(0)),
     }
     assert set(tables) == set(OUTPUT_SCHEMAS)
     for name, frame in tables.items():

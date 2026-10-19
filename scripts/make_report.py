@@ -96,6 +96,9 @@ class ReportData:
         maps: One row per calibration map: id, fold, training size, knots and identity flag.
         scores: The eligible spreads of the latest session, best rank first.
         flags: Share of snapshots in the sample carrying each implied-CDF quality flag.
+        snapshots_per_expiration: Mean number of chain snapshots per distinct expiration date
+            in ``calibration_sample`` (the cluster of the bootstrap interval), or None when
+            the sample is empty.
     """
 
     as_of: date | None
@@ -106,6 +109,7 @@ class ReportData:
     maps: pd.DataFrame
     scores: pd.DataFrame
     flags: pd.DataFrame
+    snapshots_per_expiration: float | None
 
 
 # --- loading ---------------------------------------------------------------------------------
@@ -145,7 +149,7 @@ order by any_value(fold) nulls last, map_id
 """
 
 _SCORES_SQL = """
-select "rank", underlying, expiration, dte_days, short_strike, long_strike, credit,
+select "rank", underlying, trade_date, expiration, dte_days, short_strike, long_strike, credit,
     credit_natural, prob_profit, prob_profit_raw, expected_roc, expected_roc_raw,
     annualised_roc, annualised_roc_raw, cash_apy
 from gold.spread_scores
@@ -168,6 +172,12 @@ order by flag
 """
 
 
+_CLUSTER_SQL = """
+select count(*) * 1.0 / count(distinct expiration)
+from (select distinct underlying, trade_date, expiration from gold.calibration_sample)
+"""
+
+
 def load_report_data(con: duckdb.DuckDBPyConnection, *, top: int) -> ReportData:
     """Read the gold tables into the frames the report is rendered from.
 
@@ -185,6 +195,7 @@ def load_report_data(con: duckdb.DuckDBPyConnection, *, top: int) -> ReportData:
     if top < 1:
         raise ValueError("top must be at least 1")
     row = con.execute("select max(trade_date) from gold.spread_scores").fetchone()
+    cluster = con.execute(_CLUSTER_SQL).fetchone()
     return ReportData(
         as_of=None if row is None or row[0] is None else _as_date(row[0]),
         coverage=con.execute(_COVERAGE_SQL).df(),
@@ -194,6 +205,7 @@ def load_report_data(con: duckdb.DuckDBPyConnection, *, top: int) -> ReportData:
         maps=con.execute(_MAPS_SQL).df(),
         scores=con.execute(_SCORES_SQL).df(),
         flags=con.execute(_FLAGS_SQL).df(),
+        snapshots_per_expiration=None if cluster is None else _num(cluster[0]),
     )
 
 
@@ -372,7 +384,9 @@ def _status_section(data: ReportData) -> str:
     return (
         "## Snapshot exclusions\n\n"
         "Every chain snapshot is classified; only `ok` snapshots produce predictions. "
-        "Nothing is dropped without being counted here.\n\n" + table
+        "Snapshot exclusions are counted here. Row-level filters (crossed quotes, inconsistent "
+        "OHLC bars, staging filters) are logged by the loaders and are not counted in this "
+        "report.\n\n" + table
     )
 
 
@@ -461,6 +475,7 @@ def _spread_rows(scores: pd.DataFrame) -> list[list[str]]:
         [
             _count(r["rank"]),
             str(r["underlying"]),
+            _day(r["trade_date"]),
             _day(r["expiration"]),
             _count(r["dte_days"]),
             f"{_num(r['short_strike']):g}/{_num(r['long_strike']):g}",
@@ -478,6 +493,7 @@ def _spread_rows(scores: pd.DataFrame) -> list[list[str]]:
 SPREAD_HEADERS: Final[tuple[str, ...]] = (
     "Rank",
     "Underlying",
+    "Session",
     "Expiration",
     "DTE",
     "Short/long",
@@ -535,9 +551,15 @@ def _caveats_section(data: ReportData) -> str:
         for name in sorted(flags)
         if "TAIL" in name.upper()
     )
+    per_expiration = data.snapshots_per_expiration
+    sharing = (
+        ""
+        if per_expiration is None
+        else f"on average {per_expiration:.1f} snapshots share an expiration, "
+    )
     bullets = [
-        "**Correlated samples.** Each snapshot contributes up to 13 nested targets, about eight "
-        "snapshots share an expiration, and the market moves together on an expiration date. The "
+        "**Correlated samples.** Each snapshot contributes up to 13 nested targets, "
+        f"{sharing}and the market moves together on an expiration date. The "
         "interval above resamples expiration dates for that reason.",
         "**Sparse chains and zero bids.** Only quotes with a positive bid and an ask at or above "
         f"the bid are used; {_count(counts.get('too_few_puts', 0))} snapshots with fewer than 4 "
@@ -547,7 +569,7 @@ def _caveats_section(data: ReportData) -> str:
         f"with a flagged tail: {tail or 'none'}.",
         "**Splits and unadjusted closes.** Closes are as traded. "
         f"{_count(counts.get('split_in_window', 0))} snapshots whose window contains a daily move "
-        "beyond 0.4 in log terms are excluded.",
+        f"beyond {DEFAULT_CONFIG.split_abs_log_return:g} in log terms are excluded.",
         f"**Ticker reuse.** {_count(counts.get('ticker_reused', 0))} snapshots predate the current "
         "company behind a reused symbol.",
         "**Hindsight in the universe.** The watchlist is today's large caps, which biases the "

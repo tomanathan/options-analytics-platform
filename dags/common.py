@@ -73,10 +73,12 @@ same time (a backfill month and the daily snapshot, say) would fight over its wr
 def is_deterministic(exc: BaseException) -> bool:
     """Say whether retrying a task that raised ``exc`` cannot change the outcome.
 
-    Deterministic: bad or missing Alpaca credentials, an HTTP 4xx other than 429, the wrong
-    session, a schema or quality failure, and any ``ValueError`` (``pyarrow.ArrowInvalid`` is
-    one). Retryable: DoltHub and transport errors, and an ``AlpacaError`` raised after its
-    own retries ran out, which carries the retryable error as ``__cause__``.
+    Deterministic: bad or missing Alpaca credentials, an HTTP 4xx other than 429, a non-JSON
+    body, an unexpected response shape, a SQL error, the wrong session, a schema or quality
+    failure, and any ``ValueError`` (``pyarrow.ArrowInvalid`` is one). Retryable: transport
+    errors, and an ``AlpacaError`` or ``DoltHubError`` raised after the client's own retries
+    ran out (429, 5xx, timeouts), which carries that module's ``_RetryableError`` as
+    ``__cause__``.
 
     Args:
         exc: The exception a task raised.
@@ -87,11 +89,16 @@ def is_deterministic(exc: BaseException) -> bool:
     import pandera.errors
     import pyarrow as pa
 
-    from oap.ingest.alpaca import AlpacaError, _RetryableError
+    from oap.ingest.alpaca import AlpacaError
+    from oap.ingest.alpaca import _RetryableError as AlpacaRetryable
+    from oap.ingest.dolthub import DoltHubError
+    from oap.ingest.dolthub import _RetryableError as DoltHubRetryable
     from oap.quality.bronze_suite import BronzeQualityError
 
     if isinstance(exc, AlpacaError):
-        return not isinstance(exc.__cause__, _RetryableError)
+        return not isinstance(exc.__cause__, AlpacaRetryable)
+    if isinstance(exc, DoltHubError):
+        return not isinstance(exc.__cause__, DoltHubRetryable)
     return isinstance(
         exc, ValueError | pa.ArrowInvalid | pandera.errors.SchemaErrors | BronzeQualityError
     )

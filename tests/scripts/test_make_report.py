@@ -1,3 +1,4 @@
+import dataclasses
 import re
 from datetime import date
 from pathlib import Path
@@ -151,6 +152,20 @@ def _write_gold(path: Path, *, with_oos: bool = True, omit: tuple[str, ...] = ()
             for u in UNDERLYINGS
             for m in (0.95, 1.0)
         ]
+        # Two more snapshots, so five snapshots fall on two expirations (2.5 per expiration).
+        + [
+            {
+                "underlying": u,
+                "trade_date": t,
+                "expiration": e,
+                "moneyness": 1.0,
+                "cdf_flags": "",
+            }
+            for u, t, e in (
+                ("TSLA", date(2024, 6, 14), date(2024, 7, 19)),
+                ("SPY", date(2024, 6, 13), date(2024, 8, 16)),
+            )
+        ]
     )
     maps = pd.DataFrame(
         [
@@ -242,7 +257,7 @@ def test_the_top_table_has_at_most_ten_rows_in_rank_order(db: Path, tmp_path: Pa
 
     assert len(rows) == 10
     assert ranks == list(range(1, 11))
-    assert "| 1 | AAPL | 2024-07-19 | 35 | 100/90 |" in section
+    assert "| 1 | AAPL | 2024-06-14 | 2024-07-19 | 35 | 100/90 |" in section
 
 
 def test_top_limits_the_table(db: Path, tmp_path: Path) -> None:
@@ -313,14 +328,73 @@ def test_snapshot_exclusions_and_caveat_counts_come_from_the_database(
     assert "| `ok` | 3 | 33.3% | enters the calibration sample |" in text
     assert "| `too_few_puts` | 3 |" in text
     assert "3 snapshots with fewer than 4 usable puts" in text
-    assert "right tail uncovered 33.3%" in text
+    assert "right tail uncovered 20.0%" in text
+
+
+def test_the_top_table_shows_the_session_of_every_row(db: Path, tmp_path: Path) -> None:
+    _run(db, tmp_path)
+    section = (tmp_path / "results.md").read_text().split("## Top put credit spreads")[1]
+    section = section.split("## How to read this")[0]
+
+    header = next(line for line in section.splitlines() if line.startswith("| Rank"))
+    rows = [line for line in section.splitlines() if re.match(r"\| \d+ \|", line)]
+
+    assert [cell.strip() for cell in header.strip("|").split("|")[:3]] == [
+        "Rank",
+        "Underlying",
+        "Session",
+    ]
+    assert report.SPREAD_HEADERS[:3] == ("Rank", "Underlying", "Session")
+    assert all(line.split("|")[3].strip() == "2024-06-14" for line in rows)
+
+
+def test_the_exclusions_note_does_not_claim_row_level_filters_are_counted(
+    db: Path, tmp_path: Path
+) -> None:
+    _run(db, tmp_path)
+    text = (tmp_path / "results.md").read_text()
+
+    assert "Nothing is dropped" not in text
+    assert "Snapshot exclusions are counted here." in text
+    assert "logged by the loaders and are not counted in this report" in text
+
+
+def test_the_caveats_use_the_computed_cluster_size_and_the_configured_split_threshold(
+    db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run(db, tmp_path)
+    text = (tmp_path / "results.md").read_text()
+
+    assert "on average 2.5 snapshots share an expiration" in text
+    assert "about eight" not in text
+    assert f"beyond {DEFAULT_CONFIG.split_abs_log_return:g} in log terms" in text
+
+    monkeypatch.setattr(
+        report, "DEFAULT_CONFIG", dataclasses.replace(DEFAULT_CONFIG, split_abs_log_return=0.55)
+    )
+    _run(db, tmp_path)
+    assert "beyond 0.55 in log terms" in (tmp_path / "results.md").read_text()
+
+
+def test_the_cluster_size_is_omitted_when_the_sample_is_empty(tmp_path: Path) -> None:
+    path = tmp_path / "nosample.duckdb"
+    _write_gold(path)
+    con = duckdb.connect(str(path))
+    con.execute("delete from gold.calibration_sample")
+    con.close()
+
+    assert _run(path, tmp_path / "out") == 0
+
+    text = (tmp_path / "out" / "results.md").read_text()
+    assert "snapshots share an expiration" not in text
+    assert "and the market moves together on an expiration date" in text
 
 
 def test_coverage_totals(db: Path, tmp_path: Path) -> None:
     _run(db, tmp_path)
     text = (tmp_path / "results.md").read_text()
 
-    assert "| SPY | 2024-06-13 | 2024-06-14 | 2 | 3 | 2 | 2 |" in text
+    assert "| SPY | 2024-06-13 | 2024-06-14 | 2 | 3 | 2 | 3 |" in text
     assert "In total: 18 quotes on 18 contracts, in 9 chain snapshots" in text
 
 
