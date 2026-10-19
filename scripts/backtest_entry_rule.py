@@ -47,6 +47,7 @@ from oap.analytics.strategy import (
     strategy_metrics,
     strategy_names,
 )
+from oap.engine.calibration import CalibrationMap
 
 REQUIRED_TABLES: Final[tuple[str, ...]] = (
     "fct_option_quote",
@@ -69,14 +70,14 @@ INK: Final = "#0b0b0b"
 INK_MUTED: Final = "#52514e"
 IMAGE_DPI: Final = 120
 
-_SNAPSHOT_SQL: Final = (
+SNAPSHOT_SQL: Final = (
     "select underlying, trade_date, expiration, status from gold.calibration_snapshot"
 )
-_SESSIONS_SQL: Final = (
+SESSIONS_SQL: Final = (
     "select distinct trade_date from gold.calibration_snapshot where status = '{ok}' "
     "and trade_date >= DATE '{start}' order by trade_date"
 )
-_MONTH_SQL: Final = (
+MONTH_SQL: Final = (
     QUOTE_SELECT + " where trade_date >= DATE '{first}' and trade_date <= DATE '{last}'"
 )
 
@@ -114,37 +115,37 @@ class BacktestSummary:
 # --- formatting ------------------------------------------------------------------------------
 
 
-def _missing(value: object) -> bool:
+def fmt_missing(value: object) -> bool:
     """Say whether a scalar is missing (None, NaN, NA or NaT)."""
     return value is None or bool(pd.isna(value))  # type: ignore[call-overload]
 
 
-def _percent(value: object, digits: int = 1) -> str:
+def fmt_percent(value: object, digits: int = 1) -> str:
     """Format a decimal as a percentage, or ``n/a`` when it is missing."""
-    return "n/a" if _missing(value) else f"{float(value) * 100:.{digits}f}%"  # type: ignore[arg-type]
+    return "n/a" if fmt_missing(value) else f"{float(value) * 100:.{digits}f}%"  # type: ignore[arg-type]
 
 
-def _points(value: object) -> str:
+def fmt_points(value: object) -> str:
     """Format a probability difference as signed percentage points, or ``n/a``."""
-    return "n/a" if _missing(value) else f"{float(value) * 100:+.1f} pp"  # type: ignore[arg-type]
+    return "n/a" if fmt_missing(value) else f"{float(value) * 100:+.1f} pp"  # type: ignore[arg-type]
 
 
-def _fixed(value: object, digits: int = 2) -> str:
+def fmt_fixed(value: object, digits: int = 2) -> str:
     """Format a number with fixed decimals, or ``n/a`` when it is missing."""
-    return "n/a" if _missing(value) else f"{float(value):.{digits}f}"  # type: ignore[arg-type]
+    return "n/a" if fmt_missing(value) else f"{float(value):.{digits}f}"  # type: ignore[arg-type]
 
 
-def _count(value: object) -> str:
+def fmt_count(value: object) -> str:
     """Format a count with thousands separators, or ``n/a`` when it is missing."""
-    return "n/a" if _missing(value) else f"{round(float(value)):,}"  # type: ignore[arg-type]
+    return "n/a" if fmt_missing(value) else f"{round(float(value)):,}"  # type: ignore[arg-type]
 
 
-def _day(value: object) -> str:
+def fmt_day(value: object) -> str:
     """Format a date as ISO 8601, or ``n/a`` when it is missing."""
-    return "n/a" if _missing(value) else pd.Timestamp(str(value)).date().isoformat()
+    return "n/a" if fmt_missing(value) else pd.Timestamp(str(value)).date().isoformat()
 
 
-def _table(
+def fmt_table(
     headers: Sequence[str], rows: Sequence[Sequence[str]], *, left: Sequence[int] = (0,)
 ) -> str:
     """Render a markdown table; the columns in ``left`` are left-aligned, the rest right."""
@@ -174,12 +175,12 @@ def _value(index: _Index, key: tuple[str, str, str, str], column: str = "value")
 def _with_ci(index: _Index, strategy: str, metric: str) -> str:
     """Format an overall percentage metric with its bootstrap interval."""
     base = ("overall", "all")
-    value = _percent(_value(index, (strategy, *base, metric)))
+    value = fmt_percent(_value(index, (strategy, *base, metric)))
     low = _value(index, (strategy, *base, f"{metric}_ci_low"))
     high = _value(index, (strategy, *base, f"{metric}_ci_high"))
-    if _missing(low) or _missing(high):
+    if fmt_missing(low) or fmt_missing(high):
         return value
-    return f"{value} ({_percent(low)} to {_percent(high)})"
+    return f"{value} ({fmt_percent(low)} to {fmt_percent(high)})"
 
 
 # --- markdown --------------------------------------------------------------------------------
@@ -243,21 +244,21 @@ def _overall_section(summary: BacktestSummary, index: _Index) -> str:
         rows.append(
             [
                 f"`{strategy}`",
-                _count(_value(index, (*key, "win_rate"), "n_trades")),
-                _count(_value(index, (*key, "win_rate"), "n_sessions")),
+                fmt_count(_value(index, (*key, "win_rate"), "n_trades")),
+                fmt_count(_value(index, (*key, "win_rate"), "n_sessions")),
                 _with_ci(index, strategy, "win_rate"),
-                _percent(_value(index, (*key, "mean_predicted_pop"))),
-                _points(_value(index, (*key, "pop_gap_realised"))),
+                fmt_percent(_value(index, (*key, "mean_predicted_pop"))),
+                fmt_points(_value(index, (*key, "pop_gap_realised"))),
                 _with_ci(index, strategy, "mean_realised_return"),
-                _percent(_value(index, (*key, "mean_predicted_return")), 2),
-                _percent(_value(index, (*key, "total_return")), 2),
-                _percent(_value(index, (*key, "median_realised_return")), 2),
-                _percent(_value(index, (*key, "worst_trade_return"))),
-                _percent(_value(index, (*key, "max_loss_rate"))),
-                _fixed(_value(index, (*key, "sharpe_per_trade"))),
-                _fixed(_value(index, (*key, "max_drawdown"))),
-                _fixed(_value(index, (*key, "max_drawdown_session"))),
-                _fixed(_value(index, (*key, "avg_dte_days")), 1),
+                fmt_percent(_value(index, (*key, "mean_predicted_return")), 2),
+                fmt_percent(_value(index, (*key, "total_return")), 2),
+                fmt_percent(_value(index, (*key, "median_realised_return")), 2),
+                fmt_percent(_value(index, (*key, "worst_trade_return"))),
+                fmt_percent(_value(index, (*key, "max_loss_rate"))),
+                fmt_fixed(_value(index, (*key, "sharpe_per_trade"))),
+                fmt_fixed(_value(index, (*key, "max_drawdown"))),
+                fmt_fixed(_value(index, (*key, "max_drawdown_session"))),
+                fmt_fixed(_value(index, (*key, "avg_dte_days")), 1),
             ]
         )
     entry, by_return, baseline = strategy_names(summary.top_n)
@@ -279,7 +280,7 @@ def _overall_section(summary: BacktestSummary, index: _Index) -> str:
         "## Out of sample, overall\n\n"
         + legend
         + "\n\n"
-        + _table(OVERALL_HEADERS, rows)
+        + fmt_table(OVERALL_HEADERS, rows)
         + "\n\n"
         + note
     )
@@ -297,22 +298,22 @@ def _segment_section(
         rows.append(
             [
                 segment,
-                _count(_value(index, (*key, "win_rate"), "n_trades")),
-                _count(_value(index, (*key, "win_rate"), "n_sessions")),
-                _percent(_value(index, (*key, "win_rate"))),
-                _percent(_value(index, (*key, "mean_predicted_pop"))),
-                _points(_value(index, (*key, "pop_gap_realised"))),
-                _percent(_value(index, (*key, "mean_realised_return")), 2),
-                _percent(_value(index, (*key, "mean_predicted_return")), 2),
-                _percent(_value(index, (*key, "total_return")), 2),
-                _percent(_value(index, (*key, "max_loss_rate"))),
-                _fixed(_value(index, (*key, "max_drawdown"))),
+                fmt_count(_value(index, (*key, "win_rate"), "n_trades")),
+                fmt_count(_value(index, (*key, "win_rate"), "n_sessions")),
+                fmt_percent(_value(index, (*key, "win_rate"))),
+                fmt_percent(_value(index, (*key, "mean_predicted_pop"))),
+                fmt_points(_value(index, (*key, "pop_gap_realised"))),
+                fmt_percent(_value(index, (*key, "mean_realised_return")), 2),
+                fmt_percent(_value(index, (*key, "mean_predicted_return")), 2),
+                fmt_percent(_value(index, (*key, "total_return")), 2),
+                fmt_percent(_value(index, (*key, "max_loss_rate"))),
+                fmt_fixed(_value(index, (*key, "max_drawdown"))),
             ]
         )
     head = f"## {title} (`{strategy}`)\n\n"
     if not rows:
         return head + "No out-of-sample trades."
-    return head + _table((label, *SEGMENT_HEADERS), rows)
+    return head + fmt_table((label, *SEGMENT_HEADERS), rows)
 
 
 def _worst_section(summary: BacktestSummary) -> str:
@@ -328,19 +329,19 @@ def _worst_section(summary: BacktestSummary) -> str:
     )
     rows = [
         [
-            _day(r["trade_date"]),
+            fmt_day(r["trade_date"]),
             str(r["underlying"]),
-            _day(r["expiration"]),
+            fmt_day(r["expiration"]),
             f"{float(r['short_strike']):g}/{float(r['long_strike']):g}",
-            _fixed(r["credit_natural"]),
-            _percent(r["prob_profit"]),
-            _fixed(r["settlement_close"]),
-            _fixed(r["realised_payoff"]),
-            _percent(r["realised_return"]),
+            fmt_fixed(r["credit_natural"]),
+            fmt_percent(r["prob_profit"]),
+            fmt_fixed(r["settlement_close"]),
+            fmt_fixed(r["realised_payoff"]),
+            fmt_percent(r["realised_return"]),
         ]
         for _, r in worst.iterrows()
     ]
-    return head + _table(WORST_HEADERS, rows, left=(0, 1, 2))
+    return head + fmt_table(WORST_HEADERS, rows, left=(0, 1, 2))
 
 
 def _caveats_section() -> str:
@@ -376,16 +377,16 @@ def render_markdown(summary: BacktestSummary) -> str:
     """
     index = _index(summary.metrics)
     entry = strategy_names(summary.top_n)[0]
-    oos = ", ".join(f"`{k}` {_count(v)}" for k, v in summary.oos_trades.items()) or "none"
+    oos = ", ".join(f"`{k}` {fmt_count(v)}" for k, v in summary.oos_trades.items()) or "none"
     head = (
         f"# Strategy backtest: the Top {summary.top_n} rule applied historically\n\n"
         f"`{entry}` takes, on every session, the spreads the live ranking would have listed "
         f'under "Top {summary.top_n} to enter": {ENTRY_RULE} Each session is scored by the '
         "same code as the latest one, with only the calibration map that existed at the time.\n\n"
-        f"Sessions scored: {_count(summary.sessions)} ({_day(summary.first_session)} to "
-        f"{_day(summary.last_session)}); with at least one `{entry}` trade: "
-        f"{_count(summary.sessions_with_trades)}. Trades dropped as unsettled: "
-        f"{_count(summary.unsettled)}. Out-of-sample trades: {oos}."
+        f"Sessions scored: {fmt_count(summary.sessions)} ({fmt_day(summary.first_session)} to "
+        f"{fmt_day(summary.last_session)}); with at least one `{entry}` trade: "
+        f"{fmt_count(summary.sessions_with_trades)}. Trades dropped as unsettled: "
+        f"{fmt_count(summary.unsettled)}. Out-of-sample trades: {oos}."
     )
     if summary.metrics.empty:
         body = [
@@ -413,7 +414,7 @@ def render_markdown(summary: BacktestSummary) -> str:
 # --- figure ----------------------------------------------------------------------------------
 
 
-def _style(ax: Axes) -> None:
+def style_axes(ax: Axes) -> None:
     """Apply a recessive grid and spines."""
     ax.grid(True, color="#e6e5e0", linewidth=0.6)
     ax.set_axisbelow(True)
@@ -424,7 +425,7 @@ def _style(ax: Axes) -> None:
     ax.tick_params(colors=INK_MUTED, labelsize=9)
 
 
-def _save(fig: Figure, path: Path) -> None:
+def save_figure(fig: Figure, path: Path) -> None:
     """Write a figure as a PNG with no software metadata, creating the directory."""
     path.parent.mkdir(parents=True, exist_ok=True)
     FigureCanvasAgg(fig)
@@ -445,7 +446,7 @@ def plot_equity(curve: pd.DataFrame, path: Path, *, top_n: int) -> None:
     if curve.empty:
         ax.axis("off")
         ax.text(0.5, 0.5, "No out-of-sample trades", ha="center", va="center", color=INK_MUTED)
-        _save(fig, path)
+        save_figure(fig, path)
         return
     entry, by_return, baseline = strategy_names(top_n)
     styles = ((entry, BLUE, "-", 2.0), (by_return, ORANGE, "--", 1.5), (baseline, GREY, ":", 1.5))
@@ -486,30 +487,95 @@ def plot_equity(curve: pd.DataFrame, path: Path, *, top_n: int) -> None:
         color=INK,
     )
     ax.legend(frameon=False, fontsize=8, loc="lower left")
-    _style(ax)
-    _save(fig, path)
+    style_axes(ax)
+    save_figure(fig, path)
 
 
 # --- command line ----------------------------------------------------------------------------
 
 
-def _missing_tables(con: duckdb.DuckDBPyConnection) -> list[str]:
-    """Return the names of the required tables that the ``gold`` schema lacks."""
+def missing_tables(
+    con: duckdb.DuckDBPyConnection, required: Sequence[str] = REQUIRED_TABLES
+) -> list[str]:
+    """Return the names of the ``required`` tables that the ``gold`` schema lacks."""
     found = {
         str(r[0])
         for r in con.execute(
             "select table_name from information_schema.tables where table_schema = 'gold'"
         ).fetchall()
     }
-    return [t for t in REQUIRED_TABLES if t not in found]
+    return [t for t in required if t not in found]
 
 
-def _months(sessions: Sequence[date]) -> list[list[date]]:
+def months(sessions: Sequence[date]) -> list[list[date]]:
     """Group sorted session dates by calendar month, preserving order."""
     groups: dict[tuple[int, int], list[date]] = {}
     for day in sessions:
         groups.setdefault((day.year, day.month), []).append(day)
     return list(groups.values())
+
+
+@dataclass(frozen=True)
+class BacktestInputs:
+    """The gold tables read once per run.
+
+    Attributes:
+        snapshots: ``calibration_snapshot`` rows (snapshot key and ``status``).
+        outcomes: ``fct_expiration_outcome`` rows (settlement close in dollars per share).
+        map_table: ``calibration_map`` rows.
+        maps: The calibration maps keyed by map id.
+    """
+
+    snapshots: pd.DataFrame
+    outcomes: pd.DataFrame
+    map_table: pd.DataFrame
+    maps: dict[str, CalibrationMap]
+
+
+def load_inputs(con: duckdb.DuckDBPyConnection) -> BacktestInputs:
+    """Read the snapshots, outcomes and calibration maps of the ``gold`` schema.
+
+    Args:
+        con: Connection to a DuckDB file with the ``gold`` schema.
+
+    Returns:
+        The inputs every session of the backtest shares.
+    """
+    map_table = read_table(con.table("gold.calibration_map"))
+    return BacktestInputs(
+        snapshots=read_table(con.sql(SNAPSHOT_SQL)),
+        outcomes=read_outcomes(con.table("gold.fct_expiration_outcome")),
+        map_table=map_table,
+        maps=maps_from_frame(map_table),
+    )
+
+
+def ok_sessions(con: duckdb.DuckDBPyConnection, start: date) -> list[date]:
+    """Return every session from ``start`` with at least one ok snapshot, ascending.
+
+    Args:
+        con: Connection to a DuckDB file with the ``gold`` schema.
+        start: First session considered.
+
+    Returns:
+        The session dates.
+    """
+    sql = SESSIONS_SQL.format(ok=SnapshotStatus.OK.value, start=start.isoformat())
+    return [pd.Timestamp(r[0]).date() for r in con.execute(sql).fetchall()]
+
+
+def month_quotes(con: duckdb.DuckDBPyConnection, month: Sequence[date]) -> pd.DataFrame:
+    """Read the quotes of a run of sessions, normally one calendar month.
+
+    Args:
+        con: Connection to a DuckDB file with the ``gold`` schema.
+        month: Sorted session dates; the quotes from the first to the last are read.
+
+    Returns:
+        Quote rows with the columns of ``QUOTE_SELECT``.
+    """
+    sql = MONTH_SQL.format(first=month[0].isoformat(), last=month[-1].isoformat())
+    return read_table(con.table("gold.fct_option_quote").query("quotes", sql))
 
 
 def run_backtest(
@@ -525,24 +591,20 @@ def run_backtest(
     Returns:
         The summary, every settled trade and the map table.
     """
-    snapshots = read_table(con.sql(_SNAPSHOT_SQL))
-    outcomes = read_outcomes(con.table("gold.fct_expiration_outcome"))
-    map_table = read_table(con.table("gold.calibration_map"))
-    maps = maps_from_frame(map_table)
-    sessions = [
-        pd.Timestamp(r[0]).date()
-        for r in con.execute(
-            _SESSIONS_SQL.format(ok=SnapshotStatus.OK.value, start=start.isoformat())
-        ).fetchall()
-    ]
-    quotes_rel = con.table("gold.fct_option_quote")
+    inputs = load_inputs(con)
+    snapshots, outcomes, map_table, maps = (
+        inputs.snapshots,
+        inputs.outcomes,
+        inputs.map_table,
+        inputs.maps,
+    )
+    sessions = ok_sessions(con, start)
     parts: list[pd.DataFrame] = []
     unsettled = done = 0
     began = time.monotonic()
     print(f"backtesting {len(sessions)} sessions from {start.isoformat()}", file=sys.stderr)
-    for month in _months(sessions):
-        sql = _MONTH_SQL.format(first=month[0].isoformat(), last=month[-1].isoformat())
-        quotes = read_table(quotes_rel.query("quotes", sql))
+    for month in months(sessions):
+        quotes = month_quotes(con, month)
         for day in month:
             session = quotes.loc[quotes["trade_date"] == pd.Timestamp(day)]
             trades = backtest_session(session, snapshots, maps, DEFAULT_CONFIG, top_n=top_n)
@@ -609,7 +671,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"cannot open {args.db} (is a build writing it?): {exc}", file=sys.stderr)
         return 2
     try:
-        missing = _missing_tables(con)
+        missing = missing_tables(con)
         if missing:
             print(f"gold tables missing: {', '.join(missing)}", file=sys.stderr)
             return 2
