@@ -86,6 +86,12 @@ class AnalyticsConfig:
         min_credit: Smallest mid credit kept, in dollars per share.
         min_prob_profit: Smallest calibrated probability of profit for an eligible
             spread, a decimal in [0, 1].
+        min_edge_credit: Smallest mid credit, in dollars per share, for a spread to enter
+            the edge, reward-to-risk and entry rankings.
+        min_natural_fraction: Smallest natural credit as a share of the mid credit, a decimal
+            in [0, 1], for a spread to enter those rankings.
+        entry_min_pop: Smallest calibrated probability of profit, a decimal in [0, 1], for
+            a spread to enter the entry ranking.
     """
 
     risk_free_apy: float = 0.045
@@ -102,6 +108,9 @@ class AnalyticsConfig:
     max_width_fraction: float = 0.10
     min_credit: float = 0.10
     min_prob_profit: float = 0.5
+    min_edge_credit: float = 0.25
+    min_natural_fraction: float = 0.5
+    entry_min_pop: float = 0.65
 
     def __post_init__(self) -> None:
         """Validate ranges.
@@ -109,8 +118,9 @@ class AnalyticsConfig:
         Rates are decimal APYs and must exceed -1; moneyness values must be positive and
         strictly increasing; ``min_dte_days`` is in calendar days and at least 1;
         ``split_abs_log_return`` and ``max_width_fraction`` are positive decimals;
-        ``min_credit`` is non-negative dollars per share; ``min_prob_profit`` lies in
-        [0, 1]; counts must be positive.
+        ``min_credit`` and ``min_edge_credit`` are non-negative dollars per share;
+        ``min_prob_profit``, ``min_natural_fraction`` and ``entry_min_pop`` lie in [0, 1];
+        counts must be positive.
 
         Raises:
             ValueError: If any value is out of range.
@@ -142,6 +152,12 @@ class AnalyticsConfig:
             raise ValueError("min_credit must be non-negative")
         if not 0.0 <= self.min_prob_profit <= 1.0:
             raise ValueError("min_prob_profit must be in [0, 1]")
+        if not self.min_edge_credit >= 0:
+            raise ValueError("min_edge_credit must be non-negative")
+        if not 0.0 <= self.min_natural_fraction <= 1.0:
+            raise ValueError("min_natural_fraction must be in [0, 1]")
+        if not 0.0 <= self.entry_min_pop <= 1.0:
+            raise ValueError("entry_min_pop must be in [0, 1]")
 
 
 DEFAULT_CONFIG: Final = AnalyticsConfig()

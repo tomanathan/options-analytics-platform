@@ -283,6 +283,24 @@ models:
       - dbt_utils.expression_is_true:
           arguments:
             expression: "long_strike < short_strike and credit > 0 and credit < width"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "fair_credit >= 0 and fair_credit <= width + 1e-9 and fair_credit_raw >= 0 and fair_credit_raw <= width + 1e-9"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "edge = expected_payoff and abs(fair_credit + edge - credit) <= 1e-9 * greatest(1, width)"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "edge_pct <= 1"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "payoff_std >= 0 and payoff_std <= width / 2 + 1e-9"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "payoff_std = 0 or reward_to_risk is not null"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "pop_implied >= 0 and pop_implied <= 1 and abs(pop_gap) <= 1 and abs(pop_gap_raw) <= 1"
     columns:
       - name: spread_key
         description: Natural key, underlying|trade_date|expiration|short strike|long strike.
@@ -347,6 +365,48 @@ models:
         description: Risk-neutral expected return on max loss per year as a decimal. Collateral equals max loss, so this is also the return on collateral.
       - name: kelly_fraction
         description: Two-outcome Kelly fraction of capital, a decimal in [0, 1], from the calibrated probability of profit.
+      - name: fair_credit
+        description: Fair credit in dollars per share, the expected payout of the long put spread under the calibrated distribution (undiscounted), between 0 and the width.
+        data_tests:
+          - not_null
+      - name: fair_credit_raw
+        description: Fair credit in dollars per share under the risk-neutral CDF alone, between 0 and the width.
+      - name: edge
+        description: Edge in dollars per share, the mid credit minus the calibrated fair credit; equals expected_payoff.
+        data_tests:
+          - not_null
+      - name: edge_raw
+        description: Edge in dollars per share under the risk-neutral CDF alone, the mid credit minus the raw fair credit; equals the raw expected payoff.
+      - name: edge_natural
+        description: Natural edge in dollars per share, the natural credit minus the calibrated fair credit; shows whether the edge survives a fill at the natural price.
+      - name: edge_pct
+        description: Edge as a decimal share of the mid credit (0.25 is 25%), at most 1.
+        data_tests:
+          - not_null
+      - name: edge_pop
+        description: Calibrated minus risk-neutral probability of profit, a decimal in [-1, 1].
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -1
+                max_value: 1
+      - name: pop_implied
+        description: Probability of profit implied by the price under the binary approximation, max loss divided by width, a decimal in [0, 1].
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: pop_gap
+        description: Calibrated probability of profit minus the price-implied probability, a decimal in [-1, 1]; positive when the market pays more than the calibrated probability justifies. The probability-space twin of edge_pct.
+      - name: pop_gap_raw
+        description: Risk-neutral probability of profit minus the price-implied probability, a decimal in [-1, 1]; near 0 except for partial-loss and interest effects, so it serves as the control for pop_gap.
+      - name: payoff_std
+        description: Standard deviation in dollars per share of the spread payoff (and of the seller's profit and loss) under the calibrated distribution, between 0 and half the width.
+        data_tests:
+          - not_null
+      - name: reward_to_risk
+        description: Expected payoff divided by payoff_std, per trade and not annualised; null when payoff_std is 0.
       - name: calibrated
         description: True when the production map is not the identity map, so prob_profit differs from prob_profit_raw.
       - name: extrapolated
@@ -357,6 +417,18 @@ models:
         description: True when the spread is not extrapolated, has a positive natural credit, a short strike below the close and a calibrated probability of profit at or above the minimum.
       - name: rank
         description: Position among eligible spreads by calibrated annualised return, 1 for the best; null when not eligible.
+        data_tests:
+          - unique
+      - name: rank_edge
+        description: Position by edge as a share of the mid credit, 1 for the best, among eligible spreads with a mid credit and a natural credit that pass the guards; null otherwise.
+        data_tests:
+          - unique
+      - name: rank_rr
+        description: Position by reward to risk, 1 for the best and null reward to risk last, over the same guarded set as rank_edge; null outside it.
+        data_tests:
+          - unique
+      - name: rank_entry
+        description: Position in the Top to enter ranking, 1 for the best, among guarded spreads with a calibrated probability of profit at or above the entry minimum, a positive natural edge, no extrapolation and no tail, sparse or unknown-forward flag, ordered by annualised return on max loss then reward to risk; null otherwise.
         data_tests:
           - unique
       - name: map_id

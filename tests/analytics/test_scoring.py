@@ -1,13 +1,16 @@
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import oap.analytics.scoring as scoring_module
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID, AnalyticsConfig
 from oap.analytics.sample import chain_cdf
-from oap.analytics.scoring import SPREAD_COLUMNS, score_latest_session
+from oap.analytics.scoring import ENTRY_RULE, SPREAD_COLUMNS, score_latest_session
 from oap.engine.calibration import CalibrationMap
+from oap.engine.implied_distribution import QualityFlag, RiskNeutralCdf
 from oap.engine.spread_scoring import PutCreditSpread, score_spread
 from tests.analytics.frames import lognormal_quotes
 
@@ -143,6 +146,23 @@ def test_scores_equal_score_spread_with_the_calibration_argument() -> None:
             plain.expected_return_on_collateral, abs=1e-12
         )
         assert row["extrapolated"] == direct.extrapolated
+        assert row["fair_credit"] == pytest.approx(direct.fair_credit, abs=1e-12)
+        assert row["fair_credit_raw"] == pytest.approx(plain.fair_credit, abs=1e-12)
+        assert row["edge"] == pytest.approx(direct.expected_payoff, abs=1e-12)
+        assert row["edge"] == row["expected_payoff"]
+        assert row["edge_raw"] == pytest.approx(plain.expected_payoff, abs=1e-12)
+        assert row["edge_natural"] == pytest.approx(
+            row["credit_natural"] - direct.fair_credit, abs=1e-12
+        )
+        assert row["edge_pct"] == pytest.approx(direct.edge_pct, abs=1e-12)
+        assert row["edge_pop"] == pytest.approx(direct.prob_profit - plain.prob_profit, abs=1e-12)
+        assert row["pop_implied"] == pytest.approx(spread.pop_implied, abs=1e-12)
+        assert row["pop_gap"] == pytest.approx(direct.prob_profit - spread.pop_implied, abs=1e-12)
+        assert row["pop_gap_raw"] == pytest.approx(
+            plain.prob_profit - spread.pop_implied, abs=1e-12
+        )
+        assert row["payoff_std"] == pytest.approx(direct.payoff_std, abs=1e-12)
+        assert row["reward_to_risk"] == pytest.approx(direct.reward_to_risk, abs=1e-12)
 
 
 def test_natural_credit_is_short_bid_minus_long_ask() -> None:
@@ -246,3 +266,206 @@ def test_chain_without_enough_usable_puts_is_skipped() -> None:
 def test_missing_column_raises() -> None:
     with pytest.raises(ValueError, match="quotes is missing"):
         score_latest_session(_quotes().drop(columns=["ask"]), CalibrationMap.identity(0))
+
+
+def test_identity_map_has_no_probability_edge_and_equal_fair_credits() -> None:
+    scores = _scores()
+    np.testing.assert_allclose(scores["edge_pop"], 0.0, atol=1e-12)
+    np.testing.assert_allclose(scores["fair_credit"], scores["fair_credit_raw"], atol=1e-12)
+    np.testing.assert_allclose(scores["edge"], scores["edge_raw"], atol=1e-12)
+
+
+def test_edge_columns_are_consistent() -> None:
+    scores = _scores(_tilt())
+    assert (scores["edge"] == scores["expected_payoff"]).all()
+    np.testing.assert_allclose(
+        scores["fair_credit"] + scores["edge"], scores["credit"], atol=1e-9, rtol=0
+    )
+    np.testing.assert_allclose(scores["edge_pct"], scores["edge"] / scores["credit"])
+    assert (scores["edge_pct"] <= 1.0).all()
+    assert scores["fair_credit"].between(0.0, 1e9).all()
+    assert (scores["fair_credit"] <= scores["width"] + 1e-9).all()
+    assert (scores["payoff_std"] <= scores["width"] / 2 + 1e-9).all()
+    assert (scores["edge_pop"] != 0).any()
+
+
+def _flagged(monkeypatch: pytest.MonkeyPatch, flag: QualityFlag, underlying: str) -> None:
+    """Make ``chain_cdf`` add ``flag`` to the CDF of one underlying."""
+    original = chain_cdf
+
+    def with_flag(chain: pd.DataFrame, *, years: float, rate: float) -> RiskNeutralCdf | None:
+        cdf = original(chain, years=years, rate=rate)
+        if cdf is None or str(chain["underlying"].iloc[0]) != underlying:
+            return cdf
+        return replace(cdf, flags=cdf.flags | {flag})
+
+    monkeypatch.setattr(scoring_module, "chain_cdf", with_flag)
+
+
+def _guarded(scores: pd.DataFrame, config: AnalyticsConfig) -> pd.Series:
+    return (
+        scores["eligible"]
+        & (scores["credit"] >= config.min_edge_credit)
+        & (scores["credit_natural"] >= config.min_natural_fraction * scores["credit"])
+    )
+
+
+_TAIL = "left_tail_uncovered|right_tail_uncovered|sparse|forward_unknown"
+
+GUARD_CONFIGS = [
+    DEFAULT_CONFIG,
+    AnalyticsConfig(min_edge_credit=2.0),
+    AnalyticsConfig(min_natural_fraction=0.95),
+    AnalyticsConfig(min_edge_credit=0.0, min_natural_fraction=0.0, entry_min_pop=0.9),
+]
+
+
+@pytest.mark.parametrize("config", GUARD_CONFIGS)
+def test_alternative_ranks_cover_exactly_the_guarded_candidates(config: AnalyticsConfig) -> None:
+    scores = _scores(_tilt(), config)
+    guarded = _guarded(scores, config)
+    assert guarded.any()
+    for column in ("rank_edge", "rank_rr"):
+        assert scores[column].dtype == "Int64"
+        assert scores[column].notna().tolist() == guarded.tolist()
+        ranked = scores.loc[guarded].sort_values(column)
+        assert ranked[column].tolist() == list(range(1, len(ranked) + 1))
+    assert scores["rank_edge"].notna().tolist() == scores["rank_rr"].notna().tolist()
+    assert scores.loc[scores["rank"].isna(), ["rank_edge", "rank_rr"]].isna().all().all()
+
+
+def test_alternative_ranks_follow_the_rank_spreads_orders() -> None:
+    scores = _scores(_tilt())
+    for column, primary in (("rank_edge", "edge_pct"), ("rank_rr", "reward_to_risk")):
+        ranked = scores.loc[scores[column].notna()].sort_values(column)
+        assert len(ranked) > 10
+        keys = list(
+            zip(
+                -ranked[primary],
+                -ranked["prob_profit"],
+                -ranked["short_strike"],
+                ranked["long_strike"],
+                strict=True,
+            )
+        )
+        assert keys == sorted(keys)
+
+
+def test_each_guard_blocks_the_alternative_ranks() -> None:
+    config = AnalyticsConfig(min_edge_credit=1.0, min_natural_fraction=0.9)
+    scores = _scores(_tilt(), config)
+    reasons = {
+        "ineligible": ~scores["eligible"],
+        "credit floor": scores["credit"] < config.min_edge_credit,
+        "natural fraction": scores["credit_natural"]
+        < config.min_natural_fraction * scores["credit"],
+    }
+    for name, mask in reasons.items():
+        assert mask.any(), name
+        assert scores.loc[mask, ["rank_edge", "rank_rr"]].isna().all().all(), name
+
+
+def _entry_candidates(scores: pd.DataFrame, config: AnalyticsConfig) -> pd.Series:
+    return (
+        _guarded(scores, config)
+        & (scores["prob_profit"] >= config.entry_min_pop)
+        & (scores["edge_natural"] > 0)
+        & ~scores["extrapolated"]
+        & ~scores["flags"].str.contains(_TAIL)
+    )
+
+
+@pytest.mark.parametrize("config", GUARD_CONFIGS)
+def test_entry_rank_covers_exactly_the_candidates_and_is_contiguous(
+    config: AnalyticsConfig,
+) -> None:
+    scores = _scores(_tilt(), config)
+    expected = _entry_candidates(scores, config)
+    assert expected.any()
+    assert scores["rank_entry"].dtype == "Int64"
+    assert scores["rank_entry"].notna().tolist() == expected.tolist()
+    ranked = scores.loc[expected].sort_values("rank_entry")
+    assert ranked["rank_entry"].tolist() == list(range(1, len(ranked) + 1))
+
+
+def test_entry_rank_is_ordered_by_return_then_reward_to_risk() -> None:
+    scores = _scores(_tilt())
+    ranked = scores.loc[scores["rank_entry"].notna()].sort_values("rank_entry")
+    assert len(ranked) > 10
+    keys = list(
+        zip(
+            -ranked["annualised_roc"],
+            -ranked["reward_to_risk"],
+            -ranked["prob_profit"],
+            -ranked["short_strike"],
+            ranked["long_strike"],
+            strict=True,
+        )
+    )
+    assert keys == sorted(keys)
+
+
+def test_each_entry_guard_nulls_the_entry_rank() -> None:
+    scores = _scores(_tilt())
+    config = DEFAULT_CONFIG
+    reasons = {
+        "ineligible": ~scores["eligible"],
+        "credit floor": scores["credit"] < config.min_edge_credit,
+        "low probability": scores["prob_profit"] < config.entry_min_pop,
+        "negative natural edge": scores["edge_natural"] <= 0,
+    }
+    for name, mask in reasons.items():
+        assert mask.any(), name
+        assert scores.loc[mask, "rank_entry"].isna().all(), name
+    strict = AnalyticsConfig(entry_min_pop=0.9)
+    strict_scores = _scores(_tilt(), strict)
+    only_pop = _guarded(strict_scores, strict) & (strict_scores["prob_profit"] < 0.9)
+    assert only_pop.any()
+    assert strict_scores.loc[only_pop, "rank_entry"].isna().all()
+    assert strict_scores.loc[only_pop, "rank_edge"].notna().all()
+    raw = _scores()  # the identity map leaves almost no edge, so the natural edge is negative
+    only_edge = _guarded(raw, config) & (raw["edge_natural"] <= 0)
+    assert only_edge.any()
+    assert raw.loc[only_edge, "rank_entry"].isna().all()
+    assert raw.loc[only_edge, "rank_edge"].notna().all()
+
+
+@pytest.mark.parametrize("flag", [QualityFlag.LEFT_TAIL_UNCOVERED, QualityFlag.SPARSE])
+def test_tail_flags_null_the_entry_rank_but_not_the_other_ranks(
+    monkeypatch: pytest.MonkeyPatch, flag: QualityFlag
+) -> None:
+    _flagged(monkeypatch, flag, "AAPL")
+    scores = _scores(_tilt())
+    flagged = scores["underlying"] == "AAPL"
+    assert scores.loc[flagged, "flags"].str.contains(flag.value).all()
+    assert scores.loc[flagged, "rank_entry"].isna().all()
+    assert scores.loc[flagged, "rank_edge"].notna().any()
+    assert scores.loc[~flagged, "rank_entry"].notna().any()
+    assert (
+        scores["rank_entry"].notna().tolist() == _entry_candidates(scores, DEFAULT_CONFIG).tolist()
+    )
+
+
+def test_entry_rule_states_the_configured_thresholds() -> None:
+    assert "65%" in ENTRY_RULE
+    assert "$0.25" in ENTRY_RULE
+    assert "50% of mid" in ENTRY_RULE
+    assert ENTRY_RULE.endswith("then reward/risk.")
+
+
+def test_probability_gap_columns() -> None:
+    scores = _scores(_tilt())
+    np.testing.assert_allclose(scores["pop_implied"], scores["max_loss"] / scores["width"])
+    np.testing.assert_allclose(scores["pop_implied"], 1.0 - scores["credit"] / scores["width"])
+    assert scores["pop_implied"].between(0.0, 1.0).all()
+    np.testing.assert_allclose(scores["pop_gap"], scores["prob_profit"] - scores["pop_implied"])
+    np.testing.assert_allclose(
+        scores["pop_gap_raw"], scores["prob_profit_raw"] - scores["pop_implied"]
+    )
+    assert scores["pop_gap"].abs().le(1.0).all()
+    # Calibration moves the gap by exactly edge_pop.
+    np.testing.assert_allclose(
+        scores["pop_gap"] - scores["pop_gap_raw"], scores["edge_pop"], atol=1e-12
+    )
+    # The raw gap is the control: small because only partial losses and interest separate them.
+    assert scores["pop_gap_raw"].abs().max() < 0.15

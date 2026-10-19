@@ -64,8 +64,20 @@ def test_defaults() -> None:
         {"min_credit": -0.01},
         {"min_prob_profit": 1.1},
         {"min_prob_profit": -0.1},
+        {"min_edge_credit": -0.01},
+        {"min_natural_fraction": 1.1},
+        {"min_natural_fraction": -0.1},
+        {"entry_min_pop": 1.1},
+        {"entry_min_pop": -0.1},
     ],
 )
 def test_invalid_config_raises(change: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         replace(AnalyticsConfig(), **change)
+
+
+def test_edge_and_entry_guard_defaults() -> None:
+    config = AnalyticsConfig()
+    assert config.min_edge_credit == 0.25
+    assert config.min_natural_fraction == 0.5
+    assert config.entry_min_pop == 0.65

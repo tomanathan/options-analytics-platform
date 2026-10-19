@@ -62,4 +62,17 @@ credit, a short strike below the close and `prob_profit` at or above 0.5; `rank`
 ones by calibrated annualised return. Under the risk-neutral CDF built from the same mids the
 expected return is roughly the cash rate by construction, so any edge comes from the calibration
 map. Prices are dollars per share, rates are annual decimals, time is in years.
+
+`fair_credit` is the expected payout of the long put spread under the CDF, `edge` is the mid
+`credit` minus it (equal to `expected_payoff`), `edge_pct` is that as a share of the mid credit,
+`payoff_std` is the standard deviation of the payoff and `reward_to_risk` is `edge` divided by it
+per trade. `pop_implied` is `max_loss / width`, the probability of profit the price implies, and
+`pop_gap` is the calibrated probability of profit minus it, the same information as `edge_pct` in
+probability units (`pop_gap_raw` is the control). `rank_edge`, `rank_rr` and `rank_entry` order a
+guarded subset of the eligible spreads. The honest reading: edge is the market mid credit against
+the expected payout under one pooled calibration map, so it is the historical variance risk
+premium applied to this chain plus whatever the mid holds above the natural price. It is not
+contract-specific mispricing, it is correlated across the strikes and expiries of one underlying,
+the map is in-sample for the latest session and built from a hindsight universe, and the largest
+edges sit in the far tail where the map rests on the fewest breaches.
 {% enddocs %}
