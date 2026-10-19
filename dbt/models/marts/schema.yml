@@ -124,7 +124,7 @@ models:
       - name: source
         description: Vendor feed of the surviving row, dolthub or alpaca_indicative.
       - name: trade_date_ingested_at
-        description: Latest bronze write time over every source of this trade date; the incremental watermark.
+        description: Latest bronze write time of this trade date, the greater of the newest chain slice write over every source and the newest underlying price write; the incremental watermark.
         data_tests:
           - not_null
 

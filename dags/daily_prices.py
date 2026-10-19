@@ -17,6 +17,8 @@ Tasks run ``fetch >> write``:
   visible, not silently skipped.
 * ``write`` merges the staged rows into each day's ``(trade_date, "dolthub_stocks")`` slice in
   the one-slot ``bronze_writers`` pool; slices whose content did not change are not rewritten.
+  When no slice was written (an unchanged day) it raises ``AirflowSkipException``: a skipped
+  task emits no Dataset event, so ``dbt_build`` is not triggered for a no-op run.
 
 Each task fails without retries on an error retrying cannot fix (``fail_fast``).
 """
@@ -25,6 +27,7 @@ import logging
 from datetime import UTC, date, datetime, timedelta
 
 from airflow.decorators import dag, task
+from airflow.exceptions import AirflowSkipException
 from airflow.operators.python import get_current_context
 
 from dags.common import (
@@ -84,7 +87,11 @@ def daily_prices() -> None:
     @task(pool=BRONZE_WRITERS_POOL, outlets=[BRONZE_UNDERLYING_PRICE])
     @fail_fast
     def write(path: str) -> dict[str, int]:
-        """Merge the staged window into the daily price slices; return the counts."""
+        """Merge the staged window into the daily price slices; return the counts.
+
+        Raises:
+            AirflowSkipException: If no slice changed, so no Dataset update is emitted.
+        """
         import pandas as pd
 
         from oap.ingest.merge import merge_into_slices
@@ -102,6 +109,8 @@ def daily_prices() -> None:
             counts["rows"],
             counts["unchanged"],
         )
+        if counts["days"] == 0:
+            raise AirflowSkipException(f"no price slice changed ({counts['unchanged']} unchanged)")
         return counts
 
     # TaskFlow resolves XComArgs to their values at run time, which mypy cannot see.

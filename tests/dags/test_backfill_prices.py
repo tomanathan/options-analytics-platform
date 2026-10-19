@@ -339,16 +339,30 @@ def test_daily_fetch_fails_on_an_empty_window(
         daily("fetch")()
 
 
-def test_daily_write_merges_into_the_slices_and_is_idempotent(
+def test_daily_write_merges_into_the_slices(
     daily: Callable[[str], Task], table: Table, tmp_path: Path
 ) -> None:
     _seed(table)
     path = tmp_path / "window.parquet"
     pd.concat([_spy(D1, seed=1), _spy(D2, seed=1)], ignore_index=True).to_parquet(path, index=False)
 
-    first = daily("write")(str(path))
-    second = daily("write")(str(path))
+    counts = daily("write")(str(path))
 
-    assert first == {"days": 2, "unchanged": 0, "rows": 4}
-    assert second == {"days": 0, "unchanged": 2, "rows": 0}
+    assert counts == {"days": 2, "unchanged": 0, "rows": 4}
+    assert _by_underlying(table, D1) == {"QQQ": 1, "SPY": 1}
+
+
+def test_daily_write_skips_when_nothing_changed_so_no_dataset_event_fires(
+    daily: Callable[[str], Task], table: Table, tmp_path: Path
+) -> None:
+    _seed(table)
+    path = tmp_path / "window.parquet"
+    pd.concat([_spy(D1, seed=1), _spy(D2, seed=1)], ignore_index=True).to_parquet(path, index=False)
+    daily("write")(str(path))
+    snapshots = len(table.refresh().metadata.snapshots)
+
+    with pytest.raises(AirflowSkipException, match="no price slice changed"):
+        daily("write")(str(path))
+
+    assert len(table.refresh().metadata.snapshots) == snapshots
     assert _by_underlying(table, D1) == {"QQQ": 1, "SPY": 1}

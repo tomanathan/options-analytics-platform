@@ -49,13 +49,22 @@ dbt-compile: dbt-deps ## Compile dbt models against the local DuckDB dev target
 	mkdir -p .dbt-local
 	$(DBT_SYNTHETIC_ENV) uv run dbt compile $(DBT_ARGS) --target dev
 
-# Two passes: the second runs the incremental model again over the data the first one loaded,
-# which exercises its is_incremental() branch. The report line renders the results report from the
-# synthetic gold schema (the models against the report's SQL), so a schema drift between them fails here.
+# Three passes. The second runs the incremental model again over the data the first one loaded
+# (nothing changed: the is_incremental() branch with an empty delta). Then the synthetic bronze catalog is
+# changed the way a vendor correction changes it: 2024-01-10's chain slice and price slice are rewritten
+# with changed values and a later ingested_at, and so is the price slice alone of 2024-01-12 (a price that
+# lands late, which only the price table's stamp can show the watermark). The third pass rebuilds the
+# incremental model and what is downstream of it. assert_fct_option_quote_matches_silver (row counts and an
+# underlying_close checksum per date) fails that pass unless gold followed the rewrites, so it proves the
+# watermark. The report line renders the results report from the synthetic gold schema (the models against
+# the report's SQL), so a schema drift between them fails here.
 dbt-build: dbt-deps synthetic-bronze ## Seed, run and test dbt on the synthetic bronze catalog (DuckDB dev target)
 	rm -f .dbt-local/synthetic.duckdb .dbt-local/synthetic.duckdb.wal
 	$(DBT_SYNTHETIC_ENV) uv run dbt build $(DBT_ARGS) --target dev
 	$(DBT_SYNTHETIC_ENV) uv run dbt build $(DBT_ARGS) --target dev --select config.materialized:incremental
+	uv run python scripts/make_synthetic_bronze.py --out $(SYNTHETIC_DIR) --rewrite-slice 2024-01-10
+	uv run python scripts/make_synthetic_bronze.py --out $(SYNTHETIC_DIR) --rewrite-slice 2024-01-12 --prices-only
+	$(DBT_SYNTHETIC_ENV) uv run dbt build $(DBT_ARGS) --target dev --select config.materialized:incremental+
 	uv run python scripts/make_report.py --db .dbt-local/synthetic.duckdb --out .dbt-local/report-synthetic
 
 dbt-build-local: dbt-deps ## Build dbt on the real local Iceberg catalog into .dbt-local/oap.duckdb (not while dbt_build runs)

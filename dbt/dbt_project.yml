@@ -33,7 +33,7 @@ models:
       +materialized: table
       +schema: gold
     # Python models over the pure oap.analytics package. dbt-duckdb runs them in process; Snowflake stays
-    # compile-only until Phase N ships them as Snowpark Python models, so they are disabled off DuckDB.
+    # compile-only until Phase 4 ships them as Snowpark Python models, so they are disabled off DuckDB.
     analytics:
       +schema: gold
       +materialized: table

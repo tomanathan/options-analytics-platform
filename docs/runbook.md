@@ -289,7 +289,7 @@ The dbt project `oap` builds the `silver` and `gold` schemas from the two bronze
 
 ### The `dbt_build` DAG
 
-`dbt_build` runs `/opt/dbt-venv/bin/dbt` in a single bash task, `dbt_build`, against `.dbt-local/oap.duckdb` and the catalog in `.iceberg-local/`. It has no cron schedule: it runs when either bronze Dataset is updated (next section). Unpause it once; a paused DAG does not run.
+`dbt_build` runs `/opt/dbt-venv/bin/dbt` in a bash task, `dbt_build`, against `.dbt-local/oap.duckdb` and the catalog in `.iceberg-local/`. A second task, `publish_gold`, updates the `GOLD` Dataset after a `build` run and skips after a `test` run, so `mode=test` does not trigger the analytics. It has no cron schedule: it runs when either bronze Dataset is updated (next section). Unpause it once; a paused DAG does not run.
 
 ```bash
 docker compose exec -T airflow-scheduler airflow dags unpause dbt_build

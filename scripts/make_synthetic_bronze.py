@@ -2,7 +2,10 @@
 
 The catalog is written through the same ``ensure_table`` and ``write_partition`` that Airflow
 uses, so ``make dbt-build`` exercises the exact catalog resolution and ``iceberg_scan`` path of
-a real run without any vendor data. Usage: ``make_synthetic_bronze.py [--out DIR]``.
+a real run without any vendor data. Usage: ``make_synthetic_bronze.py [--out DIR]``, or
+``make_synthetic_bronze.py [--out DIR] --rewrite-slice YYYY-MM-DD [--prices-only]`` to rewrite one
+session's chain and price slices (or only the price slice) in the existing catalog, as a vendor
+correction landing after a build would.
 
 The data is deterministic. Three underlyings (SPY, AAPL, TSLA) trade 13 NYSE sessions from
 2024-01-02 to 2024-01-19. Each session lists five strikes around a reference price, both
@@ -23,13 +26,17 @@ import argparse
 import shutil
 import sys
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+import pyarrow.compute as pc
+from pyiceberg.table import Table
+
 from oap.calendar import trading_days
-from oap.ingest.iceberg_writer import ensure_table, write_partition
+from oap.ingest.iceberg_writer import ensure_table, read_partition, write_partition
 from oap.ingest.local_catalog import LocalCatalog
 from oap.ingest.price_schema import PRICE_SCHEMA
 from oap.ingest.schema import frame_from_records, occ_symbol
@@ -213,8 +220,112 @@ def write_catalog(out: Path) -> dict[str, int]:
     return {"option_chain": chain_rows, "underlying_price": price_count}
 
 
+def _open_catalog(out: Path) -> LocalCatalog:
+    """Return the catalog of a synthetic catalog directory written by ``write_catalog``."""
+    root = out.absolute()
+    if not (root / "catalog.db").exists():
+        raise ValueError(f"{out} holds no catalog.db; write the synthetic catalog first")
+    return LocalCatalog(
+        "oap", uri=f"sqlite:///{root}/catalog.db", warehouse=(root / "warehouse").as_uri()
+    )
+
+
+def _newest_stamp(*tables: Table) -> datetime:
+    """Return the newest ``ingested_at`` over every row of the given tables."""
+    stamps: list[datetime] = [
+        pc.max(table.scan(selected_fields=("ingested_at",)).to_arrow()["ingested_at"]).as_py()
+        for table in tables
+    ]
+    return max(stamps)
+
+
+def _raise_first(frame: pd.DataFrame, column: str, amount: float) -> None:
+    """Raise the first row's value of a float column by ``amount`` dollars, in place, to cents."""
+    values = frame[column].astype("float64")
+    values.iloc[0] = round(values.iloc[0] + amount, 2)
+    frame[column] = values.astype(frame[column].dtype)
+
+
+def _restamp(frame: pd.DataFrame, stamp: datetime) -> pd.DataFrame:
+    """Return ``frame`` with every ``ingested_at`` set to ``stamp``."""
+    restamped = frame.copy()
+    restamped["ingested_at"] = pd.Series(
+        [stamp] * len(restamped), index=restamped.index, dtype=frame["ingested_at"].dtype
+    )
+    return restamped
+
+
+def rewrite_slice(out: Path, session: date, *, prices_only: bool = False) -> dict[str, int]:
+    """Rewrite one session's chain and price slices in an existing synthetic catalog.
+
+    This is what a vendor correction looks like to bronze: the same slice, written again with
+    changed values and a later ``ingested_at``. It goes through the real writer
+    (``write_partition``), so the Iceberg snapshot and ``iceberg_scan`` path are the
+    production ones. A dbt build after it must bring the incremental gold fact up to date;
+    ``assert_fct_option_quote_matches_silver`` fails the build if it does not.
+
+    For every chain source that covers ``session`` (``dolthub`` and, for the last two sessions,
+    ``alpaca_indicative``) the first contract by OCC symbol gets its bid and ask raised by 0.01
+    dollars (the quote stays uncrossed). The price slice gets the close of its first underlying
+    raised by 0.50 dollars, which keeps it inside that day's high and low and inside the strike
+    range. Every rewritten row is stamped one hour after the newest row in either table.
+
+    With ``prices_only`` the chain is left alone: that is a price that arrives or is corrected
+    after the chain of its date was loaded, which only the price table's ``ingested_at`` can
+    reveal to the incremental watermark.
+
+    Args:
+        out: Directory of a catalog written by ``write_catalog``.
+        session: One of ``SESSIONS``.
+        prices_only: Rewrite only the price slice.
+
+    Returns:
+        Rows rewritten per table: ``{"option_chain": ..., "underlying_price": ...}``.
+
+    Raises:
+        ValueError: If ``session`` is not a synthetic session, ``out`` holds no catalog, or a
+            slice to rewrite is empty.
+    """
+    if session not in SESSIONS:
+        raise ValueError(f"{session} is not one of the synthetic sessions")
+    catalog = _open_catalog(out)
+    chain = ensure_table(catalog, ("bronze", "option_chain"), spec=OPTION_CHAIN)
+    prices = ensure_table(catalog, ("bronze", "underlying_price"), spec=UNDERLYING_PRICE)
+    stamp = _newest_stamp(chain, prices) + timedelta(hours=1)
+    chain_rows = 0
+    for source, sessions in (("dolthub", DOLTHUB_SESSIONS), ("alpaca_indicative", ALPACA_SESSIONS)):
+        if prices_only or session not in sessions:
+            continue
+        frame = read_partition(chain, trade_date=session, source=source, spec=OPTION_CHAIN)
+        frame = frame.sort_values("occ_symbol", ignore_index=True)
+        if frame.empty:
+            raise ValueError(f"the ({session}, {source}) chain slice is empty")
+        for column in ("bid", "ask"):
+            _raise_first(frame, column, 0.01)
+        chain_rows += write_partition(
+            chain,
+            _restamp(frame, stamp),
+            trade_date=session,
+            source=source,
+            spec=OPTION_CHAIN,
+        )
+    day = read_partition(prices, trade_date=session, source=PRICE_SOURCE, spec=UNDERLYING_PRICE)
+    day = day.sort_values("underlying", ignore_index=True)
+    if day.empty:
+        raise ValueError(f"the ({session}, {PRICE_SOURCE}) price slice is empty")
+    _raise_first(day, "close", 0.5)
+    price_rows = write_partition(
+        prices,
+        _restamp(day, stamp),
+        trade_date=session,
+        source=PRICE_SOURCE,
+        spec=UNDERLYING_PRICE,
+    )
+    return {"option_chain": chain_rows, "underlying_price": price_rows}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Write the synthetic catalog and print the row counts.
+    """Write the synthetic catalog, or rewrite one of its slices, and print the row counts.
 
     Args:
         argv: Command-line arguments; ``sys.argv[1:]`` when omitted.
@@ -224,7 +335,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0] if __doc__ else None)
     parser.add_argument("--out", type=Path, default=Path(DEFAULT_OUT), help="catalog directory")
+    parser.add_argument(
+        "--rewrite-slice",
+        type=date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="rewrite that session's chain and price slices in the existing catalog instead of "
+        "writing a new one",
+    )
+    parser.add_argument(
+        "--prices-only",
+        action="store_true",
+        help="with --rewrite-slice: rewrite only the price slice, leaving the chain as it was",
+    )
     args = parser.parse_args(argv)
+    if args.prices_only and args.rewrite_slice is None:
+        parser.error("--prices-only needs --rewrite-slice")
+    if args.rewrite_slice is not None:
+        rewritten = rewrite_slice(args.out, args.rewrite_slice, prices_only=args.prices_only)
+        print(
+            f"rewrote {args.rewrite_slice}: bronze.option_chain {rewritten['option_chain']} rows; "
+            f"bronze.underlying_price {rewritten['underlying_price']} rows -> {args.out}"
+        )
+        return 0
     counts = write_catalog(args.out)
     print(
         f"bronze.option_chain: {counts['option_chain']} rows; "

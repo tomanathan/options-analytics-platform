@@ -54,11 +54,11 @@ Bronze holds the vendor response as received. Both tables are partitioned by `da
 | --- | --- | --- | --- | --- |
 | `smoke` | Manual | Imports `oap` on a worker. | | |
 | `backfill_chains` | Manual (`start`, `end`, `symbols`) | One fetch per (symbol, month), four at a time; one merge-and-write per month. | `bronze_writers` on `write_month` | `option_chain`, from `summarize` |
-| `daily_chain_snapshot` | 16:30 America/New_York on NYSE sessions | `snapshot >> write >> quality`; the quality task runs the Great Expectations suite on the written slice. | `bronze_writers` on `write` | `option_chain`, from `quality` |
+| `daily_chain_snapshot` | 16:30 America/New_York on NYSE sessions | `snapshot >> quality >> write`; the quality task runs the Great Expectations suite on the staged slice before anything is committed. | `bronze_writers` on `write` | `option_chain`, from `write` |
 | `backfill_prices` | Manual (`start`, `end`, `symbols`) | One DoltHub query per month for all symbols; one merge-and-write per month. | `bronze_writers` on `write_month` | `underlying_price`, from `summarize` |
-| `daily_prices` | 16:30 America/New_York on NYSE sessions | `fetch >> write` over a trailing window of five sessions. | `bronze_writers` on `write` | `underlying_price`, from `write` |
+| `daily_prices` | 16:30 America/New_York on NYSE sessions | `fetch >> write` over a trailing window of five sessions; `write` skips when no slice changed. | `bronze_writers` on `write` | `underlying_price`, from `write` (not on a skipped run) |
 | `iceberg_maintenance` | `@weekly` | Expires snapshots older than 7 days, then compacts multi-file slices, in both tables. | `bronze_writers` | |
-| `dbt_build` | On either Dataset | Runs `dbt build` (or `dbt test`) over the pinned bronze snapshot. | | |
+| `dbt_build` | On either Dataset | `dbt_build >> publish_gold`: runs `dbt build` (or `dbt test`) over the pinned bronze snapshot; `publish_gold` skips unless the mode is `build`. | `duckdb_writer` on `dbt_build` | `gold`, from `publish_gold` |
 
 The daily DAGs use `NYSECloseTimetable` (`dags/timetables.py`, registered by `plugins/oap_timetables.py`). Trading days come from `oap.calendar`.
 
