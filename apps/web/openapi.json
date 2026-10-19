@@ -1,0 +1,2358 @@
+{
+  "components": {
+    "schemas": {
+      "CalibrationSummary": {
+        "description": "The production map and the out-of-sample evidence for it.",
+        "properties": {
+          "first_test_year": {
+            "description": "First calendar year counted as out of sample.",
+            "title": "First Test Year",
+            "type": "integer"
+          },
+          "map_id": {
+            "description": "The production map.",
+            "title": "Map Id",
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricValue"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "n_clusters": {
+            "description": "Expiration dates resampled by the bootstrap.",
+            "title": "N Clusters",
+            "type": "integer"
+          },
+          "n_predictions": {
+            "description": "Out-of-sample predictions behind the metrics.",
+            "title": "N Predictions",
+            "type": "integer"
+          },
+          "n_samples": {
+            "description": "Outcomes the production map was fitted on.",
+            "title": "N Samples",
+            "type": "integer"
+          },
+          "n_snapshots": {
+            "description": "Out-of-sample chain snapshots behind the metrics.",
+            "title": "N Snapshots",
+            "type": "integer"
+          },
+          "train_max_expiration": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest expiration it was fitted on.",
+            "title": "Train Max Expiration"
+          }
+        },
+        "required": [
+          "map_id",
+          "n_samples",
+          "train_max_expiration",
+          "first_test_year",
+          "n_predictions",
+          "n_snapshots",
+          "n_clusters",
+          "metrics"
+        ],
+        "title": "CalibrationSummary",
+        "type": "object"
+      },
+      "ChainExpiry": {
+        "description": "The quotes of one expiration, strike ascending, calls before puts.",
+        "properties": {
+          "dte_days": {
+            "description": "Calendar days from the session to expiration.",
+            "title": "Dte Days",
+            "type": "integer"
+          },
+          "expiration": {
+            "format": "date",
+            "title": "Expiration",
+            "type": "string"
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/ChainQuote"
+            },
+            "title": "Quotes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expiration",
+          "dte_days",
+          "quotes"
+        ],
+        "title": "ChainExpiry",
+        "type": "object"
+      },
+      "ChainQuote": {
+        "description": "One option quote.",
+        "properties": {
+          "ask": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ask in dollars per share ($/sh).",
+            "title": "Ask"
+          },
+          "bid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bid in dollars per share ($/sh).",
+            "title": "Bid"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source delta (dimensionless).",
+            "title": "Delta"
+          },
+          "iv": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source implied volatility as a decimal; null when not positive.",
+            "title": "Iv"
+          },
+          "mid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mid in dollars per share ($/sh).",
+            "title": "Mid"
+          },
+          "moneyness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Strike divided by the underlying close.",
+            "title": "Moneyness"
+          },
+          "option_right": {
+            "description": "C for a call, P for a put.",
+            "enum": [
+              "C",
+              "P"
+            ],
+            "title": "Option Right",
+            "type": "string"
+          },
+          "strike": {
+            "description": "Strike in dollars ($/sh).",
+            "title": "Strike",
+            "type": "number"
+          },
+          "usable": {
+            "description": "True when the engine keeps the quote: finite, bid > 0 and ask >= bid.",
+            "title": "Usable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "strike",
+          "option_right",
+          "bid",
+          "ask",
+          "mid",
+          "iv",
+          "delta",
+          "moneyness",
+          "usable"
+        ],
+        "title": "ChainQuote",
+        "type": "object"
+      },
+      "ChainResponse": {
+        "description": "The option chain of one session.",
+        "properties": {
+          "expirations": {
+            "items": {
+              "$ref": "#/components/schemas/ChainExpiry"
+            },
+            "title": "Expirations",
+            "type": "array"
+          },
+          "session": {
+            "format": "date",
+            "title": "Session",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "underlying_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Underlying close in dollars ($/sh).",
+            "title": "Underlying Close"
+          }
+        },
+        "required": [
+          "symbol",
+          "session",
+          "underlying_close",
+          "expirations"
+        ],
+        "title": "ChainResponse",
+        "type": "object"
+      },
+      "DistributionCurve": {
+        "description": "The risk-neutral CDF and density of one expiration, evaluated at the raw knots.",
+        "properties": {
+          "cdf": {
+            "description": "Raw risk-neutral P(S < K) after repair, in [0, 1].",
+            "items": {
+              "type": "number"
+            },
+            "title": "Cdf",
+            "type": "array"
+          },
+          "cdf_calibrated": {
+            "description": "Calibrated P(S < K) at the raw knots, in [0, 1].",
+            "items": {
+              "type": "number"
+            },
+            "title": "Cdf Calibrated",
+            "type": "array"
+          },
+          "density": {
+            "description": "Raw probability density between knots (1/$).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Density",
+            "type": "array"
+          },
+          "density_calibrated": {
+            "description": "Calibrated probability density between knots (1/$).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Density Calibrated",
+            "type": "array"
+          },
+          "density_mid": {
+            "description": "Midpoints between knots in dollars ($/sh).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Density Mid",
+            "type": "array"
+          },
+          "knots": {
+            "description": "Raw CDF knots: strikes in dollars ($/sh).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Knots",
+            "type": "array"
+          },
+          "moneyness": {
+            "description": "Knots divided by the underlying close.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Moneyness",
+            "type": "array"
+          },
+          "raw_cdf": {
+            "description": "P(S < K) before monotonicity repair and clipping; may leave [0, 1].",
+            "items": {
+              "type": "number"
+            },
+            "title": "Raw Cdf",
+            "type": "array"
+          }
+        },
+        "required": [
+          "knots",
+          "moneyness",
+          "cdf",
+          "raw_cdf",
+          "cdf_calibrated",
+          "density_mid",
+          "density",
+          "density_calibrated"
+        ],
+        "title": "DistributionCurve",
+        "type": "object"
+      },
+      "DistributionResponse": {
+        "description": "The distributions of every expiration of one session.",
+        "properties": {
+          "expirations": {
+            "items": {
+              "$ref": "#/components/schemas/ExpiryDistribution"
+            },
+            "title": "Expirations",
+            "type": "array"
+          },
+          "look_ahead": {
+            "description": "True when the map was fitted on outcomes that settle after this session.",
+            "title": "Look Ahead",
+            "type": "boolean"
+          },
+          "map_choice": {
+            "description": "The map selection that was requested.",
+            "enum": [
+              "auto",
+              "production",
+              "walk_forward"
+            ],
+            "title": "Map Choice",
+            "type": "string"
+          },
+          "map_id": {
+            "description": "The calibration map that was applied.",
+            "title": "Map Id",
+            "type": "string"
+          },
+          "map_is_identity": {
+            "description": "True when the map leaves probabilities unchanged.",
+            "title": "Map Is Identity",
+            "type": "boolean"
+          },
+          "map_train_max_expiration": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest expiration among the map's training outcomes.",
+            "title": "Map Train Max Expiration"
+          },
+          "risk_free_apy": {
+            "description": "Risk-free rate used for every CDF, decimal APY.",
+            "title": "Risk Free Apy",
+            "type": "number"
+          },
+          "session": {
+            "format": "date",
+            "title": "Session",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "session",
+          "map_choice",
+          "map_id",
+          "map_is_identity",
+          "map_train_max_expiration",
+          "look_ahead",
+          "risk_free_apy",
+          "expirations"
+        ],
+        "title": "DistributionResponse",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "description": "The body of every error response.",
+        "properties": {
+          "code": {
+            "enum": [
+              "database_busy",
+              "database_missing",
+              "gold_missing",
+              "not_found",
+              "invalid"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "code"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ExpiryDistribution": {
+        "description": "The distribution of one expiration, or the reason there is none.",
+        "properties": {
+          "curve": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributionCurve"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dte_days": {
+            "description": "Calendar days from the session to expiration.",
+            "title": "Dte Days",
+            "type": "integer"
+          },
+          "expiration": {
+            "format": "date",
+            "title": "Expiration",
+            "type": "string"
+          },
+          "flags": {
+            "description": "Sorted quality flags of the raw CDF.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "forward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward price in dollars ($/sh); null if unknown.",
+            "title": "Forward"
+          },
+          "n_knots": {
+            "description": "Number of raw CDF knots; 0 without a curve.",
+            "title": "N Knots",
+            "type": "integer"
+          },
+          "n_quotes": {
+            "description": "Number of usable quotes behind the curve.",
+            "title": "N Quotes",
+            "type": "integer"
+          },
+          "prob_below_settlement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Raw P(S < settlement close), a decimal.",
+            "title": "Prob Below Settlement"
+          },
+          "prob_below_settlement_calibrated": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calibrated P(S < settlement close), a decimal.",
+            "title": "Prob Below Settlement Calibrated"
+          },
+          "settlement_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Settlement close in dollars ($/sh).",
+            "title": "Settlement Close"
+          },
+          "settlement_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Settlement date when the expiry settled.",
+            "title": "Settlement Date"
+          },
+          "short_dated": {
+            "description": "True below the backtest's minimum days to expiry.",
+            "title": "Short Dated",
+            "type": "boolean"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why there is no curve: expired, no_close, too_few_puts or engine_error: <message>.",
+            "title": "Unavailable Reason"
+          },
+          "underlying_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Underlying close in dollars ($/sh).",
+            "title": "Underlying Close"
+          },
+          "years": {
+            "description": "Time to expiration in years (ACT/365).",
+            "title": "Years",
+            "type": "number"
+          }
+        },
+        "required": [
+          "expiration",
+          "dte_days",
+          "years",
+          "forward",
+          "underlying_close",
+          "n_quotes",
+          "n_knots",
+          "flags",
+          "short_dated",
+          "curve",
+          "unavailable_reason",
+          "settlement_date",
+          "settlement_close",
+          "prob_below_settlement",
+          "prob_below_settlement_calibrated"
+        ],
+        "title": "ExpiryDistribution",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "State of the service and of the database file.",
+        "properties": {
+          "db": {
+            "description": "ok when the file can be read, busy when a writer holds the lock, missing when the file does not exist.",
+            "enum": [
+              "ok",
+              "busy",
+              "missing"
+            ],
+            "title": "Db",
+            "type": "string"
+          },
+          "db_path": {
+            "description": "The DuckDB file the service reads.",
+            "title": "Db Path",
+            "type": "string"
+          },
+          "last_good_signature_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC time at which the data in memory was last loaded from the file.",
+            "title": "Last Good Signature At"
+          },
+          "status": {
+            "const": "ok",
+            "description": "Always ok: the process is up.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "db",
+          "db_path",
+          "last_good_signature_at"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "HeatmapResponse": {
+        "description": "The probability heatmap of one session.",
+        "properties": {
+          "backtest_grid": {
+            "description": "The backtest's moneyness grid, for ticks.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Backtest Grid",
+            "type": "array"
+          },
+          "map_id": {
+            "title": "Map Id",
+            "type": "string"
+          },
+          "moneyness": {
+            "description": "Display grid: strike divided by the close.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Moneyness",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/HeatmapRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "session": {
+            "format": "date",
+            "title": "Session",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "session",
+          "map_id",
+          "moneyness",
+          "backtest_grid",
+          "rows"
+        ],
+        "title": "HeatmapResponse",
+        "type": "object"
+      },
+      "HeatmapRow": {
+        "description": "P(S < K) across the display grid for one expiration.",
+        "properties": {
+          "dte_days": {
+            "description": "Calendar days from the session to expiration.",
+            "title": "Dte Days",
+            "type": "integer"
+          },
+          "expiration": {
+            "format": "date",
+            "title": "Expiration",
+            "type": "string"
+          },
+          "forward_moneyness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward divided by the close.",
+            "title": "Forward Moneyness"
+          },
+          "prob_below": {
+            "description": "Raw P(S < K) per column; null outside the quoted strikes.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Prob Below",
+            "type": "array"
+          },
+          "prob_below_calibrated": {
+            "description": "Calibrated P(S < K) per column; null outside the quoted strikes.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Prob Below Calibrated",
+            "type": "array"
+          },
+          "target_strikes": {
+            "description": "Strikes in dollars ($/sh), one per column.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Target Strikes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expiration",
+          "dte_days",
+          "target_strikes",
+          "prob_below",
+          "prob_below_calibrated",
+          "forward_moneyness"
+        ],
+        "title": "HeatmapRow",
+        "type": "object"
+      },
+      "MetricValue": {
+        "description": "One out-of-sample calibration metric.",
+        "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Upper end of the 95% cluster-bootstrap interval.",
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lower end of the 95% cluster-bootstrap interval.",
+            "title": "Ci Low"
+          },
+          "metric": {
+            "description": "brier, log_loss or ece.",
+            "title": "Metric",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "variant": {
+            "enum": [
+              "raw",
+              "calibrated",
+              "delta"
+            ],
+            "title": "Variant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "variant",
+          "value",
+          "ci_low",
+          "ci_high"
+        ],
+        "title": "MetricValue",
+        "type": "object"
+      },
+      "PayoffPoint": {
+        "description": "The payoff of a spread at one expiry price.",
+        "properties": {
+          "payoff": {
+            "description": "Payoff at expiry in dollars per share, before interest.",
+            "title": "Payoff",
+            "type": "number"
+          },
+          "price": {
+            "description": "Underlying price at expiry in dollars ($/sh).",
+            "title": "Price",
+            "type": "number"
+          }
+        },
+        "required": [
+          "price",
+          "payoff"
+        ],
+        "title": "PayoffPoint",
+        "type": "object"
+      },
+      "RawCalibrated": {
+        "description": "A probability on the raw and on the calibrated distribution.",
+        "properties": {
+          "calibrated": {
+            "description": "Probability on the calibrated CDF, a decimal.",
+            "title": "Calibrated",
+            "type": "number"
+          },
+          "raw": {
+            "description": "Probability on the raw CDF, a decimal.",
+            "title": "Raw",
+            "type": "number"
+          }
+        },
+        "required": [
+          "raw",
+          "calibrated"
+        ],
+        "title": "RawCalibrated",
+        "type": "object"
+      },
+      "SessionSummary": {
+        "description": "One trade date of an underlying.",
+        "properties": {
+          "atm_iv": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "At-the-money implied volatility as a decimal: the out-of-the-money put with the smallest |moneyness - 1| and a positive source IV, in the shortest expiration with at least 7 days to expiry.",
+            "title": "Atm Iv"
+          },
+          "n_expirations": {
+            "description": "Number of expirations quoted.",
+            "title": "N Expirations",
+            "type": "integer"
+          },
+          "n_quotes": {
+            "description": "Number of option quotes, puts and calls.",
+            "title": "N Quotes",
+            "type": "integer"
+          },
+          "session": {
+            "description": "Trade date.",
+            "format": "date",
+            "title": "Session",
+            "type": "string"
+          },
+          "underlying_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Underlying close in dollars ($/sh).",
+            "title": "Underlying Close"
+          }
+        },
+        "required": [
+          "session",
+          "underlying_close",
+          "n_expirations",
+          "n_quotes",
+          "atm_iv"
+        ],
+        "title": "SessionSummary",
+        "type": "object"
+      },
+      "SessionsResponse": {
+        "description": "The sessions of one underlying, ascending.",
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionSummary"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "sessions"
+        ],
+        "title": "SessionsResponse",
+        "type": "object"
+      },
+      "SpreadDetail": {
+        "description": "A spread with every gold column, its payoff curve and the densities behind it.",
+        "properties": {
+          "annualised_roc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calibrated annualised return on collateral; null when not finite.",
+            "title": "Annualised Roc"
+          },
+          "annualised_roc_raw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Raw annualised return on collateral; null when not finite.",
+            "title": "Annualised Roc Raw"
+          },
+          "breakeven": {
+            "description": "Short strike minus credit in dollars ($/sh).",
+            "title": "Breakeven",
+            "type": "number"
+          },
+          "calibrated": {
+            "description": "True when a non-identity map was applied.",
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "cash_apy": {
+            "description": "Interest rate on the collateral, decimal APY.",
+            "title": "Cash Apy",
+            "type": "number"
+          },
+          "credit": {
+            "description": "Mid credit in dollars per share ($/sh).",
+            "title": "Credit",
+            "type": "number"
+          },
+          "credit_natural": {
+            "description": "Short bid minus long ask in dollars ($/sh).",
+            "title": "Credit Natural",
+            "type": "number"
+          },
+          "density_calibrated": {
+            "description": "Calibrated probability density (1/$).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Density Calibrated",
+            "type": "array"
+          },
+          "density_mid": {
+            "description": "Midpoints between knots in dollars ($/sh).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Density Mid",
+            "type": "array"
+          },
+          "density_raw": {
+            "description": "Raw probability density (1/$).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Density Raw",
+            "type": "array"
+          },
+          "dte_days": {
+            "description": "Calendar days from the session to expiration.",
+            "title": "Dte Days",
+            "type": "integer"
+          },
+          "eligible": {
+            "description": "True when the spread passes the eligibility rules.",
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "expected_payoff": {
+            "description": "Calibrated expected payoff in dollars ($/sh).",
+            "title": "Expected Payoff",
+            "type": "number"
+          },
+          "expected_roc": {
+            "description": "Calibrated expected return on collateral over the holding period.",
+            "title": "Expected Roc",
+            "type": "number"
+          },
+          "expected_roc_raw": {
+            "description": "Raw expected return on collateral over the holding period.",
+            "title": "Expected Roc Raw",
+            "type": "number"
+          },
+          "expiration": {
+            "format": "date",
+            "title": "Expiration",
+            "type": "string"
+          },
+          "extrapolated": {
+            "description": "True when the long strike is outside the CDF knots.",
+            "title": "Extrapolated",
+            "type": "boolean"
+          },
+          "flags": {
+            "description": "Quality flags of the raw CDF.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "forward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward price in dollars ($/sh); null if unknown.",
+            "title": "Forward"
+          },
+          "interest": {
+            "description": "Interest on the collateral in dollars ($/sh).",
+            "title": "Interest",
+            "type": "number"
+          },
+          "kelly_fraction": {
+            "description": "Kelly fraction of capital, a decimal in [0, 1].",
+            "title": "Kelly Fraction",
+            "type": "number"
+          },
+          "knot_range": {
+            "description": "Lowest and highest CDF knot in dollars ($/sh).",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Knot Range",
+            "type": "array"
+          },
+          "long_strike": {
+            "description": "Strike of the bought put in dollars ($/sh).",
+            "title": "Long Strike",
+            "type": "number"
+          },
+          "map_id": {
+            "description": "Calibration map the scores were computed with.",
+            "title": "Map Id",
+            "type": "string"
+          },
+          "max_loss": {
+            "description": "Width minus credit in dollars per share ($/sh).",
+            "title": "Max Loss",
+            "type": "number"
+          },
+          "payoff": {
+            "items": {
+              "$ref": "#/components/schemas/PayoffPoint"
+            },
+            "title": "Payoff",
+            "type": "array"
+          },
+          "prob_max_loss": {
+            "description": "Calibrated probability of the maximum loss.",
+            "title": "Prob Max Loss",
+            "type": "number"
+          },
+          "prob_profit": {
+            "description": "Calibrated probability of profit, a decimal.",
+            "title": "Prob Profit",
+            "type": "number"
+          },
+          "prob_profit_raw": {
+            "description": "Raw probability of profit, a decimal.",
+            "title": "Prob Profit Raw",
+            "type": "number"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best among eligible spreads; null otherwise.",
+            "title": "Rank"
+          },
+          "regions": {
+            "$ref": "#/components/schemas/SpreadRegions"
+          },
+          "risk_free_apy": {
+            "description": "Risk-free rate used for the CDF, decimal APY.",
+            "title": "Risk Free Apy",
+            "type": "number"
+          },
+          "short_moneyness": {
+            "description": "Short strike divided by the close.",
+            "title": "Short Moneyness",
+            "type": "number"
+          },
+          "short_strike": {
+            "description": "Strike of the sold put in dollars ($/sh).",
+            "title": "Short Strike",
+            "type": "number"
+          },
+          "spread_key": {
+            "description": "Underlying|session|expiration|short|long.",
+            "title": "Spread Key",
+            "type": "string"
+          },
+          "trade_date": {
+            "description": "Session the spread was scored on.",
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          },
+          "underlying_close": {
+            "description": "Underlying close in dollars ($/sh).",
+            "title": "Underlying Close",
+            "type": "number"
+          },
+          "width": {
+            "description": "Short minus long strike in dollars ($/sh).",
+            "title": "Width",
+            "type": "number"
+          },
+          "years": {
+            "description": "Time to expiration in years (ACT/365).",
+            "title": "Years",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spread_key",
+          "underlying",
+          "expiration",
+          "dte_days",
+          "short_strike",
+          "long_strike",
+          "width",
+          "credit",
+          "credit_natural",
+          "max_loss",
+          "breakeven",
+          "short_moneyness",
+          "prob_profit",
+          "prob_profit_raw",
+          "prob_max_loss",
+          "expected_roc",
+          "expected_roc_raw",
+          "annualised_roc",
+          "kelly_fraction",
+          "eligible",
+          "rank",
+          "extrapolated",
+          "flags",
+          "trade_date",
+          "years",
+          "underlying_close",
+          "expected_payoff",
+          "interest",
+          "annualised_roc_raw",
+          "calibrated",
+          "map_id",
+          "cash_apy",
+          "risk_free_apy",
+          "forward",
+          "payoff",
+          "density_mid",
+          "density_raw",
+          "density_calibrated",
+          "regions",
+          "knot_range"
+        ],
+        "title": "SpreadDetail",
+        "type": "object"
+      },
+      "SpreadRegions": {
+        "description": "Probabilities of the three payoff regions of a put credit spread.",
+        "properties": {
+          "prob_max_loss": {
+            "$ref": "#/components/schemas/RawCalibrated",
+            "description": "P(S <= long strike)."
+          },
+          "prob_partial_loss": {
+            "$ref": "#/components/schemas/RawCalibrated",
+            "description": "P(long strike < S < breakeven)."
+          },
+          "prob_profit": {
+            "$ref": "#/components/schemas/RawCalibrated",
+            "description": "P(S >= breakeven)."
+          }
+        },
+        "required": [
+          "prob_max_loss",
+          "prob_partial_loss",
+          "prob_profit"
+        ],
+        "title": "SpreadRegions",
+        "type": "object"
+      },
+      "SpreadRow": {
+        "description": "One scored put credit spread.",
+        "properties": {
+          "annualised_roc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calibrated annualised return on collateral; null when not finite.",
+            "title": "Annualised Roc"
+          },
+          "breakeven": {
+            "description": "Short strike minus credit in dollars ($/sh).",
+            "title": "Breakeven",
+            "type": "number"
+          },
+          "credit": {
+            "description": "Mid credit in dollars per share ($/sh).",
+            "title": "Credit",
+            "type": "number"
+          },
+          "credit_natural": {
+            "description": "Short bid minus long ask in dollars ($/sh).",
+            "title": "Credit Natural",
+            "type": "number"
+          },
+          "dte_days": {
+            "description": "Calendar days from the session to expiration.",
+            "title": "Dte Days",
+            "type": "integer"
+          },
+          "eligible": {
+            "description": "True when the spread passes the eligibility rules.",
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "expected_roc": {
+            "description": "Calibrated expected return on collateral over the holding period.",
+            "title": "Expected Roc",
+            "type": "number"
+          },
+          "expected_roc_raw": {
+            "description": "Raw expected return on collateral over the holding period.",
+            "title": "Expected Roc Raw",
+            "type": "number"
+          },
+          "expiration": {
+            "format": "date",
+            "title": "Expiration",
+            "type": "string"
+          },
+          "extrapolated": {
+            "description": "True when the long strike is outside the CDF knots.",
+            "title": "Extrapolated",
+            "type": "boolean"
+          },
+          "flags": {
+            "description": "Quality flags of the raw CDF.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Flags",
+            "type": "array"
+          },
+          "kelly_fraction": {
+            "description": "Kelly fraction of capital, a decimal in [0, 1].",
+            "title": "Kelly Fraction",
+            "type": "number"
+          },
+          "long_strike": {
+            "description": "Strike of the bought put in dollars ($/sh).",
+            "title": "Long Strike",
+            "type": "number"
+          },
+          "max_loss": {
+            "description": "Width minus credit in dollars per share ($/sh).",
+            "title": "Max Loss",
+            "type": "number"
+          },
+          "prob_max_loss": {
+            "description": "Calibrated probability of the maximum loss.",
+            "title": "Prob Max Loss",
+            "type": "number"
+          },
+          "prob_profit": {
+            "description": "Calibrated probability of profit, a decimal.",
+            "title": "Prob Profit",
+            "type": "number"
+          },
+          "prob_profit_raw": {
+            "description": "Raw probability of profit, a decimal.",
+            "title": "Prob Profit Raw",
+            "type": "number"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best among eligible spreads; null otherwise.",
+            "title": "Rank"
+          },
+          "short_moneyness": {
+            "description": "Short strike divided by the close.",
+            "title": "Short Moneyness",
+            "type": "number"
+          },
+          "short_strike": {
+            "description": "Strike of the sold put in dollars ($/sh).",
+            "title": "Short Strike",
+            "type": "number"
+          },
+          "spread_key": {
+            "description": "Underlying|session|expiration|short|long.",
+            "title": "Spread Key",
+            "type": "string"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          },
+          "width": {
+            "description": "Short minus long strike in dollars ($/sh).",
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spread_key",
+          "underlying",
+          "expiration",
+          "dte_days",
+          "short_strike",
+          "long_strike",
+          "width",
+          "credit",
+          "credit_natural",
+          "max_loss",
+          "breakeven",
+          "short_moneyness",
+          "prob_profit",
+          "prob_profit_raw",
+          "prob_max_loss",
+          "expected_roc",
+          "expected_roc_raw",
+          "annualised_roc",
+          "kelly_fraction",
+          "eligible",
+          "rank",
+          "extrapolated",
+          "flags"
+        ],
+        "title": "SpreadRow",
+        "type": "object"
+      },
+      "SpreadsResponse": {
+        "description": "Scored spreads after the filters, with the facets of the whole table.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Session the scores were computed for.",
+            "title": "As Of"
+          },
+          "expirations": {
+            "description": "Expirations in the table, ascending.",
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Expirations",
+            "type": "array"
+          },
+          "matched": {
+            "description": "Rows that match the filters, before the limit.",
+            "title": "Matched",
+            "type": "integer"
+          },
+          "min_prob_profit": {
+            "description": "Eligibility threshold on prob_profit (config).",
+            "title": "Min Prob Profit",
+            "type": "number"
+          },
+          "rows": {
+            "description": "Rank ascending with nulls last, then annualised_roc descending.",
+            "items": {
+              "$ref": "#/components/schemas/SpreadRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "source": {
+            "description": "Where the scores come from.",
+            "enum": [
+              "gold",
+              "recomputed"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "total": {
+            "description": "Rows in gold.spread_scores.",
+            "title": "Total",
+            "type": "integer"
+          },
+          "underlyings": {
+            "description": "Underlyings in the table, ascending.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Underlyings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "source",
+          "total",
+          "matched",
+          "min_prob_profit",
+          "underlyings",
+          "expirations",
+          "rows"
+        ],
+        "title": "SpreadsResponse",
+        "type": "object"
+      },
+      "Underlying": {
+        "description": "An underlying with the sessions available for it.",
+        "properties": {
+          "first_session": {
+            "description": "First trade date with quotes.",
+            "format": "date",
+            "title": "First Session",
+            "type": "string"
+          },
+          "last_session": {
+            "description": "Last trade date with quotes.",
+            "format": "date",
+            "title": "Last Session",
+            "type": "string"
+          },
+          "n_sessions": {
+            "description": "Number of trade dates with quotes.",
+            "title": "N Sessions",
+            "type": "integer"
+          },
+          "sector": {
+            "description": "Sector label from gold.dim_underlying.",
+            "title": "Sector",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Ticker symbol, such as SPY.",
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "sector",
+          "first_session",
+          "last_session",
+          "n_sessions"
+        ],
+        "title": "Underlying",
+        "type": "object"
+      },
+      "UnderlyingsResponse": {
+        "description": "All underlyings and the latest session of the whole table.",
+        "properties": {
+          "latest_session": {
+            "description": "Latest trade date over all underlyings.",
+            "format": "date",
+            "title": "Latest Session",
+            "type": "string"
+          },
+          "underlyings": {
+            "items": {
+              "$ref": "#/components/schemas/Underlying"
+            },
+            "title": "Underlyings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "underlyings",
+          "latest_session"
+        ],
+        "title": "UnderlyingsResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Read-only API over the gold tables: distributions, heatmaps and spreads.",
+    "title": "oap explorer API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/calibration/summary": {
+      "get": {
+        "description": "Summarise the production calibration map and its out-of-sample metrics.\n\nReturns:\n    The overall raw, calibrated and delta metrics with their intervals.",
+        "operationId": "getCalibrationSummary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Getcalibrationsummary",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/spreads": {
+      "get": {
+        "description": "List the scored put credit spreads of the latest session.\n\nArgs:\n    underlying: Underlyings to keep; all when empty.\n    expiration: Expiration to keep; all when None.\n    min_width: Narrowest spread in dollars per share.\n    max_width: Widest spread in dollars per share.\n    min_pop: Smallest calibrated probability of profit, a decimal.\n    min_credit: Smallest mid credit in dollars per share.\n    eligible_only: Keep only spreads that pass the eligibility rules.\n    limit: Most rows returned.\n\nReturns:\n    The matching spreads in rank order, with the facets of the whole table.",
+        "operationId": "listSpreads",
+        "parameters": [
+          {
+            "description": "Underlyings to keep.",
+            "in": "query",
+            "name": "underlying",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "pattern": "^[A-Z][A-Z.]{0,9}$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Underlyings to keep.",
+              "title": "Underlying"
+            }
+          },
+          {
+            "description": "Expiration to keep.",
+            "in": "query",
+            "name": "expiration",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Expiration to keep.",
+              "title": "Expiration"
+            }
+          },
+          {
+            "description": "Minimum width, $/sh.",
+            "in": "query",
+            "name": "min_width",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum width, $/sh.",
+              "title": "Min Width"
+            }
+          },
+          {
+            "description": "Maximum width, $/sh.",
+            "in": "query",
+            "name": "max_width",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Maximum width, $/sh.",
+              "title": "Max Width"
+            }
+          },
+          {
+            "description": "Minimum calibrated POP.",
+            "in": "query",
+            "name": "min_pop",
+            "required": false,
+            "schema": {
+              "default": 0.0,
+              "description": "Minimum calibrated POP.",
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Min Pop",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Minimum mid credit, $/sh.",
+            "in": "query",
+            "name": "min_credit",
+            "required": false,
+            "schema": {
+              "default": 0.0,
+              "description": "Minimum mid credit, $/sh.",
+              "minimum": 0,
+              "title": "Min Credit",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Keep eligible spreads only.",
+            "in": "query",
+            "name": "eligible_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Keep eligible spreads only.",
+              "title": "Eligible Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Most rows returned.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5000,
+              "description": "Most rows returned.",
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpreadsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Listspreads",
+        "tags": [
+          "spreads"
+        ]
+      }
+    },
+    "/api/spreads/{spread_key}": {
+      "get": {
+        "description": "Return one spread with its payoff curve and the densities behind it.\n\nArgs:\n    spread_key: The ``spread_key`` column, URL-encoded (``|`` is ``%7C``).\n\nReturns:\n    The spread detail.",
+        "operationId": "getSpread",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "spread_key",
+            "required": true,
+            "schema": {
+              "title": "Spread Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpreadDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Getspread",
+        "tags": [
+          "spreads"
+        ]
+      }
+    },
+    "/api/underlyings": {
+      "get": {
+        "description": "List the underlyings and the latest session.\n\nReturns:\n    Every underlying in ``gold.dim_underlying`` that has quotes.",
+        "operationId": "listUnderlyings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnderlyingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Listunderlyings",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/underlyings/{symbol}/sessions": {
+      "get": {
+        "description": "List the sessions of an underlying.\n\nArgs:\n    symbol: Ticker symbol.\n\nReturns:\n    One summary per trade date, ascending.",
+        "operationId": "listSessions",
+        "parameters": [
+          {
+            "description": "Ticker symbol, such as SPY.",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "Ticker symbol, such as SPY.",
+              "pattern": "^[A-Z][A-Z.]{0,9}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Listsessions",
+        "tags": [
+          "landscape"
+        ]
+      }
+    },
+    "/api/underlyings/{symbol}/sessions/{session}/chain": {
+      "get": {
+        "description": "Return the option chain of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n\nReturns:\n    The quotes grouped by expiration.",
+        "operationId": "getChain",
+        "parameters": [
+          {
+            "description": "Ticker symbol, such as SPY.",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "Ticker symbol, such as SPY.",
+              "pattern": "^[A-Z][A-Z.]{0,9}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Trade date, YYYY-MM-DD.",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "Trade date, YYYY-MM-DD.",
+              "format": "date",
+              "title": "Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Getchain",
+        "tags": [
+          "landscape"
+        ]
+      }
+    },
+    "/api/underlyings/{symbol}/sessions/{session}/distribution": {
+      "get": {
+        "description": "Return the raw and calibrated risk-neutral distributions of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    map_choice: Which calibration map to apply.\n\nReturns:\n    One distribution per expiration, evaluated at the raw knots.",
+        "operationId": "getDistribution",
+        "parameters": [
+          {
+            "description": "Ticker symbol, such as SPY.",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "Ticker symbol, such as SPY.",
+              "pattern": "^[A-Z][A-Z.]{0,9}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Trade date, YYYY-MM-DD.",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "Trade date, YYYY-MM-DD.",
+              "format": "date",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "auto, production or walk_forward calibration map.",
+            "in": "query",
+            "name": "map",
+            "required": false,
+            "schema": {
+              "default": "auto",
+              "description": "auto, production or walk_forward calibration map.",
+              "enum": [
+                "auto",
+                "production",
+                "walk_forward"
+              ],
+              "title": "Map",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistributionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Getdistribution",
+        "tags": [
+          "landscape"
+        ]
+      }
+    },
+    "/api/underlyings/{symbol}/sessions/{session}/heatmap": {
+      "get": {
+        "description": "Return the P(S < K) heatmap of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    map_choice: Which calibration map to apply.\n\nReturns:\n    One row per expiration with a curve, over the moneyness display grid.",
+        "operationId": "getHeatmap",
+        "parameters": [
+          {
+            "description": "Ticker symbol, such as SPY.",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "Ticker symbol, such as SPY.",
+              "pattern": "^[A-Z][A-Z.]{0,9}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Trade date, YYYY-MM-DD.",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "Trade date, YYYY-MM-DD.",
+              "format": "date",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "auto, production or walk_forward calibration map.",
+            "in": "query",
+            "name": "map",
+            "required": false,
+            "schema": {
+              "default": "auto",
+              "description": "auto, production or walk_forward calibration map.",
+              "enum": [
+                "auto",
+                "production",
+                "walk_forward"
+              ],
+              "title": "Map",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeatmapResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Getheatmap",
+        "tags": [
+          "landscape"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "description": "Report the state of the service and of the database file.\n\nReturns:\n    Always HTTP 200: ``db`` says whether the file can be read.",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz",
+        "tags": [
+          "meta"
+        ]
+      }
+    }
+  }
+}
