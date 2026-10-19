@@ -145,7 +145,7 @@ order by any_value(fold) nulls last, map_id
 """
 
 _SCORES_SQL = """
-select "rank", underlying, expiration, dte_days, short_strike, long_strike, credit,
+select "rank", underlying, trade_date, expiration, dte_days, short_strike, long_strike, credit,
     credit_natural, prob_profit, prob_profit_raw, expected_roc, expected_roc_raw,
     annualised_roc, annualised_roc_raw, cash_apy
 from gold.spread_scores
@@ -461,6 +461,7 @@ def _spread_rows(scores: pd.DataFrame) -> list[list[str]]:
         [
             _count(r["rank"]),
             str(r["underlying"]),
+            _day(r["trade_date"]),
             _day(r["expiration"]),
             _count(r["dte_days"]),
             f"{_num(r['short_strike']):g}/{_num(r['long_strike']):g}",
@@ -478,6 +479,7 @@ def _spread_rows(scores: pd.DataFrame) -> list[list[str]]:
 SPREAD_HEADERS: Final[tuple[str, ...]] = (
     "Rank",
     "Underlying",
+    "Session",
     "Expiration",
     "DTE",
     "Short/long",

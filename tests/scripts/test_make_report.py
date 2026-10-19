@@ -242,7 +242,7 @@ def test_the_top_table_has_at_most_ten_rows_in_rank_order(db: Path, tmp_path: Pa
 
     assert len(rows) == 10
     assert ranks == list(range(1, 11))
-    assert "| 1 | AAPL | 2024-07-19 | 35 | 100/90 |" in section
+    assert "| 1 | AAPL | 2024-06-14 | 2024-07-19 | 35 | 100/90 |" in section
 
 
 def test_top_limits_the_table(db: Path, tmp_path: Path) -> None:
@@ -314,6 +314,23 @@ def test_snapshot_exclusions_and_caveat_counts_come_from_the_database(
     assert "| `too_few_puts` | 3 |" in text
     assert "3 snapshots with fewer than 4 usable puts" in text
     assert "right tail uncovered 33.3%" in text
+
+
+def test_the_top_table_shows_the_session_of_every_row(db: Path, tmp_path: Path) -> None:
+    _run(db, tmp_path)
+    section = (tmp_path / "results.md").read_text().split("## Top put credit spreads")[1]
+    section = section.split("## How to read this")[0]
+
+    header = next(line for line in section.splitlines() if line.startswith("| Rank"))
+    rows = [line for line in section.splitlines() if re.match(r"\| \d+ \|", line)]
+
+    assert [cell.strip() for cell in header.strip("|").split("|")[:3]] == [
+        "Rank",
+        "Underlying",
+        "Session",
+    ]
+    assert report.SPREAD_HEADERS[:3] == ("Rank", "Underlying", "Session")
+    assert all(line.split("|")[3].strip() == "2024-06-14" for line in rows)
 
 
 def test_coverage_totals(db: Path, tmp_path: Path) -> None:

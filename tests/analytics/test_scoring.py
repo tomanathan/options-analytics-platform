@@ -6,7 +6,7 @@ import pytest
 
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID, AnalyticsConfig
 from oap.analytics.sample import chain_cdf
-from oap.analytics.scoring import SPREAD_COLUMNS, latest_session, score_latest_session
+from oap.analytics.scoring import SPREAD_COLUMNS, score_latest_session
 from oap.engine.calibration import CalibrationMap
 from oap.engine.spread_scoring import PutCreditSpread, score_spread
 from tests.analytics.frames import lognormal_quotes
@@ -17,6 +17,11 @@ AAPL_STRIKES = np.arange(160.0, 221.0, 2.0)
 
 
 def _quotes() -> pd.DataFrame:
+    """One session (2024-01-05) of two underlyings, as ``read_latest_quotes`` returns it.
+
+    SPY has a 4-day expiry that scoring must skip. Choosing the session is the job of
+    ``LATEST_QUOTES_SQL`` (``tests/analytics/test_io.py``), not of scoring.
+    """
     return pd.concat(
         [
             lognormal_quotes(
@@ -29,10 +34,7 @@ def _quotes() -> pd.DataFrame:
                 "SPY", date(2024, 1, 5), date(2024, 1, 9), 100.0, 0.25, RATE, SPY_STRIKES
             ),
             lognormal_quotes(
-                "SPY", date(2024, 1, 4), date(2024, 2, 2), 99.0, 0.25, RATE, SPY_STRIKES
-            ),
-            lognormal_quotes(
-                "AAPL", date(2024, 1, 4), date(2024, 2, 2), 190.0, 0.3, RATE, AAPL_STRIKES
+                "AAPL", date(2024, 1, 5), date(2024, 2, 2), 190.0, 0.3, RATE, AAPL_STRIKES
             ),
         ],
         ignore_index=True,
@@ -52,19 +54,14 @@ def _tilt() -> CalibrationMap:
 def _scores(
     cmap: CalibrationMap | None = None, config: AnalyticsConfig = DEFAULT_CONFIG
 ) -> pd.DataFrame:
-    latest = latest_session(_quotes(), min_dte_days=config.min_dte_days)
-    return score_latest_session(latest, cmap or CalibrationMap.identity(0), config)
+    return score_latest_session(_quotes(), cmap or CalibrationMap.identity(0), config)
 
 
-def test_latest_session_is_per_underlying_and_drops_short_dte() -> None:
-    latest = latest_session(_quotes(), min_dte_days=7)
-    spy = latest.loc[latest["underlying"] == "SPY"]
-    aapl = latest.loc[latest["underlying"] == "AAPL"]
-    assert set(spy["trade_date"]) == {pd.Timestamp("2024-01-05")}
-    assert set(aapl["trade_date"]) == {pd.Timestamp("2024-01-04")}
-    assert set(spy["expiration"]) == {pd.Timestamp("2024-02-02"), pd.Timestamp("2024-02-16")}
-    assert (latest["dte_days"] >= 7).all()
-    assert latest.index.tolist() == list(range(len(latest)))
+def test_short_dte_expiries_are_not_scored() -> None:
+    scores = _scores()
+
+    assert (scores["dte_days"] >= DEFAULT_CONFIG.min_dte_days).all()
+    assert pd.Timestamp("2024-01-09") not in set(scores["expiration"])
 
 
 def test_every_row_satisfies_the_spread_invariants() -> None:
@@ -95,7 +92,7 @@ def test_every_row_satisfies_the_spread_invariants() -> None:
         f"{first['underlying']}|{first['trade_date'].date()}|{first['expiration'].date()}"
         f"|{first['short_strike']:.3f}|{first['long_strike']:.3f}"
     )
-    assert scores["dte_days"].isin([29, 28, 42]).all()
+    assert scores["dte_days"].isin([28, 42]).all()
 
 
 def test_identity_map_leaves_probabilities_raw() -> None:
@@ -117,7 +114,7 @@ def test_fitted_map_changes_the_calibrated_columns_only() -> None:
 def test_scores_equal_score_spread_with_the_calibration_argument() -> None:
     cmap = _tilt()
     scores = _scores(cmap)
-    quotes = latest_session(_quotes(), min_dte_days=7)
+    quotes = _quotes()
     for _, row in scores.sample(12, random_state=4).iterrows():
         chain = quotes.loc[
             (quotes["underlying"] == row["underlying"])
@@ -150,7 +147,7 @@ def test_scores_equal_score_spread_with_the_calibration_argument() -> None:
 
 def test_natural_credit_is_short_bid_minus_long_ask() -> None:
     scores = _scores()
-    quotes = latest_session(_quotes(), min_dte_days=7)
+    quotes = _quotes()
     puts = quotes.loc[quotes["option_right"] == "P"].set_index(
         ["underlying", "expiration", "strike"]
     )
@@ -225,8 +222,7 @@ def test_ranks_are_contiguous_and_follow_rank_spreads_order() -> None:
 
 
 def test_map_id_is_recorded() -> None:
-    latest = latest_session(_quotes(), min_dte_days=7)
-    scores = score_latest_session(latest, _tilt(), map_id="fold_2024")
+    scores = score_latest_session(_quotes(), _tilt(), map_id="fold_2024")
     assert (scores["map_id"] == "fold_2024").all()
 
 
@@ -250,5 +246,3 @@ def test_chain_without_enough_usable_puts_is_skipped() -> None:
 def test_missing_column_raises() -> None:
     with pytest.raises(ValueError, match="quotes is missing"):
         score_latest_session(_quotes().drop(columns=["ask"]), CalibrationMap.identity(0))
-    with pytest.raises(ValueError, match="quotes is missing"):
-        latest_session(_quotes().drop(columns=["dte_days"]), min_dte_days=7)
