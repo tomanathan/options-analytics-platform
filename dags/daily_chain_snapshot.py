@@ -12,20 +12,25 @@ session (for example a manual trigger the next morning), it raises ``AlpacaError
 ``snapshot`` fails before anything is written, rather than storing live quotes under an
 earlier session's date.
 
-Tasks run ``snapshot >> write >> quality``:
+Tasks run ``snapshot >> quality >> write``:
 
 * ``snapshot`` pulls the chain and stages it as a parquet file (a DataFrame never travels
   through XCom). An empty response fails the task rather than wiping the day's slice.
-* ``write`` overwrites the ``(session, "alpaca_indicative")`` slice with the staged file,
-  in the one-slot ``bronze_writers`` pool.
-* ``quality`` reads the slice back and runs the bronze suite against the previous 20
-  sessions of the same source.
+* ``quality`` runs the bronze suite on the staged frame against the previous 20 sessions of
+  the same source, before anything is committed, and returns the staged path.
+* ``write`` overwrites the ``(session, "alpaca_indicative")`` slice with the staged file, in
+  the one-slot ``bronze_writers`` pool, then reads the slice back and checks its row count
+  against what it wrote. It is the task that updates the ``BRONZE_OPTION_CHAIN`` Dataset, so
+  ``dbt_build`` is triggered only by a slice that passed the gate and landed.
 
 Each task fails without retries on an error retrying cannot fix (``fail_fast``).
 
-The gate runs after the write, as ADR 0003 decides: it inspects what was actually written,
-not a copy that might differ from it. A failure fails the run and leaves the slice in place
-for inspection; the next run, or a re-run of this one, overwrites it.
+The gate runs before the write, as ADR 0003 (amended) decides: a slice that fails it must not
+be published, because ``dbt_build`` and the analytics read bronze as soon as it is committed.
+A failure fails the run before the slice is touched, so the previous slice of the session, if
+any, stays in place and the run can be repeated. The staged file is the exact frame ``write``
+commits, so the gate inspects what will be written; the read-back row count after the write
+is a second, cheap check that the commit holds that frame.
 """
 
 import logging
@@ -66,7 +71,7 @@ def _session() -> date:
     tags=["phase-1", "bronze"],
 )
 def daily_chain_snapshot() -> None:
-    """Snapshot the watchlist's option chains after the close, write them, then gate them."""
+    """Snapshot the watchlist's option chains after the close, gate them, then write them."""
 
     @task
     @fail_fast
@@ -84,42 +89,50 @@ def daily_chain_snapshot() -> None:
         logger.info("staged %d contracts for %s at %s", len(frame), session, path)
         return str(path)
 
-    @task(pool=BRONZE_WRITERS_POOL)
+    @task
     @fail_fast
-    def write(path: str) -> int:
-        """Overwrite the session's slice with the staged snapshot; return the row count."""
+    def quality(path: str) -> str:
+        """Run the bronze suite on the staged slice; BronzeQualityError fails the task.
+
+        Returns:
+            The staged parquet path, unchanged, so ``write`` runs after the gate.
+        """
         import pandas as pd
 
-        from oap.ingest.iceberg_writer import write_partition
-
-        session = _session()
-        frame = pd.read_parquet(path, dtype_backend="pyarrow")
-        rows = write_partition(bronze_table(), frame, trade_date=session, source=SOURCE)
-        logger.info("wrote %d rows to (%s, %s)", rows, session, SOURCE)
-        return rows
-
-    @task(outlets=[BRONZE_OPTION_CHAIN])
-    @fail_fast
-    def quality(written: int) -> None:
-        """Run the bronze suite on the written slice; BronzeQualityError fails the task."""
         from oap.calendar import previous_trading_day, trading_days
-        from oap.ingest.iceberg_writer import read_partition, read_range
+        from oap.ingest.iceberg_writer import read_range
         from oap.quality.bronze_suite import assert_bronze_ok
 
         session = _session()
-        table = bronze_table()
-        frame = read_partition(table, trade_date=session, source=SOURCE)
-        if len(frame) != written:
-            raise ValueError(f"wrote {written} rows but the slice holds {len(frame)}")
+        frame = pd.read_parquet(path, dtype_backend="pyarrow")
         last = previous_trading_day(session)
         # 20 sessions always fit in 45 calendar days, holidays included.
         window = trading_days(last - timedelta(days=45), last)[-HISTORY_SESSIONS:]
-        history = read_range(table, start=window[0], end=last, source=SOURCE)
+        history = read_range(bronze_table(), start=window[0], end=last, source=SOURCE)
         assert_bronze_ok(frame, history)
         logger.info("bronze suite passed for (%s, %s): %d rows", session, SOURCE, len(frame))
+        return path
+
+    @task(pool=BRONZE_WRITERS_POOL, outlets=[BRONZE_OPTION_CHAIN])
+    @fail_fast
+    def write(path: str) -> int:
+        """Overwrite the session's slice with the gated snapshot; return the row count."""
+        import pandas as pd
+
+        from oap.ingest.iceberg_writer import read_partition, write_partition
+
+        session = _session()
+        table = bronze_table()
+        frame = pd.read_parquet(path, dtype_backend="pyarrow")
+        rows = write_partition(table, frame, trade_date=session, source=SOURCE)
+        stored = len(read_partition(table, trade_date=session, source=SOURCE))
+        if stored != rows:
+            raise ValueError(f"wrote {rows} rows but the slice holds {stored}")
+        logger.info("wrote %d rows to (%s, %s)", rows, session, SOURCE)
+        return rows
 
     # TaskFlow resolves XComArgs to their values at run time, which mypy cannot see.
-    quality(write(snapshot()))  # type: ignore[arg-type]
+    write(quality(snapshot()))  # type: ignore[arg-type]
 
 
 daily_chain_snapshot()

@@ -81,7 +81,7 @@ def test_one_run_at_a_time_with_build_and_no_full_refresh_by_default(dagbag: Dag
 
 @pytest.mark.parametrize(
     ("dag_id", "task_id"),
-    [("daily_chain_snapshot", "quality"), ("backfill_chains", "summarize")],
+    [("daily_chain_snapshot", "write"), ("backfill_chains", "summarize")],
 )
 def test_chain_producers_update_the_option_chain_dataset(
     dagbag: DagBag, dag_id: str, task_id: str
@@ -90,9 +90,12 @@ def test_chain_producers_update_the_option_chain_dataset(
     assert [cast(Dataset, o).uri for o in outlets] == [BRONZE_OPTION_CHAIN.uri]
 
 
-def test_the_write_tasks_do_not_update_the_dataset(dagbag: DagBag) -> None:
-    # The dataset must only move after the quality gate (or the whole backfill) has passed.
-    assert not dagbag.dags["daily_chain_snapshot"].get_task("write").outlets
+def test_the_daily_gate_and_the_backfill_month_writes_do_not_update_the_dataset(
+    dagbag: DagBag,
+) -> None:
+    # The daily dataset moves only after the gate passed and the slice landed (its write task);
+    # the backfill's moves after the whole backfill has passed.
+    assert not dagbag.dags["daily_chain_snapshot"].get_task("quality").outlets
     assert not dagbag.dags["backfill_chains"].get_task("write_month").outlets
 
 

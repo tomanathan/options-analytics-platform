@@ -1,6 +1,6 @@
 # 0003. Overwrite the (trade_date, source) slice on every bronze write
 
-Status: Accepted (Phase 1)
+Status: Accepted (Phase 1); amended 2026-10-19 (the quality gate runs before the write, see Costs and risks)
 Date: 2026-10-05
 
 ## Context
@@ -30,10 +30,12 @@ Good:
 
 Costs and risks:
 
-- A partial source response replaces a full day with a partial one. The overwrite does not know the new frame is smaller than the old one. The quality gate therefore has to run on what was written, and the per-underlying row-count check (within 50% of the trailing 20-trading-day median) is the detector. The daily DAG does this: its `quality` task reads the slice back after the write. A failed gate leaves the partial slice in place until the day is re-run; it does not roll back. Phase 1's backfill DAG does not run the gate; after a backfill, compare per-day counts with `make iceberg-count`.
+- A partial source response replaces a full day with a partial one. The overwrite does not know the new frame is smaller than the old one. The quality gate therefore has to run on the frame before it is written, and the per-underlying row-count check (within 50% of the trailing 20-trading-day median) is the detector. The daily DAG does this: its `quality` task gates the staged frame, then `write` commits it, then reads the slice back and checks the row count against what it wrote. A failed gate stops the run before the write, so a slice that fails it is never committed and the previous slice of that day, if any, stays in place; the `BRONZE_OPTION_CHAIN` Dataset is updated by `write`, so `dbt_build` only runs after a slice that passed the gate landed. Phase 1's backfill DAG does not run the gate; after a backfill, compare per-day counts with `make iceberg-count`.
 - `ingested_at` changes whenever a slice is rewritten, so two runs over identical vendor data differ in that column. Content comparisons, such as checking a re-run was a no-op, must exclude it; `content_hash` in `oap.ingest.iceberg_writer` does, and `make iceberg-count` prints it. The backfill uses the same hash to skip a slice whose content did not change, so a no-op re-run adds no snapshot.
 - Every re-run that changes a slice creates a new Iceberg snapshot and new data files. The weekly maintenance DAG expires snapshots older than 7 days and compacts slices that have more than one data file, but pyiceberg 0.12 expiry removes snapshot metadata only: superseded data files and manifests stay on disk until a later phase adds an orphan-file sweep (or an S3 lifecycle rule on the Glue warehouse). Re-runs that change nothing do not commit, which keeps this cost proportional to real changes.
 - The writer must be given the full slice. Passing only some underlyings for a (trade_date, source) replaces the rest with nothing. The daily DAG passes the whole watchlist in one frame. The backfill may be run for a subset of symbols, so its write task reads the existing slice, keeps the rows of underlyings the run did not request, replaces the rest, and overwrites once; writes run one at a time so two commits never race on the same slice. The quality gate catches a missing underlying through its row-count check once that underlying has five days of history.
+
+Amendment (2026-10-19): the first version of this ADR ran the gate after the write, because the gate then inspects what was actually written. That order publishes a gate-failed slice: it is committed, visible to every reader, and `dbt_build` and the analytics read it before anyone has looked at the failure. The gate now runs on the staged frame, which is the exact frame `write` commits, so a failed gate publishes nothing and the run can simply be repeated. The cost is that the gate no longer inspects the table's own copy; the row-count read-back after the write covers a commit that did not hold the frame.
 
 ## Alternatives considered
 

@@ -79,8 +79,8 @@ def test_daily_snapshot_uses_the_nyse_timetable(dagbag: DagBag) -> None:
 
 def test_daily_snapshot_tasks_run_in_order(dagbag: DagBag) -> None:
     dag = dagbag.dags["daily_chain_snapshot"]
-    assert dag.get_task("snapshot").downstream_task_ids == {"write"}
-    assert dag.get_task("write").downstream_task_ids == {"quality"}
+    assert dag.get_task("snapshot").downstream_task_ids == {"quality"}
+    assert dag.get_task("quality").downstream_task_ids == {"write"}
 
 
 def test_scheduler_can_rebuild_the_timetable_from_the_serialized_dag(dagbag: DagBag) -> None:
