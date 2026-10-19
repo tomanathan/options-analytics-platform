@@ -178,8 +178,8 @@ def _dolthub_failure(response: Callable[[httpx.Request], httpx.Response]) -> Dol
     return caught.value
 
 
-def test_dolthub_403_is_deterministic_and_exhausted_503_is_not() -> None:
-    forbidden = _dolthub_failure(lambda request: httpx.Response(403, json={}))
+def test_dolthub_401_is_deterministic_and_exhausted_503_is_not() -> None:
+    forbidden = _dolthub_failure(lambda request: httpx.Response(401, json={}))
     unavailable = _dolthub_failure(lambda request: httpx.Response(503, json={}))
 
     assert is_deterministic(forbidden)
@@ -220,8 +220,8 @@ def test_other_dolthub_failures_are_deterministic(
     assert is_deterministic(_dolthub_failure(response))
 
 
-def test_fail_fast_converts_a_dolthub_403_and_keeps_an_exhausted_503() -> None:
-    forbidden = _dolthub_failure(lambda request: httpx.Response(403, json={}))
+def test_fail_fast_converts_a_dolthub_401_and_keeps_an_exhausted_503() -> None:
+    forbidden = _dolthub_failure(lambda request: httpx.Response(401, json={}))
     unavailable = _dolthub_failure(lambda request: httpx.Response(503, json={}))
 
     with pytest.raises(AirflowFailException, match="^DoltHubError:") as caught:
