@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 ErrorCode = Literal["database_busy", "database_missing", "gold_missing", "not_found", "invalid"]
+SpreadSort = Literal["return", "edge", "reward_to_risk", "kelly", "pop", "pop_gap", "entry"]
 MapChoice = Literal["auto", "production", "walk_forward"]
 
 
@@ -238,8 +239,47 @@ class SpreadRow(ApiModel):
         description="Calibrated annualised return on max loss (collateral); null when not finite."
     )
     kelly_fraction: float = Field(description="Kelly fraction of capital, a decimal in [0, 1].")
+    fair_credit: float = Field(
+        description="Calibrated fair credit in dollars per share ($/sh): the expected payout of "
+        "the long put spread, undiscounted, between 0 and the width."
+    )
+    edge: float = Field(
+        description="Mid credit minus the calibrated fair credit in dollars per share ($/sh)."
+    )
+    edge_natural: float = Field(
+        description="Natural credit minus the calibrated fair credit in dollars per share ($/sh)."
+    )
+    edge_pct: float = Field(description="Edge as a decimal share of the mid credit, at most 1.")
+    edge_pop: float = Field(
+        description="Calibrated minus raw probability of profit, a decimal in [-1, 1]."
+    )
+    pop_implied: float = Field(
+        description="Probability of profit implied by the price (max loss divided by width), "
+        "a decimal in [0, 1]."
+    )
+    pop_gap: float = Field(
+        description="Calibrated probability of profit minus pop_implied, a decimal; positive "
+        "when the market pays more than the calibrated probability justifies."
+    )
+    payoff_std: float = Field(
+        description="Standard deviation of the spread payoff in dollars per share ($/sh), "
+        "between 0 and half the width."
+    )
+    reward_to_risk: float | None = Field(
+        description="Expected payoff divided by payoff_std, per trade and not annualised; null "
+        "when payoff_std is 0."
+    )
     eligible: bool = Field(description="True when the spread passes the eligibility rules.")
     rank: int | None = Field(description="1 is best among eligible spreads; null otherwise.")
+    rank_edge: int | None = Field(
+        description="1 is best by edge_pct among guarded eligible spreads; null otherwise."
+    )
+    rank_rr: int | None = Field(
+        description="1 is best by reward_to_risk among guarded eligible spreads; null otherwise."
+    )
+    rank_entry: int | None = Field(
+        description="1 is best in the Top to enter ranking (see entry_rule); null otherwise."
+    )
     extrapolated: bool = Field(description="True when the long strike is outside the CDF knots.")
     flags: list[str] = Field(description="Quality flags of the raw CDF.")
 
@@ -254,9 +294,9 @@ class SpreadsResponse(ApiModel):
     min_prob_profit: float = Field(description="Eligibility threshold on prob_profit (config).")
     underlyings: list[str] = Field(description="Underlyings in the table, ascending.")
     expirations: list[date] = Field(description="Expirations in the table, ascending.")
-    rows: list[SpreadRow] = Field(
-        description="Rank ascending with nulls last, then annualised_roc descending."
-    )
+    sort: SpreadSort = Field(description="The order of rows.")
+    entry_rule: str = Field(description="The rule behind rank_entry, in one sentence.")
+    rows: list[SpreadRow] = Field(description="Rows ordered by sort.")
 
 
 class PayoffPoint(ApiModel):
@@ -288,6 +328,16 @@ class SpreadDetail(SpreadRow):
     years: float = Field(description="Time to expiration in years (ACT/365).")
     underlying_close: float = Field(description="Underlying close in dollars ($/sh).")
     expected_payoff: float = Field(description="Calibrated expected payoff in dollars ($/sh).")
+    fair_credit_raw: float = Field(
+        description="Fair credit under the raw risk-neutral CDF in dollars per share ($/sh)."
+    )
+    edge_raw: float = Field(
+        description="Mid credit minus the raw fair credit in dollars per share ($/sh)."
+    )
+    pop_gap_raw: float = Field(
+        description="Raw probability of profit minus pop_implied, a decimal; the control for "
+        "pop_gap."
+    )
     interest: float = Field(description="Interest on the collateral in dollars ($/sh).")
     annualised_roc_raw: float | None = Field(
         description="Raw annualised return on max loss (collateral); null when not finite."

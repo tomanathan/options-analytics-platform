@@ -22,6 +22,7 @@ from oap.api.models import (
     SpreadDetail,
     SpreadRegions,
     SpreadRow,
+    SpreadSort,
 )
 from oap.engine.implied_distribution import RiskNeutralCdf
 
@@ -37,6 +38,9 @@ WIDTHS_BELOW: Final = 2.0
 CLOSE_PAD: Final = 0.04
 """The payoff grid reaches this fraction of the close past the breakeven and the close."""
 
+RANK_COLUMNS: Final = ("rank", "rank_edge", "rank_rr", "rank_entry")
+"""The nullable integer rank columns of the spread table."""
+
 
 @dataclass(frozen=True)
 class SpreadFilters:
@@ -49,7 +53,9 @@ class SpreadFilters:
         max_width: Widest spread in dollars per share; no bound when None.
         min_pop: Smallest calibrated probability of profit, a decimal.
         min_credit: Smallest mid credit in dollars per share.
+        min_edge_pct: Smallest edge as a decimal share of the mid credit; no bound when None.
         eligible_only: Keep only eligible spreads.
+        sort: Row order; see ``order_spreads``.
         limit: Most rows returned.
     """
 
@@ -59,7 +65,9 @@ class SpreadFilters:
     max_width: float | None = None
     min_pop: float = 0.0
     min_credit: float = 0.0
+    min_edge_pct: float | None = None
     eligible_only: bool = True
+    sort: SpreadSort = "return"
     limit: int = MAX_SPREAD_ROWS
 
 
@@ -70,11 +78,13 @@ def prepare_spreads(frame: pd.DataFrame) -> pd.DataFrame:
         frame: ``gold.spread_scores`` with ``datetime64`` dates.
 
     Returns:
-        A copy whose ``rank`` is a nullable integer and whose ``flags`` are strings, sorted
-        by rank ascending with nulls last and then by ``annualised_roc`` descending.
+        A copy whose ranks (``rank``, ``rank_edge``, ``rank_rr``, ``rank_entry``) are
+        nullable integers and whose ``flags`` are strings, sorted by rank ascending with
+        nulls last and then by ``annualised_roc`` descending.
     """
     out = frame.copy()
-    out["rank"] = pd.to_numeric(out["rank"]).astype("Int64")
+    for name in RANK_COLUMNS:
+        out[name] = pd.to_numeric(out[name]).astype("Int64")
     out["flags"] = out["flags"].fillna("").astype(str)
     return out.sort_values(
         ["rank", "annualised_roc"], ascending=[True, False], na_position="last", kind="stable"
@@ -104,7 +114,43 @@ def filter_spreads(frame: pd.DataFrame, filters: SpreadFilters) -> pd.DataFrame:
         keep &= frame["width"] <= filters.max_width
     keep &= frame["prob_profit"] >= filters.min_pop
     keep &= frame["credit"] >= filters.min_credit
+    if filters.min_edge_pct is not None:
+        keep &= frame["edge_pct"] >= filters.min_edge_pct
     return frame.loc[keep]
+
+
+_SORT_KEYS: Final[Mapping[str, tuple[list[str], list[bool]]]] = {
+    "edge": (["rank_edge", "edge_pct"], [True, False]),
+    "reward_to_risk": (["rank_rr", "reward_to_risk"], [True, False]),
+    "kelly": (["kelly_fraction", "rank"], [False, True]),
+    "pop": (["prob_profit", "rank"], [False, True]),
+    "pop_gap": (["eligible", "pop_gap", "rank"], [False, False, True]),
+    "entry": (["rank_entry", "annualised_roc"], [True, False]),
+}
+
+
+def order_spreads(frame: pd.DataFrame, sort: SpreadSort) -> pd.DataFrame:
+    """Order the rows by a sort key with a stable sort and nulls last.
+
+    ``return`` keeps the order of ``prepare_spreads`` (rank ascending, then
+    ``annualised_roc`` descending). The others are: ``edge`` is ``rank_edge`` ascending then
+    ``edge_pct`` descending; ``reward_to_risk`` is ``rank_rr`` ascending then
+    ``reward_to_risk`` descending; ``kelly`` is ``kelly_fraction`` descending then ``rank``
+    ascending; ``pop`` is ``prob_profit`` descending then ``rank`` ascending; ``pop_gap`` is
+    eligible spreads first, ``pop_gap`` descending, then ``rank`` ascending; ``entry`` is
+    ``rank_entry`` ascending then ``annualised_roc`` descending.
+
+    Args:
+        frame: Rows from ``filter_spreads``.
+        sort: The order.
+
+    Returns:
+        The rows in that order.
+    """
+    if sort == "return":
+        return frame
+    columns, ascending = _SORT_KEYS[sort]
+    return frame.sort_values(columns, ascending=ascending, na_position="last", kind="stable")
 
 
 def _flags(text: object) -> list[str]:
@@ -138,7 +184,7 @@ def _row(record: Mapping[Hashable, Any]) -> SpreadRow:
         record: One row of the spread table as a mapping.
 
     Returns:
-        The response row; non-finite ``annualised_roc`` becomes None.
+        The response row; non-finite ``annualised_roc`` and ``reward_to_risk`` become None.
     """
     return SpreadRow(
         spread_key=str(record["spread_key"]),
@@ -160,8 +206,20 @@ def _row(record: Mapping[Hashable, Any]) -> SpreadRow:
         expected_roc_raw=float(record["expected_roc_raw"]),
         annualised_roc=finite_or_none(record["annualised_roc"]),
         kelly_fraction=float(record["kelly_fraction"]),
+        fair_credit=float(record["fair_credit"]),
+        edge=float(record["edge"]),
+        edge_natural=float(record["edge_natural"]),
+        edge_pct=float(record["edge_pct"]),
+        edge_pop=float(record["edge_pop"]),
+        pop_implied=float(record["pop_implied"]),
+        pop_gap=float(record["pop_gap"]),
+        payoff_std=float(record["payoff_std"]),
+        reward_to_risk=finite_or_none(record["reward_to_risk"]),
         eligible=bool(record["eligible"]),
         rank=_rank(record["rank"]),
+        rank_edge=_rank(record["rank_edge"]),
+        rank_rr=_rank(record["rank_rr"]),
+        rank_entry=_rank(record["rank_entry"]),
         extrapolated=bool(record["extrapolated"]),
         flags=_flags(record["flags"]),
     )
@@ -252,6 +310,9 @@ def spread_detail(row: pd.Series, curves: ExpiryCurves) -> SpreadDetail:
         years=float(row["years"]),
         underlying_close=float(row["underlying_close"]),
         expected_payoff=float(row["expected_payoff"]),
+        fair_credit_raw=float(row["fair_credit_raw"]),
+        edge_raw=float(row["edge_raw"]),
+        pop_gap_raw=float(row["pop_gap_raw"]),
         interest=float(row["interest"]),
         annualised_roc_raw=finite_or_none(row["annualised_roc_raw"]),
         calibrated=bool(row["calibrated"]),

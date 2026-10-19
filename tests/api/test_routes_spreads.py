@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from oap.analytics.config import DEFAULT_CONFIG
 from oap.analytics.sample import chain_cdf
+from oap.analytics.scoring import ENTRY_RULE
 from oap.engine.calibration import apply_calibration
 from oap.engine.conventions import dte_years
 from tests.api.gold import LATEST, GoldFixture
@@ -105,6 +106,8 @@ def test_limit_does_not_change_the_matched_count(client: TestClient) -> None:
         {"min_credit": -1},
         {"expiration": "soon"},
         {"underlying": "spy"},
+        {"sort": "bogus"},
+        {"min_edge_pct": 1.5},
     ],
 )
 def test_bad_filters_are_rejected(client: TestClient, params: dict[str, object]) -> None:
@@ -215,3 +218,107 @@ def test_unknown_spread_key_is_404(client: TestClient) -> None:
 def test_the_key_is_matched_as_data_not_sql(client: TestClient) -> None:
     response = client.get(_detail_url("x' OR '1'='1"))
     assert response.status_code == 404
+
+
+def _values(rows: list[Row], name: str) -> list[float]:
+    return [float(str(r[name])) for r in rows if r[name] is not None]
+
+
+def test_the_response_names_its_sort_and_the_entry_rule(client: TestClient) -> None:
+    body = client.get("/api/spreads").json()
+    assert body["sort"] == "return"
+    assert body["entry_rule"] == ENTRY_RULE
+    assert client.get("/api/spreads", params={"sort": "entry"}).json()["sort"] == "entry"
+
+
+def _ranked_head(rows: list[Row], column: str) -> list[int]:
+    ranks = [r[column] for r in rows]
+    head = [int(str(r)) for r in ranks if r is not None]
+    assert ranks[: len(head)] == head
+    assert all(r is None for r in ranks[len(head) :])
+    return head
+
+
+@pytest.mark.parametrize(
+    ("sort", "column", "tie_break"),
+    [
+        ("edge", "rank_edge", "edge_pct"),
+        ("reward_to_risk", "rank_rr", "reward_to_risk"),
+        ("entry", "rank_entry", "annualised_roc"),
+    ],
+)
+def test_rank_sorts_put_the_ranked_rows_first_in_rank_order(
+    client: TestClient, sort: str, column: str, tie_break: str
+) -> None:
+    rows = _rows(client, sort=sort, eligible_only="false")
+    head = _ranked_head(rows, column)
+    assert len(head) > 3
+    assert head == list(range(1, len(head) + 1))
+    rest = _values(rows[len(head) :], tie_break)
+    assert rest == sorted(rest, reverse=True)
+
+
+def test_value_sorts_are_descending(client: TestClient) -> None:
+    for sort, column in (("kelly", "kelly_fraction"), ("pop", "prob_profit")):
+        values = _values(_rows(client, sort=sort), column)
+        assert len(values) > 10
+        assert values == sorted(values, reverse=True), sort
+    gaps = _values(_rows(client, sort="pop_gap"), "pop_gap")
+    assert gaps == sorted(gaps, reverse=True)
+    everything = _rows(client, sort="pop_gap", eligible_only="false")
+    eligible = [bool(r["eligible"]) for r in everything]
+    assert eligible == sorted(eligible, reverse=True)
+
+
+def test_every_sort_returns_the_same_rows(client: TestClient) -> None:
+    keys = {
+        sort: sorted(str(r["spread_key"]) for r in _rows(client, sort=sort))
+        for sort in ("return", "edge", "reward_to_risk", "kelly", "pop", "pop_gap", "entry")
+    }
+    assert len({tuple(v) for v in keys.values()}) == 1
+
+
+def test_min_edge_pct_keeps_the_rows_with_enough_edge(
+    client: TestClient, gold: GoldFixture
+) -> None:
+    scores = gold.scores
+    eligible = scores.loc[scores["eligible"].astype(bool)]
+    cut = float(eligible["edge_pct"].median())
+    rows = _rows(client, min_edge_pct=cut)
+    assert len(rows) == int((eligible["edge_pct"] >= cut).sum())
+    assert 0 < len(rows) < len(eligible)
+    assert all(float(str(r["edge_pct"])) >= cut for r in rows)
+    # edge_pct is 1 exactly when the fair credit is 0, and the upper bound of the filter is 1.
+    assert len(_rows(client, min_edge_pct=1.0)) == int((eligible["edge_pct"] >= 1.0).sum())
+
+
+def test_entry_ranked_rows_pass_the_guards(client: TestClient) -> None:
+    rows = [r for r in _rows(client, sort="entry") if r["rank_entry"] is not None]
+    assert len(rows) > 3
+    for row in rows:
+        assert float(str(row["prob_profit"])) >= DEFAULT_CONFIG.entry_min_pop
+        assert float(str(row["credit"])) >= DEFAULT_CONFIG.min_edge_credit
+        assert float(str(row["edge_natural"])) > 0
+        assert row["eligible"] is True
+        assert row["rank_edge"] is not None
+
+
+def test_detail_carries_the_edge_identities(client: TestClient) -> None:
+    for row in _rows(client, limit=5):
+        detail = client.get(_detail_url(str(row["spread_key"]))).json()
+        credit = detail["credit"]
+        assert detail["fair_credit"] + detail["edge"] == pytest.approx(credit, abs=1e-9)
+        assert detail["fair_credit_raw"] + detail["edge_raw"] == pytest.approx(credit, abs=1e-9)
+        assert detail["edge"] == pytest.approx(detail["expected_payoff"], abs=1e-12)
+        assert detail["edge_pct"] == pytest.approx(detail["edge"] / credit, abs=1e-12)
+        assert detail["edge_natural"] == pytest.approx(
+            detail["credit_natural"] - detail["fair_credit"], abs=1e-9
+        )
+        assert detail["pop_implied"] == pytest.approx(detail["max_loss"] / detail["width"])
+        assert detail["pop_gap"] == pytest.approx(
+            detail["prob_profit"] - detail["pop_implied"], abs=1e-12
+        )
+        assert detail["pop_gap_raw"] == pytest.approx(
+            detail["prob_profit_raw"] - detail["pop_implied"], abs=1e-12
+        )
+        assert 0.0 <= detail["payoff_std"] <= detail["width"] / 2 + 1e-9

@@ -6,13 +6,17 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from oap.api.models import SpreadSort
 from oap.api.spreads import (
     MAX_SPREAD_ROWS,
     SpreadFilters,
     filter_spreads,
+    order_spreads,
     payoff_curve,
     prepare_spreads,
+    spread_rows,
 )
+from tests.api.gold import GoldFixture
 
 
 def _frame() -> pd.DataFrame:
@@ -39,6 +43,13 @@ def _frame() -> pd.DataFrame:
             "annualised_roc",
         ],
     )
+    frame["rank_edge"] = [3, 1, 2, None, None, None]
+    frame["rank_rr"] = [2, 3, 1, None, None, None]
+    frame["rank_entry"] = [1, None, 2, None, None, None]
+    frame["edge_pct"] = [0.2, 0.5, 0.3, 0.6, 0.1, 0.4]
+    frame["reward_to_risk"] = [0.2, 0.1, 0.3, np.nan, 0.5, 0.4]
+    frame["kelly_fraction"] = [0.3, 0.1, 0.2, 0.9, 0.0, 0.5]
+    frame["pop_gap"] = [0.1, 0.3, 0.2, 0.5, -0.1, 0.4]
     frame["expiration"] = pd.to_datetime(frame["expiration"])
     frame["flags"] = ["", "clipped", None, "", "", ""]
     return frame
@@ -73,6 +84,58 @@ def test_filters_combine_with_and() -> None:
         frame, eligible_only=False, underlyings=("SPY",), expiration=date(2024, 4, 19)
     ) == ["f"]
     assert _keys(frame, underlyings=("ZZZ",)) == []
+
+
+def _ordered(sort: SpreadSort) -> list[str]:
+    frame = filter_spreads(prepare_spreads(_frame()), SpreadFilters(eligible_only=False))
+    return [str(key) for key in order_spreads(frame, sort)["spread_key"]]
+
+
+@pytest.mark.parametrize(
+    ("sort", "expected"),
+    [
+        ("return", ["b", "a", "c", "d", "f", "e"]),
+        # rank_edge ascending, then edge_pct descending for the nulls
+        ("edge", ["b", "c", "a", "d", "f", "e"]),
+        # rank_rr ascending, then reward_to_risk descending with the nan last
+        ("reward_to_risk", ["c", "a", "b", "e", "f", "d"]),
+        ("kelly", ["d", "f", "a", "c", "b", "e"]),
+        ("pop", ["a", "b", "c", "d", "e", "f"]),
+        # eligible first by pop_gap descending, then the rest
+        ("pop_gap", ["b", "c", "a", "d", "f", "e"]),
+        # rank_entry ascending, then annualised_roc descending with the nan last
+        ("entry", ["a", "c", "d", "b", "f", "e"]),
+    ],
+)
+def test_order_spreads(sort: SpreadSort, expected: list[str]) -> None:
+    assert _ordered(sort) == expected
+
+
+def test_order_spreads_breaks_ties_by_rank() -> None:
+    frame = _frame()
+    frame["kelly_fraction"] = 0.2
+    frame["prob_profit"] = 0.5
+    prepared = prepare_spreads(frame)
+    for sort in ("kelly", "pop"):
+        ordered = order_spreads(prepared, sort)
+        assert ordered["spread_key"].tolist() == ["b", "a", "c", "d", "f", "e"]
+
+
+def test_min_edge_pct_filters_on_the_edge_share() -> None:
+    assert _keys(_frame(), eligible_only=False, min_edge_pct=0.4) == ["b", "d", "f"]
+    assert _keys(_frame(), min_edge_pct=0.4) == ["b"]
+    assert _keys(_frame(), eligible_only=False, min_edge_pct=0.7) == []
+
+
+def test_a_nan_reward_to_risk_is_null_in_the_row(gold: GoldFixture) -> None:
+    frame = gold.scores.head(2).copy()
+    frame["reward_to_risk"] = [float("nan"), 0.25]
+    rows = spread_rows(prepare_spreads(frame))
+    by_key = {row.spread_key: row for row in rows}
+    nan_row = by_key[str(frame["spread_key"].iloc[0])]
+    assert nan_row.reward_to_risk is None
+    assert '"reward_to_risk":null' in nan_row.model_dump_json()
+    assert by_key[str(frame["spread_key"].iloc[1])].reward_to_risk == 0.25
 
 
 def test_filter_does_not_apply_the_limit() -> None:

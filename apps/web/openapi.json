@@ -1023,6 +1023,31 @@
             "title": "Dte Days",
             "type": "integer"
           },
+          "edge": {
+            "description": "Mid credit minus the calibrated fair credit in dollars per share ($/sh).",
+            "title": "Edge",
+            "type": "number"
+          },
+          "edge_natural": {
+            "description": "Natural credit minus the calibrated fair credit in dollars per share ($/sh).",
+            "title": "Edge Natural",
+            "type": "number"
+          },
+          "edge_pct": {
+            "description": "Edge as a decimal share of the mid credit, at most 1.",
+            "title": "Edge Pct",
+            "type": "number"
+          },
+          "edge_pop": {
+            "description": "Calibrated minus raw probability of profit, a decimal in [-1, 1].",
+            "title": "Edge Pop",
+            "type": "number"
+          },
+          "edge_raw": {
+            "description": "Mid credit minus the raw fair credit in dollars per share ($/sh).",
+            "title": "Edge Raw",
+            "type": "number"
+          },
           "eligible": {
             "description": "True when the spread passes the eligibility rules.",
             "title": "Eligible",
@@ -1052,6 +1077,16 @@
             "description": "True when the long strike is outside the CDF knots.",
             "title": "Extrapolated",
             "type": "boolean"
+          },
+          "fair_credit": {
+            "description": "Calibrated fair credit in dollars per share ($/sh): the expected payout of the long put spread, undiscounted, between 0 and the width.",
+            "title": "Fair Credit",
+            "type": "number"
+          },
+          "fair_credit_raw": {
+            "description": "Fair credit under the raw risk-neutral CDF in dollars per share ($/sh).",
+            "title": "Fair Credit Raw",
+            "type": "number"
           },
           "flags": {
             "description": "Quality flags of the raw CDF.",
@@ -1120,6 +1155,26 @@
             "title": "Payoff",
             "type": "array"
           },
+          "payoff_std": {
+            "description": "Standard deviation of the spread payoff in dollars per share ($/sh), between 0 and half the width.",
+            "title": "Payoff Std",
+            "type": "number"
+          },
+          "pop_gap": {
+            "description": "Calibrated probability of profit minus pop_implied, a decimal; positive when the market pays more than the calibrated probability justifies.",
+            "title": "Pop Gap",
+            "type": "number"
+          },
+          "pop_gap_raw": {
+            "description": "Raw probability of profit minus pop_implied, a decimal; the control for pop_gap.",
+            "title": "Pop Gap Raw",
+            "type": "number"
+          },
+          "pop_implied": {
+            "description": "Probability of profit implied by the price (max loss divided by width), a decimal in [0, 1].",
+            "title": "Pop Implied",
+            "type": "number"
+          },
           "prob_max_loss": {
             "description": "Calibrated probability of the maximum loss.",
             "title": "Prob Max Loss",
@@ -1147,8 +1202,56 @@
             "description": "1 is best among eligible spreads; null otherwise.",
             "title": "Rank"
           },
+          "rank_edge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best by edge_pct among guarded eligible spreads; null otherwise.",
+            "title": "Rank Edge"
+          },
+          "rank_entry": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best in the Top to enter ranking (see entry_rule); null otherwise.",
+            "title": "Rank Entry"
+          },
+          "rank_rr": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best by reward_to_risk among guarded eligible spreads; null otherwise.",
+            "title": "Rank Rr"
+          },
           "regions": {
             "$ref": "#/components/schemas/SpreadRegions"
+          },
+          "reward_to_risk": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected payoff divided by payoff_std, per trade and not annualised; null when payoff_std is 0.",
+            "title": "Reward To Risk"
           },
           "risk_free_apy": {
             "description": "Risk-free rate used for the CDF, decimal APY.",
@@ -1216,14 +1319,29 @@
           "expected_roc_raw",
           "annualised_roc",
           "kelly_fraction",
+          "fair_credit",
+          "edge",
+          "edge_natural",
+          "edge_pct",
+          "edge_pop",
+          "pop_implied",
+          "pop_gap",
+          "payoff_std",
+          "reward_to_risk",
           "eligible",
           "rank",
+          "rank_edge",
+          "rank_rr",
+          "rank_entry",
           "extrapolated",
           "flags",
           "trade_date",
           "years",
           "underlying_close",
           "expected_payoff",
+          "fair_credit_raw",
+          "edge_raw",
+          "pop_gap_raw",
           "interest",
           "annualised_roc_raw",
           "calibrated",
@@ -1300,6 +1418,26 @@
             "title": "Dte Days",
             "type": "integer"
           },
+          "edge": {
+            "description": "Mid credit minus the calibrated fair credit in dollars per share ($/sh).",
+            "title": "Edge",
+            "type": "number"
+          },
+          "edge_natural": {
+            "description": "Natural credit minus the calibrated fair credit in dollars per share ($/sh).",
+            "title": "Edge Natural",
+            "type": "number"
+          },
+          "edge_pct": {
+            "description": "Edge as a decimal share of the mid credit, at most 1.",
+            "title": "Edge Pct",
+            "type": "number"
+          },
+          "edge_pop": {
+            "description": "Calibrated minus raw probability of profit, a decimal in [-1, 1].",
+            "title": "Edge Pop",
+            "type": "number"
+          },
           "eligible": {
             "description": "True when the spread passes the eligibility rules.",
             "title": "Eligible",
@@ -1325,6 +1463,11 @@
             "title": "Extrapolated",
             "type": "boolean"
           },
+          "fair_credit": {
+            "description": "Calibrated fair credit in dollars per share ($/sh): the expected payout of the long put spread, undiscounted, between 0 and the width.",
+            "title": "Fair Credit",
+            "type": "number"
+          },
           "flags": {
             "description": "Quality flags of the raw CDF.",
             "items": {
@@ -1346,6 +1489,21 @@
           "max_loss": {
             "description": "Width minus credit in dollars per share ($/sh).",
             "title": "Max Loss",
+            "type": "number"
+          },
+          "payoff_std": {
+            "description": "Standard deviation of the spread payoff in dollars per share ($/sh), between 0 and half the width.",
+            "title": "Payoff Std",
+            "type": "number"
+          },
+          "pop_gap": {
+            "description": "Calibrated probability of profit minus pop_implied, a decimal; positive when the market pays more than the calibrated probability justifies.",
+            "title": "Pop Gap",
+            "type": "number"
+          },
+          "pop_implied": {
+            "description": "Probability of profit implied by the price (max loss divided by width), a decimal in [0, 1].",
+            "title": "Pop Implied",
             "type": "number"
           },
           "prob_max_loss": {
@@ -1374,6 +1532,54 @@
             ],
             "description": "1 is best among eligible spreads; null otherwise.",
             "title": "Rank"
+          },
+          "rank_edge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best by edge_pct among guarded eligible spreads; null otherwise.",
+            "title": "Rank Edge"
+          },
+          "rank_entry": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best in the Top to enter ranking (see entry_rule); null otherwise.",
+            "title": "Rank Entry"
+          },
+          "rank_rr": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1 is best by reward_to_risk among guarded eligible spreads; null otherwise.",
+            "title": "Rank Rr"
+          },
+          "reward_to_risk": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected payoff divided by payoff_std, per trade and not annualised; null when payoff_std is 0.",
+            "title": "Reward To Risk"
           },
           "short_moneyness": {
             "description": "Short strike divided by the close.",
@@ -1420,8 +1626,20 @@
           "expected_roc_raw",
           "annualised_roc",
           "kelly_fraction",
+          "fair_credit",
+          "edge",
+          "edge_natural",
+          "edge_pct",
+          "edge_pop",
+          "pop_implied",
+          "pop_gap",
+          "payoff_std",
+          "reward_to_risk",
           "eligible",
           "rank",
+          "rank_edge",
+          "rank_rr",
+          "rank_entry",
           "extrapolated",
           "flags"
         ],
@@ -1444,6 +1662,11 @@
             "description": "Session the scores were computed for.",
             "title": "As Of"
           },
+          "entry_rule": {
+            "description": "The rule behind rank_entry, in one sentence.",
+            "title": "Entry Rule",
+            "type": "string"
+          },
           "expirations": {
             "description": "Expirations in the table, ascending.",
             "items": {
@@ -1464,12 +1687,26 @@
             "type": "number"
           },
           "rows": {
-            "description": "Rank ascending with nulls last, then annualised_roc descending.",
+            "description": "Rows ordered by sort.",
             "items": {
               "$ref": "#/components/schemas/SpreadRow"
             },
             "title": "Rows",
             "type": "array"
+          },
+          "sort": {
+            "description": "The order of rows.",
+            "enum": [
+              "return",
+              "edge",
+              "reward_to_risk",
+              "kelly",
+              "pop",
+              "pop_gap",
+              "entry"
+            ],
+            "title": "Sort",
+            "type": "string"
           },
           "source": {
             "description": "Where the scores come from.",
@@ -1502,6 +1739,8 @@
           "min_prob_profit",
           "underlyings",
           "expirations",
+          "sort",
+          "entry_rule",
           "rows"
         ],
         "title": "SpreadsResponse",
@@ -1643,7 +1882,7 @@
     },
     "/api/spreads": {
       "get": {
-        "description": "List the scored put credit spreads of the latest session.\n\nArgs:\n    store: The data store.\n    response: The response, for the stale-data header.\n    underlying: Underlyings to keep; all when empty.\n    expiration: Expiration to keep; all when None.\n    min_width: Narrowest spread in dollars per share.\n    max_width: Widest spread in dollars per share.\n    min_pop: Smallest calibrated probability of profit, a decimal.\n    min_credit: Smallest mid credit in dollars per share.\n    eligible_only: Keep only spreads that pass the eligibility rules.\n    limit: Most rows returned.\n\nReturns:\n    The matching spreads in rank order, with the facets of the whole table.",
+        "description": "List the scored put credit spreads of the latest session.\n\nArgs:\n    store: The data store.\n    response: The response, for the stale-data header.\n    underlying: Underlyings to keep; all when empty.\n    expiration: Expiration to keep; all when None.\n    min_width: Narrowest spread in dollars per share.\n    max_width: Widest spread in dollars per share.\n    min_pop: Smallest calibrated probability of profit, a decimal.\n    min_credit: Smallest mid credit in dollars per share.\n    min_edge_pct: Smallest edge as a decimal share of the mid credit.\n    eligible_only: Keep only spreads that pass the eligibility rules.\n    sort: Row order: return, edge, reward_to_risk, kelly, pop, pop_gap or entry.\n    limit: Most rows returned.\n\nReturns:\n    The matching spreads ordered by ``sort``, with the facets of the whole table.",
         "operationId": "listSpreads",
         "parameters": [
           {
@@ -1753,6 +1992,25 @@
             }
           },
           {
+            "description": "Minimum edge as a share of the mid credit.",
+            "in": "query",
+            "name": "min_edge_pct",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum edge as a share of the mid credit.",
+              "title": "Min Edge Pct"
+            }
+          },
+          {
             "description": "Keep eligible spreads only.",
             "in": "query",
             "name": "eligible_only",
@@ -1762,6 +2020,27 @@
               "description": "Keep eligible spreads only.",
               "title": "Eligible Only",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Row order.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "return",
+              "description": "Row order.",
+              "enum": [
+                "return",
+                "edge",
+                "reward_to_risk",
+                "kelly",
+                "pop",
+                "pop_gap",
+                "entry"
+              ],
+              "title": "Sort",
+              "type": "string"
             }
           },
           {

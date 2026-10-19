@@ -51,11 +51,13 @@ export interface paths {
          *         max_width: Widest spread in dollars per share.
          *         min_pop: Smallest calibrated probability of profit, a decimal.
          *         min_credit: Smallest mid credit in dollars per share.
+         *         min_edge_pct: Smallest edge as a decimal share of the mid credit.
          *         eligible_only: Keep only spreads that pass the eligibility rules.
+         *         sort: Row order: return, edge, reward_to_risk, kelly, pop, pop_gap or entry.
          *         limit: Most rows returned.
          *
          *     Returns:
-         *         The matching spreads in rank order, with the facets of the whole table.
+         *         The matching spreads ordered by ``sort``, with the facets of the whole table.
          */
         get: operations["listSpreads"];
         put?: never;
@@ -834,6 +836,31 @@ export interface components {
              */
             dte_days: number;
             /**
+             * Edge
+             * @description Mid credit minus the calibrated fair credit in dollars per share ($/sh).
+             */
+            edge: number;
+            /**
+             * Edge Natural
+             * @description Natural credit minus the calibrated fair credit in dollars per share ($/sh).
+             */
+            edge_natural: number;
+            /**
+             * Edge Pct
+             * @description Edge as a decimal share of the mid credit, at most 1.
+             */
+            edge_pct: number;
+            /**
+             * Edge Pop
+             * @description Calibrated minus raw probability of profit, a decimal in [-1, 1].
+             */
+            edge_pop: number;
+            /**
+             * Edge Raw
+             * @description Mid credit minus the raw fair credit in dollars per share ($/sh).
+             */
+            edge_raw: number;
+            /**
              * Eligible
              * @description True when the spread passes the eligibility rules.
              */
@@ -863,6 +890,16 @@ export interface components {
              * @description True when the long strike is outside the CDF knots.
              */
             extrapolated: boolean;
+            /**
+             * Fair Credit
+             * @description Calibrated fair credit in dollars per share ($/sh): the expected payout of the long put spread, undiscounted, between 0 and the width.
+             */
+            fair_credit: number;
+            /**
+             * Fair Credit Raw
+             * @description Fair credit under the raw risk-neutral CDF in dollars per share ($/sh).
+             */
+            fair_credit_raw: number;
             /**
              * Flags
              * @description Quality flags of the raw CDF.
@@ -909,6 +946,26 @@ export interface components {
             /** Payoff */
             payoff: components["schemas"]["PayoffPoint"][];
             /**
+             * Payoff Std
+             * @description Standard deviation of the spread payoff in dollars per share ($/sh), between 0 and half the width.
+             */
+            payoff_std: number;
+            /**
+             * Pop Gap
+             * @description Calibrated probability of profit minus pop_implied, a decimal; positive when the market pays more than the calibrated probability justifies.
+             */
+            pop_gap: number;
+            /**
+             * Pop Gap Raw
+             * @description Raw probability of profit minus pop_implied, a decimal; the control for pop_gap.
+             */
+            pop_gap_raw: number;
+            /**
+             * Pop Implied
+             * @description Probability of profit implied by the price (max loss divided by width), a decimal in [0, 1].
+             */
+            pop_implied: number;
+            /**
              * Prob Max Loss
              * @description Calibrated probability of the maximum loss.
              */
@@ -928,7 +985,27 @@ export interface components {
              * @description 1 is best among eligible spreads; null otherwise.
              */
             rank: number | null;
+            /**
+             * Rank Edge
+             * @description 1 is best by edge_pct among guarded eligible spreads; null otherwise.
+             */
+            rank_edge: number | null;
+            /**
+             * Rank Entry
+             * @description 1 is best in the Top to enter ranking (see entry_rule); null otherwise.
+             */
+            rank_entry: number | null;
+            /**
+             * Rank Rr
+             * @description 1 is best by reward_to_risk among guarded eligible spreads; null otherwise.
+             */
+            rank_rr: number | null;
             regions: components["schemas"]["SpreadRegions"];
+            /**
+             * Reward To Risk
+             * @description Expected payoff divided by payoff_std, per trade and not annualised; null when payoff_std is 0.
+             */
+            reward_to_risk: number | null;
             /**
              * Risk Free Apy
              * @description Risk-free rate used for the CDF, decimal APY.
@@ -1016,6 +1093,26 @@ export interface components {
              */
             dte_days: number;
             /**
+             * Edge
+             * @description Mid credit minus the calibrated fair credit in dollars per share ($/sh).
+             */
+            edge: number;
+            /**
+             * Edge Natural
+             * @description Natural credit minus the calibrated fair credit in dollars per share ($/sh).
+             */
+            edge_natural: number;
+            /**
+             * Edge Pct
+             * @description Edge as a decimal share of the mid credit, at most 1.
+             */
+            edge_pct: number;
+            /**
+             * Edge Pop
+             * @description Calibrated minus raw probability of profit, a decimal in [-1, 1].
+             */
+            edge_pop: number;
+            /**
              * Eligible
              * @description True when the spread passes the eligibility rules.
              */
@@ -1041,6 +1138,11 @@ export interface components {
              */
             extrapolated: boolean;
             /**
+             * Fair Credit
+             * @description Calibrated fair credit in dollars per share ($/sh): the expected payout of the long put spread, undiscounted, between 0 and the width.
+             */
+            fair_credit: number;
+            /**
              * Flags
              * @description Quality flags of the raw CDF.
              */
@@ -1061,6 +1163,21 @@ export interface components {
              */
             max_loss: number;
             /**
+             * Payoff Std
+             * @description Standard deviation of the spread payoff in dollars per share ($/sh), between 0 and half the width.
+             */
+            payoff_std: number;
+            /**
+             * Pop Gap
+             * @description Calibrated probability of profit minus pop_implied, a decimal; positive when the market pays more than the calibrated probability justifies.
+             */
+            pop_gap: number;
+            /**
+             * Pop Implied
+             * @description Probability of profit implied by the price (max loss divided by width), a decimal in [0, 1].
+             */
+            pop_implied: number;
+            /**
              * Prob Max Loss
              * @description Calibrated probability of the maximum loss.
              */
@@ -1080,6 +1197,26 @@ export interface components {
              * @description 1 is best among eligible spreads; null otherwise.
              */
             rank: number | null;
+            /**
+             * Rank Edge
+             * @description 1 is best by edge_pct among guarded eligible spreads; null otherwise.
+             */
+            rank_edge: number | null;
+            /**
+             * Rank Entry
+             * @description 1 is best in the Top to enter ranking (see entry_rule); null otherwise.
+             */
+            rank_entry: number | null;
+            /**
+             * Rank Rr
+             * @description 1 is best by reward_to_risk among guarded eligible spreads; null otherwise.
+             */
+            rank_rr: number | null;
+            /**
+             * Reward To Risk
+             * @description Expected payoff divided by payoff_std, per trade and not annualised; null when payoff_std is 0.
+             */
+            reward_to_risk: number | null;
             /**
              * Short Moneyness
              * @description Short strike divided by the close.
@@ -1114,6 +1251,11 @@ export interface components {
              */
             as_of: string | null;
             /**
+             * Entry Rule
+             * @description The rule behind rank_entry, in one sentence.
+             */
+            entry_rule: string;
+            /**
              * Expirations
              * @description Expirations in the table, ascending.
              */
@@ -1130,9 +1272,15 @@ export interface components {
             min_prob_profit: number;
             /**
              * Rows
-             * @description Rank ascending with nulls last, then annualised_roc descending.
+             * @description Rows ordered by sort.
              */
             rows: components["schemas"]["SpreadRow"][];
+            /**
+             * Sort
+             * @description The order of rows.
+             * @enum {string}
+             */
+            sort: "return" | "edge" | "reward_to_risk" | "kelly" | "pop" | "pop_gap" | "entry";
             /**
              * Source
              * @description Where the scores come from.
@@ -1270,8 +1418,12 @@ export interface operations {
                 min_pop?: number;
                 /** @description Minimum mid credit, $/sh. */
                 min_credit?: number;
+                /** @description Minimum edge as a share of the mid credit. */
+                min_edge_pct?: number | null;
                 /** @description Keep eligible spreads only. */
                 eligible_only?: boolean;
+                /** @description Row order. */
+                sort?: "return" | "edge" | "reward_to_risk" | "kelly" | "pop" | "pop_gap" | "entry";
                 /** @description Most rows returned. */
                 limit?: number;
             };

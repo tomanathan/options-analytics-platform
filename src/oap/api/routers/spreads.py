@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query, Response
 from pydantic import StringConstraints
 
 from oap.api.deps import StoreDep, respond
-from oap.api.models import SpreadDetail, SpreadsResponse
+from oap.api.models import SpreadDetail, SpreadSort, SpreadsResponse
 from oap.api.routers import ERROR_RESPONSES, SYMBOL_PATTERN
 from oap.api.spreads import MAX_SPREAD_ROWS, SpreadFilters
 
@@ -28,7 +28,11 @@ def list_spreads(
     max_width: Annotated[float | None, Query(ge=0, description="Maximum width, $/sh.")] = None,
     min_pop: Annotated[float, Query(ge=0, le=1, description="Minimum calibrated POP.")] = 0.0,
     min_credit: Annotated[float, Query(ge=0, description="Minimum mid credit, $/sh.")] = 0.0,
+    min_edge_pct: Annotated[
+        float | None, Query(le=1, description="Minimum edge as a share of the mid credit.")
+    ] = None,
     eligible_only: Annotated[bool, Query(description="Keep eligible spreads only.")] = True,
+    sort: Annotated[SpreadSort, Query(description="Row order.")] = "return",
     limit: Annotated[
         int, Query(ge=1, le=MAX_SPREAD_ROWS, description="Most rows returned.")
     ] = MAX_SPREAD_ROWS,
@@ -44,11 +48,13 @@ def list_spreads(
         max_width: Widest spread in dollars per share.
         min_pop: Smallest calibrated probability of profit, a decimal.
         min_credit: Smallest mid credit in dollars per share.
+        min_edge_pct: Smallest edge as a decimal share of the mid credit.
         eligible_only: Keep only spreads that pass the eligibility rules.
+        sort: Row order: return, edge, reward_to_risk, kelly, pop, pop_gap or entry.
         limit: Most rows returned.
 
     Returns:
-        The matching spreads in rank order, with the facets of the whole table.
+        The matching spreads ordered by ``sort``, with the facets of the whole table.
     """
     filters = SpreadFilters(
         underlyings=tuple(underlying or ()),
@@ -57,7 +63,9 @@ def list_spreads(
         max_width=max_width,
         min_pop=min_pop,
         min_credit=min_credit,
+        min_edge_pct=min_edge_pct,
         eligible_only=eligible_only,
+        sort=sort,
         limit=limit,
     )
     return respond(store.spreads(filters), response)

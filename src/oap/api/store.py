@@ -24,6 +24,7 @@ import pandas as pd
 
 from oap.analytics.backtest import maps_from_frame
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID
+from oap.analytics.scoring import ENTRY_RULE
 from oap.api import db
 from oap.api.db import GoldReader, Query, Signature, db_signature
 from oap.api.errors import DatabaseBusy, DatabaseMissing, GoldMissing, NotFound
@@ -56,6 +57,7 @@ from oap.api.settings import ApiSettings
 from oap.api.spreads import (
     SpreadFilters,
     filter_spreads,
+    order_spreads,
     prepare_spreads,
     spread_detail,
     spread_rows,
@@ -558,7 +560,7 @@ class GoldStore:
 
         def fetch(sig: Signature, allow: bool) -> SpreadsResponse:
             data = self._spreads_data(sig, allow)
-            matched = filter_spreads(data.frame, filters)
+            matched = order_spreads(filter_spreads(data.frame, filters), filters.sort)
             return SpreadsResponse(
                 as_of=data.as_of,
                 source="gold",
@@ -567,6 +569,8 @@ class GoldStore:
                 min_prob_profit=DEFAULT_CONFIG.min_prob_profit,
                 underlyings=data.underlyings,
                 expirations=data.expirations,
+                sort=filters.sort,
+                entry_rule=ENTRY_RULE,
                 rows=spread_rows(matched, filters.limit),
             )
 
