@@ -30,6 +30,10 @@ DBT_ENV = {
     "OAP_DUCKDB_PATH": f"{AIRFLOW_HOME}/.dbt-local/oap.duckdb",
     "DBT_PACKAGES_INSTALL_PATH": "/opt/dbt-packages/dbt_packages",
     "OAP_DUCKDB_EXTENSION_DIR": "/opt/duckdb-extensions",
+    # The Airflow VM has 4 GB shared with the scheduler; cap DuckDB so a build cannot be OOM-killed.
+    "OAP_DUCKDB_MEMORY_LIMIT": "1200MB",
+    "OAP_DUCKDB_THREADS": "2",
+    "OAP_DUCKDB_TEMP_DIR": "/tmp/duckdb-spill",
     "DBT_SEND_ANONYMOUS_USAGE_STATS": "false",
 }
 """Environment of the dbt process: the container paths of the profile, catalog and image assets."""
