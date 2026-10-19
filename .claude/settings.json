@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && f=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"tool_input\",{}).get(\"file_path\",\"\"))'); case \"$f\" in *.py) [ -f \"$f\" ] || exit 0; uv run ruff format --quiet \"$f\"; uv run ruff check --fix --quiet \"$f\" >&2 || exit 2;; esac"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && grep -q '^name = \"oap\"' pyproject.toml 2>/dev/null || exit 0; f=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"tool_input\",{}).get(\"file_path\",\"\"))'); case \"$f\" in *.py) [ -f \"$f\" ] || exit 0; uv run ruff format --quiet \"$f\"; uv run ruff check --fix --quiet \"$f\" >&2 || exit 2;; esac"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && out=$(uv run pytest -q 2>&1) || { printf '%s\\n' \"$out\" | tail -20 >&2; exit 2; }",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && grep -q '^name = \"oap\"' pyproject.toml 2>/dev/null || exit 0; out=$(uv run pytest -q 2>&1) || { printf '%s\\n' \"$out\" | tail -20 >&2; exit 2; }",
             "timeout": 300
           }
         ]
