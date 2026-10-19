@@ -25,7 +25,9 @@ Nothing in ``dags`` is imported, so the script runs in the plain ``uv`` environm
 
 Usage: ``refresh_bronze.py [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--symbols SPY,DIA]
 [--workers 4] [--tables chains,prices] [--lookback-sessions 10]``.
-Exit codes: 0 when every fetch succeeded, 1 when any failed, 2 on bad arguments.
+Exit codes: 0 when at most ``--max-failures`` fetches failed (the written slices stand and the
+next run retries the rest, since absence is never deletion), 1 when more failed, 2 on bad
+arguments.
 """
 
 import argparse
@@ -466,6 +468,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=list(TABLES),
         help=f"comma-separated subset of {','.join(TABLES)} (default both)",
     )
+    parser.add_argument(
+        "--max-failures",
+        type=int,
+        default=5,
+        help="failed fetches tolerated before exiting 1 (default 5); the written slices stand",
+    )
     return parser
 
 
@@ -550,7 +558,15 @@ def main(
     print(summary.line)
     for failure in summary.failures:
         print(f"failed: {failure}", file=sys.stderr)
-    return 1 if summary.failures else 0
+    if len(summary.failures) > args.max_failures:
+        return 1
+    if summary.failures:
+        print(
+            f"warning: {len(summary.failures)} fetch(es) failed, within --max-failures "
+            f"{args.max_failures}; the next run retries them (absence is not deletion)",
+            file=sys.stderr,
+        )
+    return 0
 
 
 if __name__ == "__main__":

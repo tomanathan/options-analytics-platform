@@ -296,7 +296,7 @@ def test_query_sends_the_sql_as_the_q_parameter() -> None:
     )
 
 
-@pytest.mark.parametrize("status_code", [429, 500, 502, 503, 504])
+@pytest.mark.parametrize("status_code", [403, 429, 500, 502, 503, 504])
 def test_query_retries_retryable_http_status_then_succeeds(status_code: int) -> None:
     recorder = Recorder([httpx.Response(status_code), _ok([dolthub_row()])])
 
@@ -535,7 +535,7 @@ def test_query_reports_transport_errors_by_class_name_only() -> None:
     assert "SECRET" not in str(excinfo.value.__cause__)
 
 
-@pytest.mark.parametrize("status", [401, 403])
+@pytest.mark.parametrize("status", [401])
 def test_query_does_not_repeat_an_auth_failure_body(status: int) -> None:
     recorder = Recorder([httpx.Response(status, text="token SECRET rejected")])
 

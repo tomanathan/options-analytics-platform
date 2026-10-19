@@ -442,7 +442,7 @@ def test_a_failed_fetch_exits_one_names_the_job_and_still_writes_the_rest(
 ) -> None:
     mock = DoltHubMock(fail={("options", "QQQ", "2024-02"), ("stocks", "SPY", "2024-01")})
 
-    code = _run(catalog, mock, ARGS)
+    code = _run(catalog, mock, [*ARGS, "--max-failures", "1"])
 
     out = capsys.readouterr()
     assert code == 1
@@ -468,3 +468,17 @@ def test_each_worker_thread_gets_its_own_client(catalog: pyiceberg.catalog.Catal
     # Four chain jobs on two workers: each thread builds one client and reuses it.
     assert 1 <= len(created) <= 2
     assert len({id(client) for client in created}) == len(created)
+
+
+def test_failures_within_the_tolerance_exit_zero_with_a_warning(
+    catalog: pyiceberg.catalog.Catalog, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mock = DoltHubMock(fail={("options", "QQQ", "2024-02")})
+
+    code = _run(catalog, mock, ARGS)
+
+    out = capsys.readouterr()
+    assert code == 0
+    assert "1 failed" in out.out
+    assert "within --max-failures 5" in out.err
+    assert _underlyings(catalog, "option_chain", "2024-02-01", "dolthub") == {"SPY"}

@@ -370,7 +370,9 @@ class DoltHubClient:
             raise DoltHubError(f"transport error: {type(e).__name__}") from None
         except httpx.TransportError as e:
             raise _RetryableError(f"transport error: {type(e).__name__}") from None
-        if response.status_code == 429 or response.status_code >= 500:
+        # DoltHub's free API answers throttled bursts with 403 as well as 429, so 403 is retried
+        # too; the attempt budget bounds it, and a real permission error surfaces after that.
+        if response.status_code in (403, 429) or response.status_code >= 500:
             raise _RetryableError(f"HTTP {response.status_code}")
         if response.status_code in (401, 403):
             raise DoltHubError(f"HTTP {response.status_code}: access denied")
