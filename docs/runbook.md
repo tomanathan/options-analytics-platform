@@ -427,6 +427,8 @@ git diff --stat docs README.md
 | `cannot open ... (is a build writing it?)` | A build holds the write lock. | Wait for the running DAG (`list-runs --state running`) and retry. |
 | `README excerpt not written: ...` | `README.md` lost a results marker. | Restore both marker comments, with the start marker first. |
 
+**After the edge columns were added** (ADR 0013), `spread_scores` gained `fair_credit`, `edge`, `payoff_std`, `reward_to_risk`, `pop_implied`, `pop_gap` and the ranks `rank_edge`, `rank_rr` and `rank_entry`, among others. The API reads them by name, so against a gold file built before the change `/api/spreads` answers `503 gold_missing`. After merging, run `make dbt-build-local` (stop `make serve` first) before restarting the API; a `make pull-gold` artifact older than the merge has the same problem, and the next nightly run produces a good one. `make report` then adds the "Top 10 to enter" and "Top spreads by edge" sections to `docs/results.md`; the README excerpt does not change.
+
 ### Build on the host
 
 ```bash

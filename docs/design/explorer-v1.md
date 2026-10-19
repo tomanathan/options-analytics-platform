@@ -306,11 +306,12 @@ These are the reference palette's dark steps. I ran the validator: the 3 categor
 - **Click** selects the spread (`sel`). The selected point gets a 2 px surface ring and an ink ring.
 
 **Table:**
-- Columns: Rank, Underlying, Exp (DTE), Short/Long, Width, Credit, Natural, POP cal, POP raw, P(max loss), E[R/max loss], Ann. R/max loss, Kelly, Flags.
+- Columns: Rank, Underlying, Exp (DTE), Short/Long, Width, Credit, Natural, Fair credit, Edge $, Edge %, POP cal, POP raw, P(max loss), E[R/max loss], Ann. R/max loss, Reward/risk, Kelly, Flags. Fair credit and Edge $ are dollars per share, Edge % is a share of the mid credit, and Reward/risk is per trade and shows a dash when null.
 - Sorted by rank by default. Paginated 50 per page. Selecting a row is the same as clicking its point.
 
 **Detail panel** (`useSpreadDetail(sel)`):
-- **Stat tiles:** Credit (and natural), Max loss, Breakeven, POP cal (with raw), P(max loss), Exp. return on max loss (with raw), Interest, Kelly.
+- **Stat tiles:** Credit (and natural), Max loss, Breakeven, POP cal (with raw), P(max loss), Exp. return on max loss (with raw), Interest, Kelly, Fair credit ($/sh, with the raw value), Edge ($/sh, with the share of the mid credit and the natural edge), Payoff σ ($/sh) and Reward/risk (per trade, not annualised).
+- **Interpretation line:** "Fair credit applies one pooled calibration map to this chain: a historical average across today's large caps, not a forecast for this contract." When the natural edge is negative it adds "At the natural credit the gap is negative."
 - **`PayoffChart`:**
   - Top: payoff at expiry ($/sh) as a 2 px `--ink-1` line with a zero baseline, and markers for long, short and breakeven.
   - Bottom: the calibrated density, filled `--series-2` at 0.30 left of the breakeven and `--series-1` at 0.30 right of it, with labels "P(loss) 41.9%" and "P(profit) 58.1%". The raw density is a dashed outline, the close is marked "S", and the forward "F".
