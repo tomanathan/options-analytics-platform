@@ -37,7 +37,11 @@ dbt = [
     "dbt-core>=1.10,<2",
     "dbt-duckdb>=1.11,<2",
     "dbt-snowflake>=1.12,<2",
+    # dbt Python models import oap.analytics.
+    "numpy>=2.2,<3",
+    "pandas>=2.2,<3",
 ]
+report = ["matplotlib>=3.10,<4"]
 
 [build-system]
 requires = ["hatchling"]
@@ -47,7 +51,7 @@ build-backend = "hatchling.build"
 packages = ["src/oap"]
 
 [tool.uv]
-default-groups = ["dev", "airflow", "dbt"]
+default-groups = ["dev", "airflow", "dbt", "report"]
 
 [tool.ruff]
 line-length = 100
