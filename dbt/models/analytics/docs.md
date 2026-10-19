@@ -7,7 +7,7 @@ ticker's valid-from date), `too_short` (fewer than 7 days to expiration), `no_cl
 `too_few_puts` (fewer than 4 usable puts), `unsettled`, and `split_in_window` (a daily move beyond
 0.4 in log terms between the trade date and settlement, which the unadjusted closes would read as
 a crash). The exclusions are counted, never silently dropped. This is a Python model over the pure
-`oap.analytics` package and runs on DuckDB only; Phase N will run it as a Snowpark Python model.
+`oap.analytics` package and runs on DuckDB only; Phase 4 will run it as a Snowpark Python model.
 {% enddocs %}
 
 {% docs calibration_prediction %}
@@ -53,7 +53,7 @@ out-of-sample row yet.
 {% enddocs %}
 
 {% docs spread_scores %}
-Put credit spreads of each underlying's latest session, scored twice: under the risk-neutral CDF
+Put credit spreads of the latest session in gold (the global maximum trade date, so an underlying whose feed stopped is not ranked beside fresh ones), scored twice: under the risk-neutral CDF
 (`*_raw` columns) and under the CDF passed through the production calibration map. One row per
 (underlying, expiration, short strike, long strike) with the mid `credit`, the `credit_natural`
 (sold at the bid, bought at the ask), probabilities, expected and annualised return on collateral

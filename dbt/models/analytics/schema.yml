@@ -292,7 +292,7 @@ models:
       - name: underlying
         description: Ticker of the underlying.
       - name: trade_date
-        description: Session date of the quotes the spread was priced from, the underlying's latest session.
+        description: Session date of the quotes the spread was priced from: the latest session in gold, shared by every row.
       - name: expiration
         description: Expiration date of both legs.
       - name: dte_days

@@ -1,4 +1,4 @@
-"""Score every put credit spread of each underlying's latest session under the production map."""
+"""Score every put credit spread of the latest session in gold under the production map."""
 
 from typing import Any
 
