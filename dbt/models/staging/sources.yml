@@ -54,7 +54,7 @@ sources:
           - name: source
             description: Vendor feed, dolthub or alpaca_indicative.
           - name: ingested_at
-            description: UTC instant the slice holding this row was written to bronze.
+            description: UTC instant the slice holding this row was written to bronze. The writer stamps it when the slice is written, so a rewritten slice carries a later stamp; the incremental watermark of fct_option_quote reads it.
       - name: underlying_price
         description: >
           One daily open-high-low-close-volume bar per underlying per source, as traded on that
@@ -77,4 +77,4 @@ sources:
           - name: source
             description: Vendor feed, dolthub_stocks.
           - name: ingested_at
-            description: UTC instant the slice holding this row was written to bronze.
+            description: UTC instant the slice holding this row was written to bronze. The writer stamps it when the slice is written, so a rewritten slice carries a later stamp; the incremental watermark of fct_option_quote reads it.
