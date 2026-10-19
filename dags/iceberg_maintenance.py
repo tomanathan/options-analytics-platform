@@ -1,7 +1,12 @@
-"""Weekly housekeeping of the bronze Iceberg table: expire old snapshots, compact slices.
+"""Weekly housekeeping of every bronze Iceberg table: expire old snapshots, compact slices.
 
-``expire_snapshots`` drops snapshots older than seven days from the table metadata, which
-bounds the metadata file and the time-travel window. The current snapshot is always kept.
+Both tasks loop over ``oap.ingest.tables.BRONZE_TABLES`` (``option_chain`` and
+``underlying_price``), and both commit, so they run in the one-slot ``bronze_writers`` pool
+beside the ingest writers.
+
+``expire_snapshots`` drops snapshots older than seven days from each table's metadata, which
+bounds the metadata file and the time-travel window. The current snapshot is always kept, and
+a table with no snapshot yet is skipped.
 In pyiceberg 0.12 this removes snapshot metadata only: the data files, manifests and manifest
 lists those snapshots referenced, and any orphaned files, stay on disk (or in S3). Sweeping
 them is a later phase (S3 lifecycle rules and orphan-file removal); until then, storage
@@ -19,7 +24,7 @@ from datetime import UTC, datetime, timedelta
 
 from airflow.decorators import dag, task
 
-from dags.common import DEFAULT_ARGS, bronze_table
+from dags.common import BRONZE_WRITERS_POOL, DEFAULT_ARGS, bronze_table
 
 logger = logging.getLogger(__name__)
 
@@ -36,43 +41,59 @@ SNAPSHOT_RETENTION = timedelta(days=7)
     tags=["phase-1", "maintenance"],
 )
 def iceberg_maintenance() -> None:
-    """Expire snapshots older than a week, then compact multi-file slices."""
+    """Expire snapshots older than a week, then compact multi-file slices, in every bronze table."""
 
-    @task
-    def expire_snapshots() -> int:
-        """Expire snapshots older than the retention; return how many remain."""
-        table = bronze_table()
-        before = len(table.metadata.snapshots)
-        table.maintenance.expire_snapshots().older_than(
-            datetime.now(UTC) - SNAPSHOT_RETENTION
-        ).commit()
-        remaining = len(table.refresh().metadata.snapshots)
-        logger.info(
-            "expired %d snapshots from metadata, %d remain; their data files were not deleted",
-            before - remaining,
-            remaining,
-        )
+    @task(pool=BRONZE_WRITERS_POOL)
+    def expire_snapshots() -> dict[str, int]:
+        """Expire snapshots older than the retention; return how many remain per table."""
+        from oap.ingest.tables import BRONZE_TABLES
+
+        remaining: dict[str, int] = {}
+        for spec in BRONZE_TABLES:
+            table = bronze_table(spec)
+            if table.current_snapshot() is None:
+                logger.info("%s: no snapshots, nothing to expire", spec.name)
+                remaining[spec.name] = 0
+                continue
+            before = len(table.metadata.snapshots)
+            table.maintenance.expire_snapshots().older_than(
+                datetime.now(UTC) - SNAPSHOT_RETENTION
+            ).commit()
+            remaining[spec.name] = len(table.refresh().metadata.snapshots)
+            logger.info(
+                "%s: expired %d snapshots from metadata, %d remain; their data files were "
+                "not deleted",
+                spec.name,
+                before - remaining[spec.name],
+                remaining[spec.name],
+            )
         return remaining
 
-    @task
-    def compact() -> int:
-        """Rewrite each slice with more than one data file; return how many were rewritten."""
+    @task(pool=BRONZE_WRITERS_POOL)
+    def compact() -> dict[str, int]:
+        """Rewrite each slice with more than one data file; return how many per table."""
         from oap.ingest.iceberg_writer import (
             partition_file_counts,
             read_partition,
             write_partition,
         )
+        from oap.ingest.tables import BRONZE_TABLES
 
-        table = bronze_table()
-        rewritten = 0
-        for (trade_date, source), files in sorted(partition_file_counts(table).items()):
-            if files <= 1:
-                continue
-            frame = read_partition(table, trade_date=trade_date, source=source)
-            write_partition(table, frame, trade_date=trade_date, source=source)
-            logger.info("compacted (%s, %s): %d files -> 1", trade_date, source, files)
-            rewritten += 1
-        logger.info("compacted %d slices", rewritten)
+        rewritten: dict[str, int] = {}
+        for spec in BRONZE_TABLES:
+            table = bronze_table(spec)
+            count = 0
+            for (trade_date, source), files in sorted(partition_file_counts(table).items()):
+                if files <= 1:
+                    continue
+                frame = read_partition(table, trade_date=trade_date, source=source, spec=spec)
+                write_partition(table, frame, trade_date=trade_date, source=source, spec=spec)
+                logger.info(
+                    "%s: compacted (%s, %s): %d files -> 1", spec.name, trade_date, source, files
+                )
+                count += 1
+            logger.info("%s: compacted %d slices", spec.name, count)
+            rewritten[spec.name] = count
         return rewritten
 
     expire_snapshots() >> compact()
