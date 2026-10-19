@@ -18,6 +18,7 @@ from datetime import date
 from typing import Final
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID, AnalyticsConfig, fold_map_id
@@ -467,6 +468,22 @@ def _build_cdf(
     return cdf, None
 
 
+def _within_knots(
+    knots: npt.NDArray[np.float64], values: npt.NDArray[np.float64]
+) -> npt.NDArray[np.bool_]:
+    """Flag the values that lie inside the quoted strikes, the no-extrapolation rule.
+
+    Args:
+        knots: Strikes of the CDF, ascending, in dollars.
+        values: Prices to test, in dollars.
+
+    Returns:
+        True where ``knots[0] <= value <= knots[-1]``.
+    """
+    low, high = float(knots[0]), float(knots[-1])
+    return np.logical_and(values >= low, values <= high)
+
+
 def _heatmap_row(expiration: date, dte_days: int, curves: ExpiryCurves) -> HeatmapRow:
     """Evaluate P(S < K) on the display grid, without extrapolating.
 
@@ -480,8 +497,7 @@ def _heatmap_row(expiration: date, dte_days: int, curves: ExpiryCurves) -> Heatm
         no-extrapolation rule; targets are ``moneyness * close`` rounded to 1e-6 dollars.
     """
     targets = np.round(np.asarray(HEATMAP_MONEYNESS) * curves.close, STRIKE_DECIMALS)
-    knots = curves.cdf.strikes
-    inside = (targets >= knots[0]) & (targets <= knots[-1])
+    inside = _within_knots(curves.cdf.strikes, targets)
     raw = curves.cdf.prob_below_array(targets)
     calibrated = curves.cal.prob_below_array(targets)
     forward = finite_or_none(curves.forward)
@@ -571,6 +587,11 @@ def session_bundle(
             )
             continue
         cal = apply_calibration(cdf, chosen.cmap)
+        settle_at = (
+            outcome[1]
+            if outcome is not None and _within_knots(cdf.strikes, np.asarray([outcome[1]]))[0]
+            else None
+        )
         curve = _curve(cdf, cal, close)
         expiry_curves = ExpiryCurves(expiration, close, cdf.forward, cdf, cal, curve)
         curves[expiration] = expiry_curves
@@ -590,9 +611,9 @@ def session_bundle(
                 unavailable_reason=None,
                 settlement_date=settlement_date,
                 settlement_close=settlement_close,
-                prob_below_settlement=None if outcome is None else cdf.prob_below(outcome[1]),
+                prob_below_settlement=None if settle_at is None else cdf.prob_below(settle_at),
                 prob_below_settlement_calibrated=(
-                    None if outcome is None else cal.prob_below(outcome[1])
+                    None if settle_at is None else cal.prob_below(settle_at)
                 ),
             )
         )

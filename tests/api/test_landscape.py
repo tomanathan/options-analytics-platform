@@ -223,6 +223,28 @@ def test_settled_expiries_carry_the_probability_of_the_realised_close() -> None:
     assert open_expiry.prob_below_settlement is None
 
 
+@pytest.mark.parametrize("side", ["below", "above"])
+def test_settlement_outside_the_quoted_strikes_has_no_probability(side: str) -> None:
+    knots = _bundle().curves[SHORT_EXPIRY].cdf.strikes
+    close = float(knots[0]) - 5.0 if side == "below" else float(knots[-1]) + 5.0
+    outcomes = outcomes_frame([("SPY", SHORT_EXPIRY, SHORT_EXPIRY, close)])
+    bundle = _bundle(outcomes=outcomes)
+    settled = next(e for e in bundle.distribution.expirations if e.expiration == SHORT_EXPIRY)
+    assert settled.settlement_close == close
+    assert settled.prob_below_settlement is None
+    assert settled.prob_below_settlement_calibrated is None
+
+
+def test_settlement_at_the_edge_knots_keeps_the_probability() -> None:
+    knots = _bundle().curves[SHORT_EXPIRY].cdf.strikes
+    for close in (float(knots[0]), float(knots[-1])):
+        outcomes = outcomes_frame([("SPY", SHORT_EXPIRY, SHORT_EXPIRY, close)])
+        bundle = _bundle(outcomes=outcomes)
+        settled = next(e for e in bundle.distribution.expirations if e.expiration == SHORT_EXPIRY)
+        assert settled.prob_below_settlement is not None
+        assert settled.prob_below_settlement_calibrated is not None
+
+
 def test_distribution_reports_the_map() -> None:
     bundle = session_bundle(
         "SPY", SESSION, _session_quotes(), NO_OUTCOMES, _chosen(look_ahead=True)

@@ -37,7 +37,9 @@ class HealthResponse(ApiModel):
         description="ok when the file can be read, busy when a writer holds the lock, "
         "missing when the file does not exist."
     )
-    db_path: str = Field(description="The DuckDB file the service reads.")
+    db_path: str = Field(
+        description="File name of the DuckDB file the service reads, without its directory."
+    )
     last_good_signature_at: datetime | None = Field(
         description="UTC time at which the data in memory was last loaded from the file."
     )
@@ -155,10 +157,12 @@ class ExpiryDistribution(ApiModel):
     settlement_date: date | None = Field(description="Settlement date when the expiry settled.")
     settlement_close: float | None = Field(description="Settlement close in dollars ($/sh).")
     prob_below_settlement: float | None = Field(
-        description="Raw P(S < settlement close), a decimal."
+        description="Raw P(S < settlement close), a decimal. None when the settlement is "
+        "outside the quoted strikes; the CDF is not extrapolated."
     )
     prob_below_settlement_calibrated: float | None = Field(
-        description="Calibrated P(S < settlement close), a decimal."
+        description="Calibrated P(S < settlement close), a decimal. None when the "
+        "settlement is outside the quoted strikes; the CDF is not extrapolated."
     )
 
 

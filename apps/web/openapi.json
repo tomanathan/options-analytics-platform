@@ -493,7 +493,7 @@
                 "type": "null"
               }
             ],
-            "description": "Raw P(S < settlement close), a decimal.",
+            "description": "Raw P(S < settlement close), a decimal. None when the settlement is outside the quoted strikes; the CDF is not extrapolated.",
             "title": "Prob Below Settlement"
           },
           "prob_below_settlement_calibrated": {
@@ -505,7 +505,7 @@
                 "type": "null"
               }
             ],
-            "description": "Calibrated P(S < settlement close), a decimal.",
+            "description": "Calibrated P(S < settlement close), a decimal. None when the settlement is outside the quoted strikes; the CDF is not extrapolated.",
             "title": "Prob Below Settlement Calibrated"
           },
           "settlement_close": {
@@ -602,7 +602,7 @@
             "type": "string"
           },
           "db_path": {
-            "description": "The DuckDB file the service reads.",
+            "description": "File name of the DuckDB file the service reads, without its directory.",
             "title": "Db Path",
             "type": "string"
           },

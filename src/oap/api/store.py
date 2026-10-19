@@ -667,6 +667,6 @@ class GoldStore:
             return HealthResponse(
                 status="ok",
                 db=state,
-                db_path=str(self._path),
+                db_path=self._path.name,
                 last_good_signature_at=self._last_good_at,
             )

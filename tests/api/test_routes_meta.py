@@ -12,7 +12,7 @@ def test_healthz_reports_the_database(client: TestClient, gold: GoldFixture) -> 
     body = response.json()
     assert body["status"] == "ok"
     assert body["db"] == "ok"
-    assert body["db_path"] == str(gold.path)
+    assert body["db_path"] == gold.path.name
     assert body["last_good_signature_at"] is None
     client.get("/api/underlyings")
     assert client.get("/healthz").json()["last_good_signature_at"] is not None
