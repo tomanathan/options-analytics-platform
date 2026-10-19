@@ -227,10 +227,22 @@ export const CALIBRATION: CalibrationSummary = {
   n_snapshots: 1180,
   n_clusters: 96,
   metrics: [
-    { metric: 'ece', variant: 'raw', value: 0.0352, ci_low: 0.031, ci_high: 0.039 },
-    { metric: 'ece', variant: 'calibrated', value: 0.0167, ci_low: 0.014, ci_high: 0.021 },
-    { metric: 'brier', variant: 'raw', value: 0.1267, ci_low: 0.12, ci_high: 0.133 },
-    { metric: 'brier', variant: 'calibrated', value: 0.1293, ci_low: 0.122, ci_high: 0.136 },
+    {
+      metric: 'expected_calibration_error',
+      variant: 'raw',
+      value: 0.0352,
+      ci_low: 0.031,
+      ci_high: 0.039,
+    },
+    {
+      metric: 'expected_calibration_error',
+      variant: 'calibrated',
+      value: 0.0167,
+      ci_low: 0.014,
+      ci_high: 0.021,
+    },
+    { metric: 'brier_score', variant: 'raw', value: 0.1267, ci_low: 0.12, ci_high: 0.133 },
+    { metric: 'brier_score', variant: 'calibrated', value: 0.1293, ci_low: 0.122, ci_high: 0.136 },
   ],
 };
 

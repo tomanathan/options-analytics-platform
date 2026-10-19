@@ -24,6 +24,11 @@ const KNOWN: Record<string, Omit<FlagInfo, 'flag' | 'kind' | 'icon'> & { kind: F
     label: 'monotonicity repaired',
     meaning: 'The raw CDF decreased somewhere; the curve was repaired to be non-decreasing.',
   },
+  calibrated: {
+    kind: 'info',
+    label: 'calibrated',
+    meaning: 'A calibration map was applied to this curve.',
+  },
   left_tail_uncovered: {
     kind: 'warning',
     label: 'left tail uncovered',

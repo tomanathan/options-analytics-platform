@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { describeFlag, orderFlags } from './flags';
 
 describe('flags', () => {
-  it('treats clipped and monotonicity_repaired as info chips', () => {
-    for (const flag of ['clipped', 'monotonicity_repaired']) {
+  it('treats clipped, monotonicity_repaired and calibrated as info chips', () => {
+    for (const flag of ['clipped', 'monotonicity_repaired', 'calibrated']) {
       const info = describeFlag(flag);
       expect(info.kind).toBe('info');
       expect(info.icon).toBe('ⓘ');

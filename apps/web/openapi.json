@@ -789,7 +789,7 @@
             "title": "Ci Low"
           },
           "metric": {
-            "description": "brier, log_loss or ece.",
+            "description": "Metric name in gold.calibration_metrics: brier_score, log_loss or expected_calibration_error.",
             "title": "Metric",
             "type": "string"
           },
@@ -1583,7 +1583,7 @@
   "paths": {
     "/api/calibration/summary": {
       "get": {
-        "description": "Summarise the production calibration map and its out-of-sample metrics.\n\nReturns:\n    The overall raw, calibrated and delta metrics with their intervals.",
+        "description": "Summarise the production calibration map and its out-of-sample metrics.\n\nArgs:\n    store: The data store.\n    response: The response, for the stale-data header.\n\nReturns:\n    The overall raw, calibrated and delta metrics with their intervals.",
         "operationId": "getCalibrationSummary",
         "responses": {
           "200": {
@@ -1643,7 +1643,7 @@
     },
     "/api/spreads": {
       "get": {
-        "description": "List the scored put credit spreads of the latest session.\n\nArgs:\n    underlying: Underlyings to keep; all when empty.\n    expiration: Expiration to keep; all when None.\n    min_width: Narrowest spread in dollars per share.\n    max_width: Widest spread in dollars per share.\n    min_pop: Smallest calibrated probability of profit, a decimal.\n    min_credit: Smallest mid credit in dollars per share.\n    eligible_only: Keep only spreads that pass the eligibility rules.\n    limit: Most rows returned.\n\nReturns:\n    The matching spreads in rank order, with the facets of the whole table.",
+        "description": "List the scored put credit spreads of the latest session.\n\nArgs:\n    store: The data store.\n    response: The response, for the stale-data header.\n    underlying: Underlyings to keep; all when empty.\n    expiration: Expiration to keep; all when None.\n    min_width: Narrowest spread in dollars per share.\n    max_width: Widest spread in dollars per share.\n    min_pop: Smallest calibrated probability of profit, a decimal.\n    min_credit: Smallest mid credit in dollars per share.\n    eligible_only: Keep only spreads that pass the eligibility rules.\n    limit: Most rows returned.\n\nReturns:\n    The matching spreads in rank order, with the facets of the whole table.",
         "operationId": "listSpreads",
         "parameters": [
           {
@@ -1837,7 +1837,7 @@
     },
     "/api/spreads/{spread_key}": {
       "get": {
-        "description": "Return one spread with its payoff curve and the densities behind it.\n\nArgs:\n    spread_key: The ``spread_key`` column, URL-encoded (``|`` is ``%7C``).\n\nReturns:\n    The spread detail.",
+        "description": "Return one spread with its payoff curve and the densities behind it.\n\nArgs:\n    spread_key: The ``spread_key`` column, URL-encoded (``|`` is ``%7C``).\n    store: The data store.\n    response: The response, for the stale-data header.\n\nReturns:\n    The spread detail.",
         "operationId": "getSpread",
         "parameters": [
           {
@@ -1908,7 +1908,7 @@
     },
     "/api/underlyings": {
       "get": {
-        "description": "List the underlyings and the latest session.\n\nReturns:\n    Every underlying in ``gold.dim_underlying`` that has quotes.",
+        "description": "List the underlyings and the latest session.\n\nArgs:\n    store: The data store.\n    response: The response, for the stale-data header.\n\nReturns:\n    Every underlying in ``gold.dim_underlying`` that has quotes.",
         "operationId": "listUnderlyings",
         "responses": {
           "200": {
@@ -1968,7 +1968,7 @@
     },
     "/api/underlyings/{symbol}/sessions": {
       "get": {
-        "description": "List the sessions of an underlying.\n\nArgs:\n    symbol: Ticker symbol.\n\nReturns:\n    One summary per trade date, ascending.",
+        "description": "List the sessions of an underlying.\n\nArgs:\n    symbol: Ticker symbol.\n    store: The data store.\n    response: The response, for the stale-data header.\n\nReturns:\n    One summary per trade date, ascending.",
         "operationId": "listSessions",
         "parameters": [
           {
@@ -2042,7 +2042,7 @@
     },
     "/api/underlyings/{symbol}/sessions/{session}/chain": {
       "get": {
-        "description": "Return the option chain of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n\nReturns:\n    The quotes grouped by expiration.",
+        "description": "Return the option chain of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    store: The data store.\n    response: The response, for the stale-data header.\n\nReturns:\n    The quotes grouped by expiration.",
         "operationId": "getChain",
         "parameters": [
           {
@@ -2128,7 +2128,7 @@
     },
     "/api/underlyings/{symbol}/sessions/{session}/distribution": {
       "get": {
-        "description": "Return the raw and calibrated risk-neutral distributions of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    map_choice: Which calibration map to apply.\n\nReturns:\n    One distribution per expiration, evaluated at the raw knots.",
+        "description": "Return the raw and calibrated risk-neutral distributions of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    store: The data store.\n    response: The response, for the stale-data header.\n    map_choice: Which calibration map to apply.\n\nReturns:\n    One distribution per expiration, evaluated at the raw knots.",
         "operationId": "getDistribution",
         "parameters": [
           {
@@ -2231,7 +2231,7 @@
     },
     "/api/underlyings/{symbol}/sessions/{session}/heatmap": {
       "get": {
-        "description": "Return the P(S < K) heatmap of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    map_choice: Which calibration map to apply.\n\nReturns:\n    One row per expiration with a curve, over the moneyness display grid.",
+        "description": "Return the P(S < K) heatmap of one session.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    store: The data store.\n    response: The response, for the stale-data header.\n    map_choice: Which calibration map to apply.\n\nReturns:\n    One row per expiration with a curve, over the moneyness display grid.",
         "operationId": "getHeatmap",
         "parameters": [
           {

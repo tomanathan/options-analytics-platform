@@ -15,6 +15,10 @@ export interface paths {
          * Getcalibrationsummary
          * @description Summarise the production calibration map and its out-of-sample metrics.
          *
+         *     Args:
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
+         *
          *     Returns:
          *         The overall raw, calibrated and delta metrics with their intervals.
          */
@@ -39,6 +43,8 @@ export interface paths {
          * @description List the scored put credit spreads of the latest session.
          *
          *     Args:
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
          *         underlying: Underlyings to keep; all when empty.
          *         expiration: Expiration to keep; all when None.
          *         min_width: Narrowest spread in dollars per share.
@@ -73,6 +79,8 @@ export interface paths {
          *
          *     Args:
          *         spread_key: The ``spread_key`` column, URL-encoded (``|`` is ``%7C``).
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
          *
          *     Returns:
          *         The spread detail.
@@ -96,6 +104,10 @@ export interface paths {
         /**
          * Listunderlyings
          * @description List the underlyings and the latest session.
+         *
+         *     Args:
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
          *
          *     Returns:
          *         Every underlying in ``gold.dim_underlying`` that has quotes.
@@ -122,6 +134,8 @@ export interface paths {
          *
          *     Args:
          *         symbol: Ticker symbol.
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
          *
          *     Returns:
          *         One summary per trade date, ascending.
@@ -149,6 +163,8 @@ export interface paths {
          *     Args:
          *         symbol: Ticker symbol.
          *         session: Trade date.
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
          *
          *     Returns:
          *         The quotes grouped by expiration.
@@ -176,6 +192,8 @@ export interface paths {
          *     Args:
          *         symbol: Ticker symbol.
          *         session: Trade date.
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
          *         map_choice: Which calibration map to apply.
          *
          *     Returns:
@@ -204,6 +222,8 @@ export interface paths {
          *     Args:
          *         symbol: Ticker symbol.
          *         session: Trade date.
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
          *         map_choice: Which calibration map to apply.
          *
          *     Returns:
@@ -668,7 +688,7 @@ export interface components {
             ci_low: number | null;
             /**
              * Metric
-             * @description brier, log_loss or ece.
+             * @description Metric name in gold.calibration_metrics: brier_score, log_loss or expected_calibration_error.
              */
             metric: string;
             /** Value */

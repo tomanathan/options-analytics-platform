@@ -2,8 +2,18 @@ import { useCalibrationSummary } from '../api/queries';
 import type { CalibrationSummary, MetricValue } from '../api/types';
 import { pct } from '../lib/format';
 
-function find(metrics: readonly MetricValue[], name: string, variant: MetricValue['variant']) {
-  return metrics.find((m) => m.metric.toLowerCase() === name && m.variant === variant);
+/** Metric names in gold.calibration_metrics. */
+const NAMES = {
+  ece: 'expected_calibration_error',
+  brier: 'brier_score',
+} as const;
+
+function find(
+  metrics: readonly MetricValue[],
+  name: keyof typeof NAMES,
+  variant: MetricValue['variant'],
+) {
+  return metrics.find((m) => m.metric === NAMES[name] && m.variant === variant);
 }
 
 function interval(metric: MetricValue | undefined, digits: number): string {
