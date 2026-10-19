@@ -474,14 +474,18 @@ def plot_equity(curve: pd.DataFrame, path: Path, *, top_n: int) -> None:
                 label=f"{entry} drawdown",
             )
     ax.axhline(0, color=GREY, linewidth=0.8)
-    ax.set_ylabel("Cumulative return ($ per $1 max loss per session)", color=INK_MUTED, fontsize=9)
+    ax.set_ylabel(
+        "Cumulative return (dollars per dollar of max loss per session)",
+        color=INK_MUTED,
+        fontsize=9,
+    )
     ax.set_title(
         "Out-of-sample realised return of the entry rule and its baselines",
         loc="left",
         fontsize=10,
         color=INK,
     )
-    ax.legend(frameon=False, fontsize=8, loc="upper left")
+    ax.legend(frameon=False, fontsize=8, loc="lower left")
     _style(ax)
     _save(fig, path)
 
