@@ -348,6 +348,24 @@ def test_the_top_table_shows_the_session_of_every_row(db: Path, tmp_path: Path) 
     assert all(line.split("|")[3].strip() == "2024-06-14" for line in rows)
 
 
+def test_the_spread_return_columns_and_prose_say_return_on_max_loss(
+    db: Path, tmp_path: Path
+) -> None:
+    _run(db, tmp_path)
+    text = (tmp_path / "results.md").read_text()
+    header = next(line for line in text.splitlines() if line.startswith("| Rank"))
+
+    assert report.SPREAD_HEADERS[-2:] == (
+        "Expected return on max loss",
+        "Annualised return on max loss",
+    )
+    assert "| Expected return on max loss | Annualised return on max loss |" in header
+    assert "return on max loss is the expected return over the trade" in text
+    assert "expected return on max loss is roughly the cash rate" in text
+    assert "collateral" not in text.replace("which is the collateral held", "")
+    assert "ROC" not in text.replace("POP", "")
+
+
 def test_the_exclusions_note_does_not_claim_row_level_filters_are_counted(
     db: Path, tmp_path: Path
 ) -> None:

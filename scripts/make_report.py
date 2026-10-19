@@ -501,8 +501,8 @@ SPREAD_HEADERS: Final[tuple[str, ...]] = (
     "Natural credit",
     "POP calibrated",
     "POP risk-neutral",
-    "Expected ROC",
-    "Annualised ROC",
+    "Expected return on max loss",
+    "Annualised return on max loss",
 )
 
 
@@ -516,8 +516,8 @@ def _spreads_section(data: ReportData, top: int) -> str:
         body = _table(SPREAD_HEADERS, _spread_rows(data.scores.head(top))) + "\n\n"
         body += (
             "Credits are dollars per share. POP is the probability the underlying settles above "
-            "the breakeven; ROC is the return on the collateral (maximum loss) over the trade, "
-            "annualised in the last column.\n\n"
+            "the breakeven; return on max loss is the expected return over the trade as a share of "
+            "the maximum loss, which is the collateral held, annualised in the last column.\n\n"
         )
     return head + body + f"![Eligible spreads]({SPREADS_IMAGE})"
 
@@ -527,7 +527,7 @@ def _reading_section(data: ReportData) -> str:
     text = (
         "## How to read this\n\n"
         "Under the risk-neutral CDF built from the same mid quotes, a spread's expected return on "
-        "collateral is roughly the cash rate by construction, so any edge comes from the "
+        "max loss is roughly the cash rate by construction, so any edge comes from the "
         "calibration map, which is an estimate of the variance risk premium: the gap between the "
         "probabilities the option market implies and the frequencies that followed."
     )
@@ -753,7 +753,7 @@ def plot_calibration(bins: pd.DataFrame, path: Path) -> None:
 
 
 def plot_spread_scores(scores: pd.DataFrame, path: Path, *, top: int = 10) -> None:
-    """Write the eligible spreads of the latest session: calibrated POP against annualised ROC.
+    """Write the eligible spreads: calibrated POP against annualised return on max loss.
 
     The y axis is symmetric-log so that the few large returns do not flatten the rest. Colour
     and marker shape identify the underlying (the seven with the most eligible spreads; the rest
@@ -809,7 +809,7 @@ def plot_spread_scores(scores: pd.DataFrame, path: Path, *, top: int = 10) -> No
     ticks = [t for t in Y_TICKS if low <= t <= high]
     ax.set_yticks(ticks, labels=[f"{t:.0%}" for t in ticks])
     ax.set_xlabel("Probability of profit (calibrated)", color=INK_MUTED, fontsize=9)
-    ax.set_ylabel("Annualised return on collateral (symlog axis)", color=INK_MUTED, fontsize=9)
+    ax.set_ylabel("Annualised return on max loss (symlog axis)", color=INK_MUTED, fontsize=9)
     ax.set_title("Eligible put credit spreads, latest session", loc="left", fontsize=10, color=INK)
     ax.legend(frameon=False, fontsize=8, loc="best", ncols=2)
     _style(ax)
