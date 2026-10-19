@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import type { MapChoice } from '../api/types';
+import type { MapChoice, SpreadSort } from '../api/types';
 import {
   CALIBRATION,
   makeChain,
@@ -18,6 +18,20 @@ export const requestLog: string[] = [];
 function mapOf(url: URL): MapChoice {
   const value = url.searchParams.get('map');
   return value === 'production' || value === 'walk_forward' ? value : 'auto';
+}
+
+const SORTS: readonly SpreadSort[] = [
+  'return',
+  'edge',
+  'reward_to_risk',
+  'kelly',
+  'pop',
+  'pop_gap',
+  'entry',
+];
+
+function sortOf(value: string | null): SpreadSort {
+  return SORTS.find((sort) => sort === value) ?? 'return';
 }
 
 export const handlers = [
@@ -58,6 +72,9 @@ export const handlers = [
         minPop: num('min_pop') ?? 0,
         minCredit: num('min_credit') ?? 0,
         eligibleOnly: q.get('eligible_only') !== 'false',
+        minEdgePct: num('min_edge_pct'),
+        sort: sortOf(q.get('sort')),
+        limit: num('limit'),
       }),
     );
   }),

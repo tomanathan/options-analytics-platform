@@ -15,6 +15,7 @@ import type {
   SessionsResponse,
   SpreadDetail,
   SpreadRow,
+  SpreadSort,
   SpreadsResponse,
   UnderlyingsResponse,
 } from '../api/types';
@@ -246,6 +247,11 @@ export const CALIBRATION: CalibrationSummary = {
   ],
 };
 
+/** Edge as a share of the mid credit, by rank: deliberately not monotone in the return rank. */
+const EDGE_PCT_BY_RANK = [0.22, 0.31, 0.18, 0.27, 0.35, 0.25, 0.2, 0.29, 0.24, 0.33, 0.19, 0.26];
+/** Entry order of the eligible rows, by return rank: another permutation. */
+const ENTRY_BY_RANK = [3, 1, 5, 2, 8, 4, 7, 6, 12, 9, 11, 10];
+
 function spread(
   rank: number | null,
   underlying: string,
@@ -253,7 +259,28 @@ function spread(
   width: number,
   overrides: Partial<SpreadRow> = {},
 ): SpreadRow {
+  const row = spreadBase(rank, underlying, short, width, overrides);
+  // The price-implied POP is max loss over width; the gap is measured from it.
+  const popImplied = round(row.max_loss / row.width, 4);
+  return {
+    pop_implied: popImplied,
+    pop_gap: round(row.prob_profit - popImplied, 4),
+    pop_gap_raw: round(row.prob_profit_raw - popImplied, 4),
+    ...row,
+  };
+}
+
+function spreadBase(
+  rank: number | null,
+  underlying: string,
+  short: number,
+  width: number,
+  overrides: Partial<SpreadRow>,
+): Omit<SpreadRow, 'pop_implied' | 'pop_gap' | 'pop_gap_raw'> {
   const credit = round(0.4 + width * 0.12 + (rank ?? 9) * 0.02, 2);
+  const edgePct = rank === null ? 0.1 : (EDGE_PCT_BY_RANK[rank - 1] ?? 0.2);
+  const edge = round(credit * edgePct, 4);
+  const payoffStd = round(width * 0.25, 4);
   return {
     spread_key: `${underlying}|2026-10-16|${short}|${short - width}`,
     underlying,
@@ -273,26 +300,62 @@ function spread(
     expected_roc: round(0.14 - (rank ?? 9) * 0.005, 4),
     expected_roc_raw: 0.1,
     annualised_roc: round(3.5 - (rank ?? 9) * 0.1, 3),
-    kelly_fraction: 0.08,
+    kelly_fraction: round(0.12 - (rank ?? 9) * 0.004, 3),
     eligible: rank !== null,
     rank,
     extrapolated: false,
     flags: [],
+    fair_credit: round(credit - edge, 4),
+    edge,
+    edge_natural: round(edge - 0.1, 4),
+    edge_pct: edgePct,
+    edge_pop: 0.05,
+    payoff_std: payoffStd,
+    reward_to_risk: round(edge / payoffStd, 4),
+    rank_edge: null,
+    rank_rr: null,
+    rank_entry: rank === null ? null : (ENTRY_BY_RANK[rank - 1] ?? null),
     ...overrides,
   };
 }
 
-export const SPREAD_ROWS: SpreadRow[] = [
+const BASE_ROWS: SpreadRow[] = [
   spread(1, 'TSLA', 370, 2.5, { prob_profit: 0.581, prob_profit_raw: 0.511, expected_roc: 0.1438 }),
   spread(2, 'MSFT', 510, 5),
   spread(3, 'TSLA', 365, 5, { flags: ['sparse'] }),
   spread(4, 'SPY', 505, 5),
   spread(5, 'XLF', 52, 1),
-  spread(6, 'MSFT', 505, 5),
+  spread(6, 'MSFT', 505, 5, { reward_to_risk: null }),
   spread(7, 'SPY', 500, 5),
+  spread(8, 'MSFT', 500, 5),
+  spread(9, 'XLF', 53, 1),
+  spread(10, 'SPY', 495, 5),
+  spread(11, 'TSLA', 360, 5),
+  spread(12, 'XLF', 54, 1),
   spread(null, 'XLF', 51, 1, { expected_roc: 2.5, annualised_roc: null, prob_profit: 0.31 }),
   spread(null, 'TSLA', 400, 2.5, { expected_roc: -1.8, prob_profit: 0.22 }),
 ];
+
+/** Rank (1 is best) of each eligible row with a value, by `value` descending; ties keep return order. */
+function rankBy(rows: SpreadRow[], value: (row: SpreadRow) => number | null): Map<string, number> {
+  const ranked = rows
+    .filter((row) => row.eligible && value(row) !== null)
+    .sort((a, b) => (value(b) ?? 0) - (value(a) ?? 0) || (a.rank ?? 0) - (b.rank ?? 0));
+  return new Map(ranked.map((row, index) => [row.spread_key, index + 1]));
+}
+
+const EDGE_RANKS = rankBy(BASE_ROWS, (row) => row.edge_pct);
+const RR_RANKS = rankBy(BASE_ROWS, (row) => row.reward_to_risk);
+
+/** Every row carries its return rank, edge rank, reward/risk rank and entry rank. */
+export const SPREAD_ROWS: SpreadRow[] = BASE_ROWS.map((row) => ({
+  ...row,
+  rank_edge: EDGE_RANKS.get(row.spread_key) ?? null,
+  rank_rr: RR_RANKS.get(row.spread_key) ?? null,
+}));
+
+export const ENTRY_RULE =
+  'Eligible spreads whose natural credit is at least half the mid, ordered by calibrated expected return on max loss.';
 
 export interface SpreadFilterParams {
   underlyings: string[];
@@ -302,18 +365,54 @@ export interface SpreadFilterParams {
   minPop: number;
   minCredit: number;
   eligibleOnly: boolean;
+  minEdgePct?: number | null;
+  sort?: SpreadSort;
+  limit?: number | null;
+}
+
+const rankOrder = (rank: (row: SpreadRow) => number | null) => (a: SpreadRow, b: SpreadRow) =>
+  (rank(a) ?? Infinity) - (rank(b) ?? Infinity);
+
+/** The server order of each sort: the sort's rank first (nulls last), then the metric. */
+function ordered(rows: SpreadRow[], sort: SpreadSort): SpreadRow[] {
+  const sorted = [...rows];
+  switch (sort) {
+    case 'edge':
+      return sorted.sort(rankOrder((r) => r.rank_edge));
+    case 'reward_to_risk':
+      return sorted.sort(rankOrder((r) => r.rank_rr));
+    case 'entry':
+      return sorted.sort(rankOrder((r) => r.rank_entry));
+    case 'kelly':
+      return sorted.sort(
+        (a, b) => b.kelly_fraction - a.kelly_fraction || (a.rank ?? 99) - (b.rank ?? 99),
+      );
+    case 'pop_gap':
+      return sorted.sort((a, b) => b.pop_gap - a.pop_gap || (a.rank ?? 99) - (b.rank ?? 99));
+    case 'pop':
+      return sorted.sort(
+        (a, b) => b.prob_profit - a.prob_profit || (a.rank ?? 99) - (b.rank ?? 99),
+      );
+    default:
+      return sorted.sort(rankOrder((r) => r.rank));
+  }
 }
 
 export function makeSpreads(filters: SpreadFilterParams): SpreadsResponse {
-  const rows = SPREAD_ROWS.filter(
-    (r) =>
-      (!filters.eligibleOnly || r.eligible) &&
-      (filters.underlyings.length === 0 || filters.underlyings.includes(r.underlying)) &&
-      (filters.expiration === null || r.expiration === filters.expiration) &&
-      (filters.minWidth === null || r.width >= filters.minWidth) &&
-      (filters.maxWidth === null || r.width <= filters.maxWidth) &&
-      r.prob_profit >= filters.minPop &&
-      r.credit >= filters.minCredit,
+  const sort = filters.sort ?? 'return';
+  const rows = ordered(
+    SPREAD_ROWS.filter(
+      (r) =>
+        (!filters.eligibleOnly || r.eligible) &&
+        (filters.underlyings.length === 0 || filters.underlyings.includes(r.underlying)) &&
+        (filters.expiration === null || r.expiration === filters.expiration) &&
+        (filters.minWidth === null || r.width >= filters.minWidth) &&
+        (filters.maxWidth === null || r.width <= filters.maxWidth) &&
+        r.prob_profit >= filters.minPop &&
+        r.credit >= filters.minCredit &&
+        (filters.minEdgePct == null || r.edge_pct >= filters.minEdgePct),
+    ),
+    sort,
   );
   return {
     as_of: LATEST_SESSION,
@@ -323,7 +422,9 @@ export function makeSpreads(filters: SpreadFilterParams): SpreadsResponse {
     min_prob_profit: 0.5,
     underlyings: ['MSFT', 'SPY', 'TSLA', 'XLF'],
     expirations: ['2026-10-16'],
-    rows,
+    sort,
+    entry_rule: ENTRY_RULE,
+    rows: filters.limit == null ? rows : rows.slice(0, filters.limit),
   };
 }
 
@@ -350,7 +451,9 @@ export function makeSpreadDetail(key: string): SpreadDetail | null {
     trade_date: LATEST_SESSION,
     years: 0.0384,
     underlying_close: close,
-    expected_payoff: 0.27,
+    expected_payoff: row.edge,
+    fair_credit_raw: round(row.fair_credit + 0.04, 4),
+    edge_raw: round(row.edge - 0.04, 4),
     interest: 0.0017,
     annualised_roc_raw: 2.9,
     calibrated: true,

@@ -37,6 +37,19 @@ export function num(value: number | null | undefined, digits = 2): string {
   return finite(value) ? value.toFixed(digits) : DASH;
 }
 
+/** A dimensionless ratio such as reward/risk: 0.1472 -> "0.15". Null or non-finite -> en dash. */
+export function ratio(value: number | null | undefined, digits = 2): string {
+  return finite(value) ? value.toFixed(digits) : DASH;
+}
+
+/** A difference of probabilities in percentage points: 0.087 -> "+8.7", -0.004 -> "-0.4". */
+export function signedPoints(value: number | null | undefined, digits = 1): string {
+  if (!finite(value)) return DASH;
+  const text = (value * 100).toFixed(digits);
+  // A value that rounds to zero carries no sign.
+  return Number(text) > 0 ? `+${text}` : Number(text) === 0 ? (0).toFixed(digits) : text;
+}
+
 /** Density in 1/$ with a sensible precision. */
 export function density(value: number): string {
   if (!Number.isFinite(value)) return DASH;
