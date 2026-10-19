@@ -41,6 +41,33 @@ put for a credit of 2.00 dollars with cash at 3.6% APY:
   ``(-0.0625 + 0.008733) / 3.00 = -0.017922``, which is ``-0.1975`` annualised;
 * the Kelly fraction is 0 because the edge is negative.
 
+Edge, fair credit and reward to risk. The long put spread that offsets the short one pays
+``h(S) = min(max(K - S, 0), W)`` at expiry, where ``K`` is the short strike, ``L`` the long
+strike and ``W = K - L``, so ``h`` lies in [0, W]. For any non-increasing ``phi`` with
+``phi(inf) = 0``, ``E[phi(S)]`` equals the integral of ``-phi'(x) F(x)`` over ``x`` (Tonelli),
+where ``F(x) = P(S < x)`` is ``prob_below``. The CDF is flat outside its knots, so the mass
+below the lowest knot sits on the left of every price and pays ``W``, and the mass above the
+highest knot pays 0; no tail term is needed. With ``phi = h`` this gives ``E[h]`` as the
+integral of ``F`` from ``L`` to ``K`` (the fair credit); with ``phi = h**2`` it gives
+``E[h**2]`` as the integral of ``2 (K - x) F(x)`` from ``L`` to ``K``. ``F`` is affine between
+knots, so the integrand is quadratic on each segment and Simpson's rule is exact there.
+``Var = max(0, E[h**2] - E[h]**2)`` and ``payoff_std = sqrt(Var)``, at most ``W / 2``
+(Popoviciu). Interest on the collateral is deterministic, so the standard deviation of the
+seller's profit and loss equals ``payoff_std``.
+
+* the fair credit is the expected payout of the long spread, in dollars per share,
+  undiscounted;
+* the edge is ``expected_payoff = credit - fair_credit``, in dollars per share, and
+  ``edge_pct = expected_payoff / credit`` is the edge as a share of the credit, at most 1;
+* ``reward_to_risk = expected_payoff / payoff_std`` is per trade and not annualised. It is
+  an excess-over-cash Sharpe ratio, because interest is the risk-free leg. It is nan when the
+  standard deviation is 0.
+
+Continuing the worked example (credit 2.00, hand CDF): ``E[h] = 2.0625`` so the fair credit is
+2.0625 dollars; ``E[h**2] = 445 / 48 = 9.2708333`` square dollars; the variance is 5.0169271
+and ``payoff_std = 2.2398498`` dollars; the edge is -0.0625 dollars, ``edge_pct = -0.03125``
+and ``reward_to_risk = -0.0279037``.
+
 Credits are in dollars per share and times are in years, so scores are comparable across
 underlyings, widths and expiries.
 """
@@ -49,7 +76,9 @@ import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
+from typing import Final, Literal
 
+import numpy as np
 import numpy.typing as npt
 
 from oap.engine._validation import (
@@ -64,7 +93,10 @@ from oap.engine.calibration import CalibrationMap, apply_calibration
 from oap.engine.errors import EngineInputError
 from oap.engine.implied_distribution import QualityFlag, RiskNeutralCdf
 
+RankBy = Literal["return", "edge", "reward_to_risk"]
+
 _YEARS_MATCH_TOL = 1e-9
+_STD_FLOOR: Final = 1e-9  # payoff_std <= _STD_FLOOR * width is treated as 0
 
 
 @dataclass(frozen=True)
@@ -149,6 +181,13 @@ class SpreadScore:
         annualised_return: Return on collateral (max loss) compounded to one year, as a
             decimal.
         kelly_fraction: Two-outcome Kelly fraction of capital, in [0, 1].
+        fair_credit: Expected payout of the long put spread, in dollars per share,
+            undiscounted, in [0, width]. ``expected_payoff`` is ``credit - fair_credit``.
+        edge_pct: ``expected_payoff / credit``, a decimal share of the credit, at most 1.
+        payoff_std: Standard deviation of the spread payoff (and of the seller's profit and
+            loss) in dollars per share, in [0, width / 2].
+        reward_to_risk: ``expected_payoff / payoff_std`` per trade, not annualised; nan when
+            ``payoff_std`` is 0.
         calibrated: True if a calibration map was applied.
         extrapolated: True if the long strike is below the lowest CDF knot, so the
             probability of maximum loss relies on flat extrapolation.
@@ -163,6 +202,10 @@ class SpreadScore:
     expected_return_on_collateral: float
     annualised_return: float
     kelly_fraction: float
+    fair_credit: float
+    edge_pct: float
+    payoff_std: float
+    reward_to_risk: float
     calibrated: bool
     extrapolated: bool
     flags: frozenset[QualityFlag]
@@ -186,6 +229,42 @@ def _annualise(roc: float, years: float) -> float:
         return math.inf
 
 
+def put_spread_payoff_moments(
+    cdf: RiskNeutralCdf, k_short: float, k_long: float
+) -> tuple[float, float]:
+    """Return the first two moments of the long put spread payoff at expiry.
+
+    The payoff is ``h(S) = min(max(k_short - S, 0), k_short - k_long)`` per share. The first
+    moment is ``cdf.expected_payoff_put_spread(k_short, k_long)`` verbatim. The second is the
+    integral of ``2 (k_short - x) F(x)`` over the strikes, computed exactly: ``F`` is affine
+    between knots, so Simpson's rule is exact on each segment of the grid made of both
+    strikes and the knots strictly between them.
+
+    Args:
+        cdf: Risk-neutral CDF of the price at expiry, optionally calibrated.
+        k_short: Higher strike in dollars.
+        k_long: Lower strike in dollars; must be below ``k_short``.
+
+    Returns:
+        ``(E[h], E[h**2])`` in dollars per share and square dollars per share, undiscounted.
+
+    Raises:
+        EngineInputError: If ``k_long >= k_short``.
+    """
+    first = cdf.expected_payoff_put_spread(k_short, k_long)
+    inside = cdf.strikes[(cdf.strikes > k_long) & (cdf.strikes < k_short)]
+    grid = np.unique(np.concatenate([np.array([k_long, k_short]), inside]))
+    mid = 0.5 * (grid[:-1] + grid[1:])
+
+    def integrand(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        return np.asarray(2.0 * (k_short - x) * cdf.prob_below_array(x), dtype=np.float64)
+
+    q_grid = integrand(grid)
+    q_mid = integrand(mid)
+    simpson = (grid[1:] - grid[:-1]) / 6.0 * (q_grid[:-1] + 4.0 * q_mid + q_grid[1:])
+    return first, float(np.sum(simpson))
+
+
 def score_spread(
     spread: PutCreditSpread,
     cdf: RiskNeutralCdf,
@@ -202,9 +281,10 @@ def score_spread(
         calibration: Optional map applied to the CDF before scoring.
 
     Returns:
-        The score; see ``SpreadScore`` for units. Collateral equals the maximum loss for a
-        cash-secured spread, so ``expected_return_on_collateral`` is the expected return on
-        max loss.
+        The score; see ``SpreadScore`` for units (``fair_credit`` and ``payoff_std`` in
+        dollars per share, ``edge_pct`` a decimal, ``reward_to_risk`` per trade). Collateral
+        equals the maximum loss for a cash-secured spread, so
+        ``expected_return_on_collateral`` is the expected return on max loss.
 
     Raises:
         EngineInputError: If ``years`` differ between spread and CDF by more than 1e-9, or
@@ -217,9 +297,14 @@ def score_spread(
     dist = apply_calibration(cdf, calibration) if calibration is not None else cdf
     prob_profit = 1.0 - dist.prob_below(spread.breakeven)
     prob_max_loss = dist.prob_below(spread.long_strike)
-    expected_payoff = spread.credit - dist.expected_payoff_put_spread(
-        spread.short_strike, spread.long_strike
+    fair_credit, second_moment = put_spread_payoff_moments(
+        dist, spread.short_strike, spread.long_strike
     )
+    expected_payoff = spread.credit - fair_credit
+    payoff_std = math.sqrt(max(0.0, second_moment - fair_credit * fair_credit))
+    if payoff_std <= _STD_FLOOR * spread.width:
+        payoff_std = 0.0
+    reward_to_risk = expected_payoff / payoff_std if payoff_std > 0.0 else math.nan
     collateral = spread.collateral
     interest = collateral * ((1.0 + cash_apy) ** spread.years - 1.0)
     roc = (expected_payoff + interest) / collateral
@@ -234,6 +319,10 @@ def score_spread(
         expected_return_on_collateral=roc,
         annualised_return=_annualise(roc, spread.years),
         kelly_fraction=kelly,
+        fair_credit=fair_credit,
+        edge_pct=expected_payoff / spread.credit,
+        payoff_std=payoff_std,
+        reward_to_risk=reward_to_risk,
         calibrated=calibration is not None,
         extrapolated=bool(spread.long_strike < dist.strikes[0]),
         flags=dist.flags,
@@ -307,20 +396,44 @@ def enumerate_spreads(
 
 
 def rank_spreads(
-    scores: Iterable[SpreadScore], *, min_prob_profit: float = 0.0
+    scores: Iterable[SpreadScore], *, min_prob_profit: float = 0.0, by: RankBy = "return"
 ) -> list[SpreadScore]:
     """Filter and order scored spreads, best first.
 
     Args:
         scores: Scored spreads.
         min_prob_profit: Smallest probability of profit to keep, a decimal in [0, 1].
+        by: Primary sort key. ``"return"`` is annualised return (descending), ``"edge"`` is
+            ``edge_pct`` (descending) and ``"reward_to_risk"`` is reward to risk
+            (descending, nan last).
 
     Returns:
-        Scores with ``prob_profit >= min_prob_profit`` sorted by annualised return
-        (descending), then probability of profit (descending), then short strike in
-        dollars (descending), then long strike in dollars (ascending).
+        Scores with ``prob_profit >= min_prob_profit`` sorted by the primary key, then
+        probability of profit (descending), then short strike in dollars (descending), then
+        long strike in dollars (ascending).
     """
     kept = [s for s in scores if s.prob_profit >= min_prob_profit]
+    if by == "edge":
+        return sorted(
+            kept,
+            key=lambda s: (
+                -s.edge_pct,
+                -s.prob_profit,
+                -s.spread.short_strike,
+                s.spread.long_strike,
+            ),
+        )
+    if by == "reward_to_risk":
+        return sorted(
+            kept,
+            key=lambda s: (
+                math.isnan(s.reward_to_risk),
+                0.0 if math.isnan(s.reward_to_risk) else -s.reward_to_risk,
+                -s.prob_profit,
+                -s.spread.short_strike,
+                s.spread.long_strike,
+            ),
+        )
     return sorted(
         kept,
         key=lambda s: (

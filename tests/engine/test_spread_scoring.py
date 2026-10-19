@@ -7,13 +7,14 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from oap.engine.calibration import CalibrationMap
+from oap.engine.calibration import CalibrationMap, apply_calibration
 from oap.engine.errors import EngineInputError
 from oap.engine.implied_distribution import QualityFlag, RiskNeutralCdf, implied_cdf
 from oap.engine.spread_scoring import (
     PutCreditSpread,
     SpreadScore,
     enumerate_spreads,
+    put_spread_payoff_moments,
     rank_spreads,
     score_spread,
 )
@@ -54,6 +55,20 @@ def test_worked_example() -> None:
     assert score.extrapolated is False
     assert score.calibrated is False
     assert QualityFlag.NO_CALLS in score.flags
+
+
+def test_worked_example_edge_and_risk() -> None:
+    score = score_spread(_spread(), _hand_cdf(), cash_apy=0.036)
+    first, second = put_spread_payoff_moments(_hand_cdf(), 100.0, 95.0)
+    assert first == pytest.approx(2.0625, rel=1e-12)
+    assert second == pytest.approx(445 / 48, rel=1e-12)
+    assert score.fair_credit == pytest.approx(2.0625, rel=1e-12)
+    assert score.expected_payoff == pytest.approx(-0.0625, rel=1e-12)
+    assert score.edge_pct == pytest.approx(-0.03125, rel=1e-12)
+    assert score.payoff_std == pytest.approx(2.2398498, rel=1e-7)
+    assert score.payoff_std**2 == pytest.approx(445 / 48 - 2.0625**2, rel=1e-12)
+    assert score.payoff_std**2 == pytest.approx(5.0169271, rel=1e-7)
+    assert score.reward_to_risk == pytest.approx(-0.0279037, abs=1e-7)
 
 
 def test_long_strike_below_lowest_knot_is_extrapolated() -> None:
@@ -154,7 +169,16 @@ def test_enumerate_spreads_validates() -> None:
         enumerate_spreads("SPY", EXPIRY, 0.0, [90, 95], [1.0, 2.0])
 
 
-def _score(short: float, long: float, credit: float, prob_profit: float, ann: float) -> SpreadScore:
+def _score(
+    short: float,
+    long: float,
+    credit: float,
+    prob_profit: float,
+    ann: float,
+    *,
+    edge_pct: float = 0.0,
+    reward_to_risk: float = 0.0,
+) -> SpreadScore:
     return SpreadScore(
         spread=_spread(short, long, credit),
         prob_profit=prob_profit,
@@ -164,6 +188,10 @@ def _score(short: float, long: float, credit: float, prob_profit: float, ann: fl
         expected_return_on_collateral=0.0,
         annualised_return=ann,
         kelly_fraction=0.0,
+        fair_credit=0.0,
+        edge_pct=edge_pct,
+        payoff_std=1.0,
+        reward_to_risk=reward_to_risk,
         calibrated=False,
         extrapolated=False,
         flags=frozenset(),
@@ -180,6 +208,34 @@ def test_rank_spreads_orders_and_breaks_ties() -> None:
     ranked = rank_spreads([a, b, c, d, e, f], min_prob_profit=0.5)
     assert ranked == [e, d, c, b, a]
     assert rank_spreads([a, b, c, d, e, f])[0] is f
+
+
+def test_rank_spreads_by_edge_orders_and_breaks_ties() -> None:
+    a = _score(100, 95, 2.0, 0.6, 0.0, edge_pct=0.3)
+    b = _score(100, 90, 2.0, 0.7, 0.0, edge_pct=0.3)
+    c = _score(105, 100, 2.0, 0.7, 0.0, edge_pct=0.3)
+    d = _score(105, 95, 2.0, 0.7, 0.0, edge_pct=0.3)
+    e = _score(95, 90, 2.0, 0.9, 0.9, edge_pct=0.1)
+    f = _score(110, 105, 2.0, 0.2, 0.0, edge_pct=0.8)
+    assert rank_spreads([a, b, c, d, e, f], by="edge") == [f, d, c, b, a, e]
+    assert rank_spreads([a, b, c, d, e, f], by="edge", min_prob_profit=0.5) == [d, c, b, a, e]
+
+
+def test_rank_spreads_by_reward_to_risk_puts_nan_last() -> None:
+    a = _score(100, 95, 2.0, 0.6, 0.0, reward_to_risk=0.4)
+    b = _score(100, 90, 2.0, 0.7, 0.0, reward_to_risk=0.4)
+    c = _score(105, 100, 2.0, 0.7, 0.0, reward_to_risk=0.4)
+    d = _score(105, 95, 2.0, 0.9, 0.0, reward_to_risk=math.nan)
+    e = _score(95, 90, 2.0, 0.5, 0.0, reward_to_risk=-0.2)
+    f = _score(110, 105, 2.0, 0.2, 0.0, reward_to_risk=0.9)
+    g = _score(90, 85, 2.0, 0.2, 0.0, reward_to_risk=math.nan)
+    assert rank_spreads([a, b, c, d, e, f, g], by="reward_to_risk") == [f, c, b, a, e, d, g]
+
+
+def test_rank_spreads_default_is_return() -> None:
+    a = _score(100, 95, 2.0, 0.6, 0.1, edge_pct=0.9)
+    b = _score(100, 90, 2.0, 0.7, 0.2, edge_pct=0.1)
+    assert rank_spreads([a, b]) == rank_spreads([a, b], by="return") == [b, a]
 
 
 @st.composite
@@ -270,3 +326,160 @@ def test_scaling_helpers_are_numpy_arrays() -> None:
     strikes, puts, _, _ = synthetic_chain(100.0, 0.2, 0.1, 0.03, 0.1)
     assert isinstance(strikes, np.ndarray)
     assert strikes.shape == puts.shape
+
+
+_TILT = CalibrationMap(
+    knots=np.array([0.0, 0.05, 0.3, 0.7, 1.0]),
+    values=np.array([0.0, 0.01, 0.2, 0.8, 1.0]),
+    n_samples=100,
+    is_identity=False,
+)
+
+
+def _flat_cdf(strikes: list[float], cdf: list[float]) -> RiskNeutralCdf:
+    return RiskNeutralCdf(
+        strikes=np.array(strikes),
+        cdf=np.array(cdf),
+        raw_cdf=np.array(cdf),
+        forward=math.nan,
+        years=YEARS,
+        rate=0.0,
+        n_quotes=len(strikes),
+        flags=frozenset(),
+    )
+
+
+def test_constant_cdf_below_the_lowest_knot() -> None:
+    c, width = 0.2, 10.0
+    cdf = _flat_cdf([100.0, 110.0], [c, 0.5])
+    first, second = put_spread_payoff_moments(cdf, 90.0, 80.0)
+    assert first == pytest.approx(c * width, rel=1e-12)
+    assert second == pytest.approx(c * width**2, rel=1e-12)
+    score = score_spread(PutCreditSpread("SPY", EXPIRY, 90.0, 80.0, 3.0, YEARS), cdf, cash_apy=0.0)
+    assert score.payoff_std**2 == pytest.approx(c * (1 - c) * width**2, rel=1e-12)
+    assert score.fair_credit == pytest.approx(2.0, rel=1e-12)
+
+
+def test_zero_probability_gives_zero_std_and_nan_reward_to_risk() -> None:
+    cdf = _flat_cdf([100.0, 110.0], [0.0, 0.5])
+    score = score_spread(PutCreditSpread("SPY", EXPIRY, 90.0, 80.0, 3.0, YEARS), cdf, cash_apy=0.0)
+    assert score.fair_credit == 0.0
+    assert score.payoff_std == 0.0
+    assert math.isnan(score.reward_to_risk)
+    assert score.edge_pct == 1.0
+
+
+def test_moments_reject_inverted_strikes() -> None:
+    with pytest.raises(EngineInputError):
+        put_spread_payoff_moments(_hand_cdf(), 95.0, 100.0)
+
+
+def _brute_force_moments(cdf: RiskNeutralCdf, k_short: float, k_long: float) -> tuple[float, float]:
+    """Stieltjes midpoint sums over 20,000 cells on the strikes plus the atom below them."""
+    width = k_short - k_long
+    edges = np.linspace(k_long, k_short, 20_001)
+    mass = np.diff(cdf.prob_below_array(edges))
+    payoff = k_short - 0.5 * (edges[:-1] + edges[1:])
+    atom = float(cdf.prob_below(k_long))
+    first = float(np.sum(mass * payoff)) + atom * width
+    second = float(np.sum(mass * payoff**2)) + atom * width**2
+    return first, second
+
+
+@given(_lognormal_chain())
+def test_moments_match_brute_force_on_raw_and_calibrated_cdfs(
+    data: tuple[float, float, float, float, float],
+) -> None:
+    spot, vol, years, rate, step_frac = data
+    strikes, puts, _, forward = synthetic_chain(spot, vol, years, rate, step_frac)
+    raw = implied_cdf(strikes, puts, years=years, rate=rate)
+    spreads = enumerate_spreads(
+        "SPY", EXPIRY, years, strikes, puts, max_width=0.3 * forward, min_credit=1e-3 * spot
+    )
+    for cdf in (raw, apply_calibration(raw, _TILT)):
+        for spread in spreads[:: max(1, len(spreads) // 5)]:
+            width = spread.width
+            first, second = put_spread_payoff_moments(cdf, spread.short_strike, spread.long_strike)
+            bf_first, bf_second = _brute_force_moments(cdf, spread.short_strike, spread.long_strike)
+            assert abs(first - bf_first) <= 1e-6 * width
+            assert abs(second - bf_second) <= 1e-6 * width**2
+            var = max(0.0, second - first**2)
+            assert abs(var - max(0.0, bf_second - bf_first**2)) <= 1e-6 * width**2
+
+
+@given(_lognormal_chain(), st.booleans())
+def test_edge_and_risk_bounds(
+    data: tuple[float, float, float, float, float], calibrated: bool
+) -> None:
+    spot, vol, years, rate, step_frac = data
+    strikes, puts, _, forward = synthetic_chain(spot, vol, years, rate, step_frac)
+    cdf = implied_cdf(strikes, puts, years=years, rate=rate)
+    spreads = enumerate_spreads(
+        "SPY", EXPIRY, years, strikes, puts, max_width=0.3 * forward, min_credit=1e-3 * spot
+    )
+    for spread in spreads[:: max(1, len(spreads) // 25)]:
+        score = score_spread(spread, cdf, cash_apy=0.036, calibration=_TILT if calibrated else None)
+        w = spread.width
+        assert -1e-12 * w <= score.fair_credit <= w * (1 + 1e-12)
+        assert score.edge_pct <= 1.0
+        assert 0.0 <= score.payoff_std <= w / 2 * (1 + 1e-12)
+        assert abs(score.fair_credit + score.expected_payoff - spread.credit) <= 1e-12 * max(1.0, w)
+        if score.payoff_std > 0:
+            assert score.reward_to_risk * score.expected_payoff >= 0.0
+        else:
+            assert math.isnan(score.reward_to_risk)
+
+
+@st.composite
+def _fair_chain(draw: st.DrawFn) -> tuple[float, float, float, float]:
+    return (draw(_f(10, 1000)), draw(_f(0.05, 0.8)), draw(_f(7 / 365, 1)), draw(_f(0.05, 0.1)))
+
+
+@given(_fair_chain())
+def test_spreads_priced_off_the_own_chain_have_small_edge(
+    data: tuple[float, float, float, float],
+) -> None:
+    # With rate 0 the credit is not discounted relative to the fair credit, so the only
+    # difference is the interpolation between knots.
+    spot, vol, years, step_frac = data
+    strikes, puts, _, forward = synthetic_chain(spot, vol, years, 0.0, step_frac)
+    cdf = implied_cdf(strikes, puts, years=years, rate=0.0)
+    spreads = enumerate_spreads(
+        "SPY", EXPIRY, years, strikes, puts, max_width=0.3 * forward, min_credit=1e-3 * spot
+    )
+    for spread in spreads[:: max(1, len(spreads) // 25)]:
+        if spread.long_strike < cdf.strikes[0]:
+            continue
+        score = score_spread(spread, cdf, cash_apy=0.0)
+        assert abs(score.expected_payoff) <= 2e-3 * spread.width
+        if spread.credit >= 0.05 * spread.width:
+            assert abs(score.edge_pct) <= 0.03
+
+
+@given(_lognormal_chain(), _f(0.01, 100))
+def test_fair_credit_and_risk_scale_with_the_price_level(
+    data: tuple[float, float, float, float, float], c: float
+) -> None:
+    spot, vol, years, rate, step_frac = data
+    strikes, puts, _, forward = synthetic_chain(spot, vol, years, rate, step_frac)
+    base_cdf = implied_cdf(strikes, puts, years=years, rate=rate)
+    scaled_cdf = implied_cdf(strikes * c, puts * c, years=years, rate=rate)
+    base = enumerate_spreads("SPY", EXPIRY, years, strikes, puts, max_width=0.3 * forward)
+    for s0 in base[:: max(1, len(base) // 10)]:
+        try:
+            s1 = replace(
+                s0,
+                short_strike=s0.short_strike * c,
+                long_strike=s0.long_strike * c,
+                credit=s0.credit * c,
+            )
+        except EngineInputError:
+            continue
+        a = score_spread(s0, base_cdf, cash_apy=0.036)
+        b = score_spread(s1, scaled_cdf, cash_apy=0.036)
+        assert b.fair_credit == pytest.approx(a.fair_credit * c, rel=1e-6, abs=1e-9)
+        assert b.payoff_std == pytest.approx(a.payoff_std * c, rel=1e-6, abs=1e-9 * c)
+        assert b.edge_pct == pytest.approx(a.edge_pct, rel=1e-6, abs=1e-9)
+        if math.isnan(a.reward_to_risk):
+            continue
+        assert b.reward_to_risk == pytest.approx(a.reward_to_risk, rel=1e-6, abs=1e-9)
