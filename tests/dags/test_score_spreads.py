@@ -8,6 +8,7 @@ from airflow.datasets import Dataset
 from airflow.models import DagBag
 
 from dags import dbt_runner
+from dags.common import DEFAULT_ARGS
 from dags.datasets import GOLD, GOLD_ANALYTICS
 
 DAG_FOLDER = Path(__file__).resolve().parents[2] / "dags"
@@ -45,6 +46,13 @@ def test_both_tasks_share_the_single_duckdb_writer_slot(dagbag: DagBag) -> None:
 
     assert dbt_runner.DUCKDB_POOL == "duckdb_writer"
     assert {dag.get_task(t).pool for t in dag.task_ids} == {"duckdb_writer"}
+
+
+def test_a_failing_analytics_gate_is_not_retried(dagbag: DagBag) -> None:
+    dag = dagbag.dags["score_spreads"]
+
+    assert dag.get_task("analytics").retries == 0
+    assert dag.get_task("report").retries == DEFAULT_ARGS["retries"]
 
 
 def test_the_analytics_task_updates_its_own_dataset(dagbag: DagBag) -> None:

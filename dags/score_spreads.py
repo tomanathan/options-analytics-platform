@@ -8,7 +8,8 @@ on the ``GOLD`` Dataset, which ``dbt_build`` updates only when its models and te
   ``oap.analytics`` (snapshots, predictions, walk-forward calibration maps, the backtest
   sample, its metrics and reliability bins, and the spread scores) and their tests. A failing
   analytics test, among them the leakage gate ``assert_calibration_out_of_sample``, fails the
-  task and blocks the report.
+  task and blocks the report; the task has ``retries=0`` because a failed gate fails the
+  same way again.
 * ``report`` runs ``scripts/make_report.py`` with the dbt virtualenv, which writes
   ``results.md`` and the figures to ``.dbt-local/report/``. The committed copy under ``docs/``
   comes from ``make report`` on the host; both run the same code.
@@ -45,6 +46,8 @@ def score_spreads() -> None:
         cwd=AIRFLOW_HOME,
         pool=DUCKDB_POOL,
         outlets=[GOLD_ANALYTICS],
+        # A failing leakage or monotonicity gate is a verdict on the data, not a flaky call.
+        retries=0,
     )
     def analytics() -> str:
         """Return the script that builds the analytics models and runs their tests."""

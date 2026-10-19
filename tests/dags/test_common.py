@@ -1,5 +1,6 @@
 import inspect
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,7 +25,7 @@ from dags.common import (
     staging_dir,
 )
 from oap.ingest.alpaca import AlpacaClient, AlpacaError
-from oap.ingest.dolthub import DoltHubError
+from oap.ingest.dolthub import DoltHubClient, DoltHubError
 from oap.quality.bronze_suite import BronzeQualityError
 
 
@@ -131,8 +132,8 @@ def test_fail_fast_converts_deterministic_errors(make: Any) -> None:
 
 @pytest.mark.parametrize(
     "original",
-    [DoltHubError("x"), httpx.ConnectError("x"), RuntimeError("x")],
-    ids=["DoltHubError", "ConnectError", "RuntimeError"],
+    [httpx.ConnectError("x"), RuntimeError("x")],
+    ids=["ConnectError", "RuntimeError"],
 )
 def test_fail_fast_keeps_retryable_errors(original: Exception) -> None:
     with pytest.raises(type(original)) as caught:
@@ -160,6 +161,75 @@ def test_alpaca_401_is_deterministic_and_exhausted_503_is_not() -> None:
 
     assert is_deterministic(unauthorised.value)
     assert not is_deterministic(unavailable.value)
+
+
+def _dolthub(response: Callable[[httpx.Request], httpx.Response]) -> DoltHubClient:
+    return DoltHubClient(
+        httpx.Client(transport=httpx.MockTransport(response)),
+        page_pause_s=0,
+        retry_wait=wait_none(),
+        max_attempts=2,
+    )
+
+
+def _dolthub_failure(response: Callable[[httpx.Request], httpx.Response]) -> DoltHubError:
+    with pytest.raises(DoltHubError) as caught:
+        _dolthub(response).query("select 1")
+    return caught.value
+
+
+def test_dolthub_403_is_deterministic_and_exhausted_503_is_not() -> None:
+    forbidden = _dolthub_failure(lambda request: httpx.Response(403, json={}))
+    unavailable = _dolthub_failure(lambda request: httpx.Response(503, json={}))
+
+    assert is_deterministic(forbidden)
+    assert not is_deterministic(unavailable)
+
+
+def test_dolthub_exhausted_429_and_timeouts_are_retryable() -> None:
+    throttled = _dolthub_failure(lambda request: httpx.Response(429, json={}))
+    timed_out = _dolthub_failure(
+        lambda request: httpx.Response(
+            200,
+            json={
+                "query_execution_status": "Error",
+                "query_execution_message": "deadline exceeded",
+            },
+        )
+    )
+
+    assert not is_deterministic(throttled)
+    assert not is_deterministic(timed_out)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        lambda request: httpx.Response(404, text="not found"),
+        lambda request: httpx.Response(200, text="<html>not json</html>"),
+        lambda request: httpx.Response(200, json=["not", "a", "dict"]),
+        lambda request: httpx.Response(
+            200, json={"query_execution_status": "Error", "query_execution_message": "syntax error"}
+        ),
+    ],
+    ids=["404", "non-json", "unexpected-shape", "sql-error"],
+)
+def test_other_dolthub_failures_are_deterministic(
+    response: Callable[[httpx.Request], httpx.Response],
+) -> None:
+    assert is_deterministic(_dolthub_failure(response))
+
+
+def test_fail_fast_converts_a_dolthub_403_and_keeps_an_exhausted_503() -> None:
+    forbidden = _dolthub_failure(lambda request: httpx.Response(403, json={}))
+    unavailable = _dolthub_failure(lambda request: httpx.Response(503, json={}))
+
+    with pytest.raises(AirflowFailException, match="^DoltHubError:") as caught:
+        _raiser(forbidden)()
+    assert caught.value.__cause__ is forbidden
+    with pytest.raises(DoltHubError) as retryable:
+        _raiser(unavailable)()
+    assert retryable.value is unavailable
 
 
 def test_fail_fast_passes_skip_and_return_values_and_preserves_name_doc_signature() -> None:
