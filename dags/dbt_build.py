@@ -19,12 +19,15 @@ against the ``dev`` target.
   from scratch, which repairs drift that the watermark cannot see, such as a deleted bronze
   slice; it only applies to ``mode=build``.
 
-Only one process may write ``oap.duckdb`` at a time, so do not run ``make dbt-build-local``
-while this DAG runs.
+* The Python models tagged ``analytics`` (calibration and spread scores) are excluded here and
+  built by ``score_spreads``, which runs when this DAG succeeds: the task updates the ``GOLD``
+  Dataset, so a failing silver or gold test blocks the analytics.
+
+Only one process may write ``oap.duckdb`` at a time. The task runs in the one-slot
+``duckdb_writer`` pool, shared with ``score_spreads``; do not run ``make dbt-build-local`` or
+``make report`` while either DAG runs.
 """
 
-import re
-import shlex
 from datetime import UTC, datetime, timedelta
 
 from airflow.decorators import dag, task
@@ -32,68 +35,8 @@ from airflow.models.param import Param
 from airflow.operators.python import get_current_context
 
 from dags.common import DEFAULT_ARGS
-from dags.datasets import BRONZE_OPTION_CHAIN, BRONZE_UNDERLYING_PRICE
-
-DBT_BIN = "/opt/dbt-venv/bin/dbt"
-AIRFLOW_HOME = "/opt/airflow"
-ARTIFACTS_DIR = f"{AIRFLOW_HOME}/.dbt-local/artifacts"
-MODES = ("build", "test")
-DBT_ENV = {
-    "DBT_PROFILES_DIR": f"{AIRFLOW_HOME}/dbt",
-    "OAP_DBT_SOURCE": "iceberg",
-    "OAP_ICEBERG_LOCAL_DIR": f"{AIRFLOW_HOME}/.iceberg-local",
-    "OAP_DUCKDB_PATH": f"{AIRFLOW_HOME}/.dbt-local/oap.duckdb",
-    "DBT_PACKAGES_INSTALL_PATH": "/opt/dbt-packages/dbt_packages",
-    "OAP_DUCKDB_EXTENSION_DIR": "/opt/duckdb-extensions",
-    "DBT_SEND_ANONYMOUS_USAGE_STATS": "false",
-}
-"""Environment of the dbt process: the container paths of the profile, catalog and image assets."""
-
-
-def dbt_command(mode: str, *, full_refresh: bool, run_id: str) -> str:
-    """Return the bash script that runs dbt once and publishes its artifacts.
-
-    The project directory is mounted read-only, so dbt writes its target and logs to
-    ``/tmp/dbt-target/<run_id>``, with the run id reduced to ``[A-Za-z0-9._-]``. An EXIT
-    trap copies ``manifest.json`` and ``run_results.json`` to ``ARTIFACTS_DIR`` whether dbt
-    succeeded or not, and keeps dbt's exit status.
-
-    Args:
-        mode: ``"build"`` (models and tests) or ``"test"`` (tests only).
-        full_refresh: Pass ``--full-refresh`` so incremental models are rebuilt; ignored
-            unless ``mode`` is ``"build"``.
-        run_id: The Airflow run id, used to give each run its own target directory.
-
-    Returns:
-        The script text.
-
-    Raises:
-        ValueError: If ``mode`` is not one of ``MODES``.
-    """
-    if mode not in MODES:
-        raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
-    target = f"/tmp/dbt-target/{re.sub(r'[^A-Za-z0-9._-]', '_', run_id)}"
-    args = [
-        DBT_BIN,
-        mode,
-        "--project-dir",
-        f"{AIRFLOW_HOME}/dbt",
-        "--profiles-dir",
-        f"{AIRFLOW_HOME}/dbt",
-        "--target",
-        "dev",
-        "--target-path",
-        target,
-        "--log-path",
-        target,
-    ]
-    if full_refresh and mode == "build":
-        args.append("--full-refresh")
-    publish = (
-        f"mkdir -p {ARTIFACTS_DIR} && "
-        f"cp {target}/manifest.json {target}/run_results.json {ARTIFACTS_DIR}/ 2>/dev/null || true"
-    )
-    return f"trap '{publish}' EXIT\n" + shlex.join(args)
+from dags.datasets import BRONZE_OPTION_CHAIN, BRONZE_UNDERLYING_PRICE, GOLD
+from dags.dbt_runner import AIRFLOW_HOME, DBT_ENV, DUCKDB_POOL, MODES, dbt_command
 
 
 @dag(
@@ -113,6 +56,8 @@ def dbt_build() -> None:
         env=DBT_ENV,
         append_env=True,
         cwd=AIRFLOW_HOME,
+        pool=DUCKDB_POOL,
+        outlets=[GOLD],
         retries=1,
         retry_delay=timedelta(minutes=2),
     )
@@ -123,6 +68,7 @@ def dbt_build() -> None:
             context["params"]["mode"],
             full_refresh=context["params"]["full_refresh"],
             run_id=context["run_id"],
+            exclude=("tag:analytics",),
         )
 
     dbt_build()

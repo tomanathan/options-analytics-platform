@@ -19,6 +19,7 @@ EXPECTED_TASKS = {
     "dbt_build": {"dbt_build"},
     "backfill_prices": {"plan", "fetch_month", "write_month", "summarize"},
     "daily_prices": {"fetch", "write"},
+    "score_spreads": {"analytics", "report"},
 }
 
 
