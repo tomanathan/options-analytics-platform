@@ -61,12 +61,15 @@ services:
   airflow-init:
     <<: *airflow-common
     # The entrypoint migrates the database before it runs this command. `pools set` is an
-    # upsert, so re-running airflow-init keeps the pool at one slot; the scheduler never
+    # upsert, so re-running airflow-init keeps each pool at one slot; the scheduler never
     # starts a task whose pool does not exist.
     command:
       - bash
       - -c
-      - airflow version && airflow pools set bronze_writers 1 "One commit at a time to the bronze Iceberg tables"
+      - >-
+        airflow version
+        && airflow pools set bronze_writers 1 "One commit at a time to the bronze Iceberg tables"
+        && airflow pools set duckdb_writer 1 "One process at a time on .dbt-local/oap.duckdb"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: "true"

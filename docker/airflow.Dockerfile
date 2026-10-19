@@ -29,9 +29,12 @@ RUN pip check > /tmp/pc.txt 2>&1 || true; \
     if [ -s /tmp/pc-unexpected.txt ]; then cat /tmp/pc-unexpected.txt >&2; exit 1; fi; \
     rm -f /tmp/pc.txt /tmp/pc-unexpected.txt
 
-# dbt runs from its own virtualenv: dbt-core/dbt-snowflake pin protobuf, networkx and cryptography differently from
-# Airflow, and no Airflow code imports dbt. Versions are uv.lock's dbt group (docker/requirements-dbt.txt). dbt packages
-# and the DuckDB extensions the bronze hook loads (iceberg, avro, sqlite) are fetched here so a DAG run needs no network.
+# dbt and analytics virtualenv: dbt-core/dbt-snowflake pin protobuf, networkx and cryptography differently from
+# Airflow, and no Airflow code imports dbt. The dbt Python models (oap.analytics) and scripts/make_report.py run here too.
+# Versions are uv.lock's dbt and report groups (docker/requirements-dbt.txt). oap itself is installed with --no-deps after
+# `pip check`, because its declared ingest dependencies are deliberately absent from this venv: only oap.analytics is
+# imported here, and it needs numpy and pandas (dbt group) and oap.engine. dbt packages and the DuckDB extensions the
+# bronze hook loads (iceberg, avro, sqlite) are fetched here so a DAG run needs no network.
 USER root
 RUN python -m venv /opt/dbt-venv && mkdir -p /opt/dbt-packages /opt/duckdb-extensions \
     && chown -R airflow:root /opt/dbt-venv /opt/dbt-packages /opt/duckdb-extensions
@@ -39,6 +42,7 @@ USER airflow
 COPY --chown=airflow:root docker/requirements-dbt.txt dbt/packages.yml dbt/package-lock.yml /opt/dbt-packages/
 RUN /opt/dbt-venv/bin/pip install --no-cache-dir --no-deps -r /opt/dbt-packages/requirements-dbt.txt \
     && /opt/dbt-venv/bin/pip check \
+    && /opt/dbt-venv/bin/pip install --no-cache-dir --no-deps /opt/oap \
     && cd /opt/dbt-packages && printf 'name: oap_packages\nversion: "1.0.0"\nconfig-version: 2\n' > dbt_project.yml \
     && /opt/dbt-venv/bin/dbt deps --project-dir /opt/dbt-packages \
     && /opt/dbt-venv/bin/python -c "import duckdb; c = duckdb.connect(config={'extension_directory': '/opt/duckdb-extensions'}); [c.install_extension(e) for e in ('iceberg', 'avro', 'sqlite')]" \

@@ -5,8 +5,9 @@ DBT_ARGS := --project-dir dbt --profiles-dir dbt
 # The Airflow image installs the runtime closure of uv.lock; --no-default-groups leaves out
 # Airflow and dbt, which the image already is or does not need. Pinned uv keeps the text stable.
 UV_EXPORT := uv export --frozen --no-default-groups --no-emit-project --no-hashes --no-header --format requirements.txt
-# dbt runs from its own virtualenv in the image (docker/airflow.Dockerfile); this is that venv's lock.
-UV_EXPORT_DBT := uv export --frozen --only-group dbt --no-emit-project --no-hashes --no-header --format requirements.txt
+# dbt runs from its own virtualenv in the image (docker/airflow.Dockerfile); this is that venv's lock. The same venv
+# runs the dbt Python models (numpy, pandas) and scripts/make_report.py (matplotlib, the report group).
+UV_EXPORT_DBT := uv export --frozen --only-group dbt --only-group report --no-emit-project --no-hashes --no-header --format requirements.txt
 
 # dbt builds on a synthetic Iceberg bronze catalog (written by scripts/make_synthetic_bronze.py through the
 # real writer), in its own DuckDB file, so `make check` needs no vendor data and never touches oap.duckdb.
@@ -14,7 +15,7 @@ SYNTHETIC_DIR := .dbt-local/synthetic-iceberg
 DBT_SYNTHETIC_ENV := OAP_DBT_SOURCE=synthetic OAP_SYNTHETIC_BRONZE_DIR=$(CURDIR)/$(SYNTHETIC_DIR) OAP_DUCKDB_PATH=$(CURDIR)/.dbt-local/synthetic.duckdb
 DBT_LOCAL_ENV := OAP_DBT_SOURCE=iceberg OAP_ICEBERG_LOCAL_DIR=$(CURDIR)/.iceberg-local OAP_DUCKDB_PATH=$(CURDIR)/.dbt-local/oap.duckdb
 
-.PHONY: help install lint format typecheck test dbt-deps synthetic-bronze dbt-compile dbt-build dbt-build-local check \
+.PHONY: help install lint format typecheck test dbt-deps synthetic-bronze dbt-compile dbt-build dbt-build-local report check \
 	tf-fmt tf-validate compose-config lock-export lock-check airflow-build up down reset logs \
 	backfill iceberg-count clean
 
@@ -49,15 +50,20 @@ dbt-compile: dbt-deps ## Compile dbt models against the local DuckDB dev target
 	$(DBT_SYNTHETIC_ENV) uv run dbt compile $(DBT_ARGS) --target dev
 
 # Two passes: the second runs the incremental model again over the data the first one loaded,
-# which exercises its is_incremental() branch.
+# which exercises its is_incremental() branch. The report line renders the results report from the
+# synthetic gold schema (the models against the report's SQL), so a schema drift between them fails here.
 dbt-build: dbt-deps synthetic-bronze ## Seed, run and test dbt on the synthetic bronze catalog (DuckDB dev target)
 	rm -f .dbt-local/synthetic.duckdb .dbt-local/synthetic.duckdb.wal
 	$(DBT_SYNTHETIC_ENV) uv run dbt build $(DBT_ARGS) --target dev
 	$(DBT_SYNTHETIC_ENV) uv run dbt build $(DBT_ARGS) --target dev --select config.materialized:incremental
+	uv run python scripts/make_report.py --db .dbt-local/synthetic.duckdb --out .dbt-local/report-synthetic
 
 dbt-build-local: dbt-deps ## Build dbt on the real local Iceberg catalog into .dbt-local/oap.duckdb (not while dbt_build runs)
 	mkdir -p .dbt-local
 	$(DBT_LOCAL_ENV) uv run dbt build $(DBT_ARGS) --target dev
+
+report: ## Regenerate docs/results.md, docs/img/*.png and the README excerpt from .dbt-local/oap.duckdb (after dbt-build-local; not while the stack builds)
+	uv run python scripts/make_report.py --db .dbt-local/oap.duckdb --out docs --readme README.md
 
 check: lock-check lint typecheck test dbt-compile dbt-build ## The gate before every commit
 
