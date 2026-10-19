@@ -34,6 +34,7 @@ x-airflow-common: &airflow-common
     - ./dbt:/opt/airflow/dbt:ro
     - ./scripts:/opt/airflow/scripts:ro
     - ./.iceberg-local:/opt/airflow/.iceberg-local
+    - ./.dbt-local:/opt/airflow/.dbt-local
     - ./logs/airflow:/opt/airflow/logs
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on
@@ -59,7 +60,13 @@ services:
 
   airflow-init:
     <<: *airflow-common
-    command: version
+    # The entrypoint migrates the database before it runs this command. `pools set` is an
+    # upsert, so re-running airflow-init keeps the pool at one slot; the scheduler never
+    # starts a task whose pool does not exist.
+    command:
+      - bash
+      - -c
+      - airflow version && airflow pools set bronze_writers 1 "One commit at a time to the bronze Iceberg tables"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: "true"
@@ -110,10 +117,13 @@ services:
     volumes:
       - ./dbt:/workspace/dbt
       - ./.dbt-local:/workspace/.dbt-local
+      - ./.iceberg-local:/workspace/.iceberg-local:ro
     environment:
       DBT_PROFILES_DIR: /workspace/dbt
       DBT_TARGET: ${DBT_TARGET:-dev}
       OAP_DUCKDB_PATH: /workspace/.dbt-local/oap.duckdb
+      OAP_ICEBERG_LOCAL_DIR: /workspace/.iceberg-local
+      OAP_DBT_SOURCE: ${OAP_DBT_SOURCE:-iceberg}
       SNOWFLAKE_ACCOUNT: ${SNOWFLAKE_ACCOUNT:-}
       SNOWFLAKE_USER: ${SNOWFLAKE_USER:-}
       SNOWFLAKE_PASSWORD: ${SNOWFLAKE_PASSWORD:-}

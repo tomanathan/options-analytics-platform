@@ -4,4 +4,9 @@
 !README.md
 !LICENSE
 !src/
+!docker/requirements.txt
+!docker/requirements-dbt.txt
+!dbt/packages.yml
+!dbt/package-lock.yml
+!scripts/image_requirements.py
 src/**/__pycache__/

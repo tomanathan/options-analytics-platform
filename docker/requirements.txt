@@ -1,0 +1,203 @@
+altair==6.3.0
+    # via great-expectations
+annotated-types==0.8.0
+    # via pydantic
+anyio==4.15.1
+    # via httpx
+attrs==26.1.0
+    # via
+    #   jsonschema
+    #   referencing
+boto3==1.43.108
+    # via pyiceberg
+botocore==1.43.108
+    # via
+    #   boto3
+    #   s3transfer
+cachetools==7.2.1
+    # via pyiceberg
+certifi==2025.1.31
+    # via
+    #   httpcore
+    #   httpx
+    #   requests
+cffi==2.1.1 ; platform_python_implementation != 'PyPy'
+    # via cryptography
+charset-normalizer==3.5.2
+    # via requests
+click==8.5.0
+    # via pyiceberg
+colorama==0.4.6 ; sys_platform == 'win32'
+    # via tqdm
+cryptography==50.0.2
+    # via great-expectations
+exchange-calendars==4.13.2
+    # via pandas-market-calendars
+fsspec==2026.9.0
+    # via pyiceberg
+great-expectations==1.23.2
+    # via oap
+h11==0.16.0
+    # via httpcore
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via oap
+idna==3.20
+    # via
+    #   anyio
+    #   httpx
+    #   requests
+jinja2==3.1.6
+    # via
+    #   altair
+    #   great-expectations
+jmespath==1.1.0
+    # via
+    #   boto3
+    #   botocore
+jsonschema==4.26.0
+    # via
+    #   altair
+    #   great-expectations
+jsonschema-specifications==2025.9.1
+    # via jsonschema
+korean-lunar-calendar==0.4.0
+    # via exchange-calendars
+markdown-it-py==4.2.0
+    # via rich
+markupsafe==3.0.4
+    # via jinja2
+marshmallow==3.26.2
+    # via great-expectations
+mdurl==0.1.2
+    # via markdown-it-py
+mistune==3.3.4
+    # via great-expectations
+mmh3==5.3.1
+    # via pyiceberg
+mypy-extensions==1.1.0
+    # via typing-inspect
+narwhals==2.26.0
+    # via altair
+numpy==2.5.3
+    # via
+    #   exchange-calendars
+    #   great-expectations
+    #   oap
+    #   pandas
+    #   scipy
+packaging==26.3
+    # via
+    #   altair
+    #   great-expectations
+    #   marshmallow
+    #   pandera
+pandas==2.3.3
+    # via
+    #   exchange-calendars
+    #   great-expectations
+    #   oap
+    #   pandas-market-calendars
+pandas-market-calendars==5.5.0
+    # via oap
+pandera==0.34.0
+    # via oap
+pyarrow==25.0.1
+    # via
+    #   oap
+    #   pyiceberg
+pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+    # via cffi
+pydantic==2.13.5
+    # via
+    #   great-expectations
+    #   pandera
+    #   pyiceberg
+pydantic-core==2.46.5
+    # via pydantic
+pygments==2.21.0
+    # via rich
+pyiceberg==0.12.0
+    # via oap
+pyiceberg-core==0.10.1
+    # via pyiceberg
+pyluach==2.3.0
+    # via exchange-calendars
+pyparsing==3.3.3
+    # via
+    #   great-expectations
+    #   pyiceberg
+pyroaring==1.2.0
+    # via pyiceberg
+python-dateutil==2.9.0.post0
+    # via
+    #   botocore
+    #   great-expectations
+    #   pandas
+    #   strictyaml
+pytz==2026.5
+    # via pandas
+referencing==0.37.0
+    # via
+    #   jsonschema
+    #   jsonschema-specifications
+requests==2.34.2
+    # via
+    #   great-expectations
+    #   pyiceberg
+rich==13.9.4
+    # via pyiceberg
+rpds-py==2026.9.1
+    # via
+    #   jsonschema
+    #   referencing
+ruamel-yaml==0.19.1
+    # via great-expectations
+s3transfer==0.19.2
+    # via boto3
+scipy==1.18.1
+    # via great-expectations
+six==1.17.0
+    # via python-dateutil
+strictyaml==1.7.3
+    # via pyiceberg
+tenacity==9.1.4
+    # via
+    #   oap
+    #   pyiceberg
+toolz==1.1.0
+    # via exchange-calendars
+tqdm==4.70.1
+    # via great-expectations
+typeguard==4.6.0
+    # via pandera
+typing-extensions==4.16.0
+    # via
+    #   altair
+    #   anyio
+    #   great-expectations
+    #   pandera
+    #   pydantic
+    #   pydantic-core
+    #   referencing
+    #   typeguard
+    #   typing-inspect
+    #   typing-inspection
+typing-inspect==0.9.0
+    # via pandera
+typing-inspection==0.4.4
+    # via pydantic
+tzdata==2026.5
+    # via
+    #   exchange-calendars
+    #   pandas
+    #   tzlocal
+tzlocal==5.4.4
+    # via great-expectations
+urllib3==2.8.0
+    # via
+    #   botocore
+    #   requests
+zstandard==0.25.0
+    # via pyiceberg

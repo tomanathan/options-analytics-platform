@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
+          # Pinned so `uv export` prints the same text as locally and `make lock-check` cannot drift.
+          version: "0.12.23"
           enable-cache: true
           python-version: "3.12"
       - run: uv sync --all-groups --locked
