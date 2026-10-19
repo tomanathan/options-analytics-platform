@@ -2,7 +2,8 @@
 
 The package is a pure core that dbt Python models call: ``sample`` turns option chains
 and outcomes into labelled predictions, ``backtest`` fits and evaluates walk-forward
-calibration maps, ``scoring`` ranks the latest session's put credit spreads, and ``io``
+calibration maps, ``scoring`` ranks the latest session's put credit spreads, ``strategy``
+replays that ranking on every historical session and settles it, and ``io``
 is the only module that touches a database relation. Prices are in dollars per share,
 rates are decimal APYs, times are in years and probabilities are decimals in [0, 1].
 

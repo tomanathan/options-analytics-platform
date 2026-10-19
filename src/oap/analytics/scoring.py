@@ -158,6 +158,8 @@ def _expiry_rows(
     cmap: CalibrationMap,
     map_id: str,
     config: AnalyticsConfig,
+    *,
+    eligible_only: bool = False,
 ) -> tuple[list[dict[str, object]], list[SpreadScore]]:
     """Score every candidate spread of one expiry.
 
@@ -168,10 +170,13 @@ def _expiry_rows(
         cmap: Calibration map.
         map_id: Identifier of the map.
         config: Analytics parameters.
+        eligible_only: Keep only eligible spreads. Spreads whose short strike is at or above
+            the close or whose natural credit is not positive are dropped before scoring
+            (they can never be eligible), and the remaining ineligible rows after it. The
+            eligible rows are identical to those of a full run.
 
     Returns:
-        Row dictionaries (without ``eligible`` and the ranks) and the calibrated scores in
-        the same order.
+        Row dictionaries (without the ranks) and the calibrated scores in the same order.
     """
     first = chain.iloc[0]
     underlying = str(first["underlying"])
@@ -192,18 +197,23 @@ def _expiry_rows(
     naturals = _natural_credits(
         puts, [s.short_strike for s in spreads], [s.long_strike for s in spreads]
     )
+    pairs = list(zip(spreads, naturals, strict=True))
+    if eligible_only:
+        pairs = [(s, n) for s, n in pairs if n > 0 and s.short_strike < close]
     rows: list[dict[str, object]] = []
     scores: list[SpreadScore] = []
-    for spread, natural in zip(spreads, naturals, strict=True):
+    for spread, natural in pairs:
         raw = score_spread(spread, cdf, cash_apy=config.cash_apy)
         cal = score_spread(spread, calibrated_cdf, cash_apy=config.cash_apy)
-        scores.append(cal)
         eligible = (
             not cal.extrapolated
             and natural > 0
             and spread.short_strike < close
             and cal.prob_profit >= config.min_prob_profit
         )
+        if eligible_only and not eligible:
+            continue
+        scores.append(cal)
         rows.append(
             {
                 "spread_key": (
@@ -299,6 +309,41 @@ def score_latest_session(
         ValueError: If a required column is missing.
         EngineInputError: If the engine rejects a chain.
     """
+    return score_session(quotes, cmap, config, map_id=map_id)
+
+
+def score_session(
+    quotes: pd.DataFrame,
+    cmap: CalibrationMap,
+    config: AnalyticsConfig = DEFAULT_CONFIG,
+    *,
+    map_id: str = PRODUCTION_MAP_ID,
+    eligible_only: bool = False,
+) -> pd.DataFrame:
+    """Score and rank the put credit spreads of one session: the shared scoring path.
+
+    ``score_latest_session`` (the live ranking) and the strategy backtest
+    (``oap.analytics.strategy``) both call this function, so a historical session is
+    ranked by exactly the code that ranks the latest one. The rules are those of
+    ``score_latest_session``. Every rank is computed over the eligible spreads only, so
+    with ``eligible_only`` the eligible rows, their columns and all four ranks are identical
+    to a full run; the ineligible rows are simply not produced, which skips most of the work.
+
+    Args:
+        quotes: Quote rows as in ``classify_snapshots``; normally one ``trade_date``.
+        cmap: Calibration map; the identity map gives calibrated equal to raw.
+        config: Analytics parameters.
+        map_id: Identifier recorded on every row.
+        eligible_only: Return only the eligible spreads.
+
+    Returns:
+        One row per spread with ``SPREAD_COLUMNS``, sorted by underlying, expiration and
+        strikes; empty if nothing could be scored.
+
+    Raises:
+        ValueError: If a required column is missing.
+        EngineInputError: If the engine rejects a chain.
+    """
     require_columns(quotes, QUOTE_COLUMNS, "quotes")
     rows: list[dict[str, object]] = []
     scores: list[SpreadScore] = []
@@ -314,7 +359,13 @@ def score_latest_session(
         if cdf is None:
             continue
         part_rows, part_scores = _expiry_rows(
-            chain, cdf, apply_calibration(cdf, cmap), cmap, map_id, config
+            chain,
+            cdf,
+            apply_calibration(cdf, cmap),
+            cmap,
+            map_id,
+            config,
+            eligible_only=eligible_only,
         )
         rows.extend(part_rows)
         scores.extend(part_scores)
