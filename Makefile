@@ -15,9 +15,12 @@ SYNTHETIC_DIR := .dbt-local/synthetic-iceberg
 DBT_SYNTHETIC_ENV := OAP_DBT_SOURCE=synthetic OAP_SYNTHETIC_BRONZE_DIR=$(CURDIR)/$(SYNTHETIC_DIR) OAP_DUCKDB_PATH=$(CURDIR)/.dbt-local/synthetic.duckdb
 DBT_LOCAL_ENV := OAP_DBT_SOURCE=iceberg OAP_ICEBERG_LOCAL_DIR=$(CURDIR)/.iceberg-local OAP_DUCKDB_PATH=$(CURDIR)/.dbt-local/oap.duckdb
 
+# The explorer API reads the local gold schema read-only and binds 127.0.0.1 only (vendor terms: personal analysis).
+API_ENV := OAP_DUCKDB_PATH=$(CURDIR)/.dbt-local/oap.duckdb
+
 .PHONY: help install lint format typecheck test dbt-deps synthetic-bronze dbt-compile dbt-build dbt-build-local report check \
 	tf-fmt tf-validate compose-config lock-export lock-check airflow-build up down reset logs \
-	backfill iceberg-count clean
+	backfill iceberg-count clean api web web-install app web-build web-check api-schema serve
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -92,6 +95,31 @@ lock-export: ## Regenerate docker/requirements.txt and docker/requirements-dbt.t
 lock-check: ## Fail if docker/requirements.txt or docker/requirements-dbt.txt is stale
 	@$(UV_EXPORT) | diff -u docker/requirements.txt - || { echo "docker/requirements.txt is out of date with uv.lock: run make lock-export" >&2; exit 1; }
 	@$(UV_EXPORT_DBT) | diff -u docker/requirements-dbt.txt - || { echo "docker/requirements-dbt.txt is out of date with uv.lock: run make lock-export" >&2; exit 1; }
+
+api: ## Explorer API with reload on :8000 (reads .dbt-local/oap.duckdb read-only)
+	$(API_ENV) uv run uvicorn oap.api.main:app --reload --reload-dir src --host 127.0.0.1 --port 8000
+
+web-install:
+	@test -d apps/web/node_modules || npm --prefix apps/web ci
+
+web: web-install ## Vite dev server on :5173, proxying /api to :8000
+	npm --prefix apps/web run dev -- --port 5173 --strictPort
+
+app: ## API and web dev servers together (Ctrl-C stops both)
+	$(MAKE) -j2 api web
+
+web-build: web-install ## Build apps/web/dist
+	npm --prefix apps/web run build
+
+web-check: web-install ## Web lint, format, typecheck, tests, schema drift and build
+	npm --prefix apps/web run check && npm --prefix apps/web run build
+
+api-schema: ## Regenerate apps/web/openapi.json and src/api/schema.ts
+	uv run python scripts/export_openapi.py --out apps/web/openapi.json
+	npm --prefix apps/web run gen:api
+
+serve: web-build ## One process: the built explorer and the API on :8000
+	$(API_ENV) uv run uvicorn oap.api.main:app --host 127.0.0.1 --port 8000
 
 airflow-build: ## Build the Airflow image (one image serves every Airflow service)
 	docker compose build airflow-webserver

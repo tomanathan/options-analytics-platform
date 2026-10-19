@@ -43,6 +43,12 @@ webserver_config.py
 data/
 .iceberg-local/
 
+# Explorer web app (apps/web)
+node_modules/
+apps/web/dist/
+apps/web/coverage/
+*.tsbuildinfo
+
 # macOS
 .DS_Store
 
