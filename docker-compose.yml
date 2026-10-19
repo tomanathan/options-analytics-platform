@@ -13,6 +13,13 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # DAG files import oap (pandas, pyarrow, market calendars) at parse time. Under backfill load on a
+    # 2-vCPU VM the default 30 s parse timeout tripped, Airflow dropped the DAG and failed its queued
+    # tasks with no log. Parse less often and allow it to take longer.
+    AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: "180"
+    AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT: "300"
+    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: "120"
+    AIRFLOW__SCHEDULER__PARSING_PROCESSES: "1"
     PYTHONPATH: /opt/airflow:/opt/airflow/src
     AWS_REGION: ${AWS_REGION:-}
     OAP_S3_BUCKET: ${OAP_S3_BUCKET:-}
