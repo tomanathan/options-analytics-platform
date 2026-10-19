@@ -1,0 +1,178 @@
+name: nightly
+
+# Refreshes bronze from DoltHub, builds silver, gold and the analytics, regenerates the results page and
+# publishes the gold DuckDB file as an artifact (ADR 0012). The Iceberg warehouse lives in the Actions cache,
+# never in git: the vendor terms allow personal analysis only.
+on:
+  schedule:
+    # 06:30 UTC Tuesday to Saturday: DoltHub publishes session D at about 05:30 UTC on D+1, so this picks up
+    # Monday to Friday's session. There is no run on Sunday and Monday mornings, when no session was published.
+    - cron: "30 6 * * 2-6"
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "First date to refresh (YYYY-MM-DD). Empty: the last 10 sessions, or 2020-01-01 on a cold cache."
+        required: false
+        type: string
+      end:
+        description: "Last date to refresh (YYYY-MM-DD). Empty: today (UTC)."
+        required: false
+        type: string
+      full_history:
+        description: "Refetch everything from 2020-01-01 (about 45 minutes), ignoring start."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Two runs would write one warehouse and push to one branch. A queued run waits instead of cancelling the
+# one in progress, which may be half way through a 45-minute rebuild.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      DBT_SEND_ANONYMOUS_USAGE_STATS: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Pushes made with the default token do not start the ci workflow. A personal access token in this
+          # secret does, so the committed results are checked like any other commit; without it they are not.
+          token: ${{ secrets.NIGHTLY_PUSH_TOKEN || github.token }}
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          # The same pin as ci.yml.
+          version: "0.12.23"
+          enable-cache: true
+          python-version: "3.12"
+
+      - run: uv sync --all-groups --locked
+
+      # The newest cache whose key starts with "iceberg-". The key of this run is new, so it never matches
+      # itself and the lookup always falls back to the prefix. The warehouse records absolute file paths, and a
+      # GitHub-hosted runner checks out to the same directory every time, so the paths stay valid.
+      - name: Restore the Iceberg warehouse
+        id: warehouse
+        uses: actions/cache/restore@v4
+        with:
+          path: .iceberg-local
+          key: iceberg-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: iceberg-
+
+      - name: Refresh bronze from DoltHub
+        id: refresh
+        env:
+          START_INPUT: ${{ inputs.start }}
+          END_INPUT: ${{ inputs.end }}
+          FULL_HISTORY: ${{ inputs.full_history }}
+          MATCHED_KEY: ${{ steps.warehouse.outputs.cache-matched-key }}
+        run: |
+          set -euo pipefail
+          for value in "$START_INPUT" "$END_INPUT"; do
+            if [ -n "$value" ] && ! [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::dates are YYYY-MM-DD, got '$value'"
+              exit 1
+            fi
+          done
+          end="${END_INPUT:-$(date -u +%F)}"
+          if [ "$FULL_HISTORY" = "true" ]; then
+            path=full
+            echo "path: full history, because full_history was set"
+            args=(--start 2020-01-01 --end "$end")
+          elif [ -n "$START_INPUT" ]; then
+            path=explicit
+            echo "path: explicit window from $START_INPUT to $end"
+            args=(--start "$START_INPUT" --end "$end")
+          elif [ -z "$MATCHED_KEY" ] || [ ! -f .iceberg-local/catalog.db ]; then
+            path=full
+            echo "path: full history, because no warehouse cache was restored"
+            args=(--start 2020-01-01 --end "$end")
+          else
+            path=lookback
+            echo "path: lookback of 10 sessions on the warehouse restored from $MATCHED_KEY"
+            args=(--end "$end")
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          uv run python scripts/refresh_bronze.py "${args[@]}" --workers 4 2>&1 | tee "$RUNNER_TEMP/refresh.log"
+
+      # Straight after the refresh, so a failed dbt build or report still keeps the refreshed bronze. A refresh
+      # that failed is not saved: a half-loaded full history would otherwise be restored as if it were complete,
+      # and the next run would only look back 10 sessions.
+      - name: Save the Iceberg warehouse
+        uses: actions/cache/save@v4
+        with:
+          path: .iceberg-local
+          key: iceberg-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # make dbt-build-local builds every model, the analytics included, so there is no second dbt step.
+      - name: Build silver, gold and the analytics
+        env:
+          OAP_DUCKDB_MEMORY_LIMIT: 4GB
+          OAP_DUCKDB_THREADS: "2"
+        run: make dbt-build-local
+
+      - name: Write the results report
+        run: make report
+
+      - name: Read the latest gold trade date
+        id: gold
+        run: echo "max_trade_date=$(make -s gold-max-date)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gold-duckdb
+          path: .dbt-local/oap.duckdb
+          retention-days: 14
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results
+          path: |
+            docs/results.md
+            docs/img/*.png
+          retention-days: 14
+          if-no-files-found: error
+
+      # Only these four files are ever committed. A manual run from another branch builds everything but
+      # leaves main alone.
+      - name: Commit the results
+        if: github.ref == 'refs/heads/main'
+        env:
+          MAX_TRADE_DATE: ${{ steps.gold.outputs.max_trade_date }}
+        run: |
+          set -euo pipefail
+          files=(docs/results.md docs/img/calibration.png docs/img/spread_scores.png README.md)
+          if git diff --quiet -- "${files[@]}"; then
+            echo "The results did not change; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${files[@]}"
+          git commit -m "chore(results): nightly refresh through $MAX_TRADE_DATE" -- "${files[@]}"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Step summary
+        if: always()
+        env:
+          PATH_TAKEN: ${{ steps.refresh.outputs.path }}
+          MAX_TRADE_DATE: ${{ steps.gold.outputs.max_trade_date }}
+        run: |
+          line=$(grep '^refresh summary:' "$RUNNER_TEMP/refresh.log" 2>/dev/null | tail -1 || true)
+          {
+            echo "### Nightly refresh"
+            echo
+            echo "- Refresh path: ${PATH_TAKEN:-not reached}"
+            echo "- ${line:-no refresh summary: the refresh did not finish}"
+            echo "- Gold max trade_date: ${MAX_TRADE_DATE:-not built}"
+          } >> "$GITHUB_STEP_SUMMARY"
