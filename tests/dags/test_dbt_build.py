@@ -3,6 +3,7 @@ from typing import Any, cast
 
 import pytest
 from airflow.datasets import Dataset, DatasetAny
+from airflow.exceptions import AirflowSkipException
 from airflow.models import DagBag
 
 from dags import dbt_runner
@@ -16,8 +17,12 @@ def dagbag() -> DagBag:
     return DagBag(dag_folder=str(DAG_FOLDER), include_examples=False)
 
 
-def test_dbt_build_has_one_task(dagbag: DagBag) -> None:
-    assert set(dagbag.dags["dbt_build"].task_ids) == {"dbt_build"}
+def test_dbt_build_runs_the_build_then_publishes_gold(dagbag: DagBag) -> None:
+    dag = dagbag.dags["dbt_build"]
+
+    assert set(dag.task_ids) == {"dbt_build", "publish_gold"}
+    assert dag.get_task("dbt_build").downstream_task_ids == {"publish_gold"}
+    assert dag.get_task("publish_gold").downstream_task_ids == set()
 
 
 def test_it_runs_when_either_bronze_table_is_updated(dagbag: DagBag) -> None:
@@ -44,11 +49,36 @@ def test_dbt_build_leaves_the_analytics_models_to_score_spreads(
     assert "--select" not in script
 
 
-def test_dbt_build_updates_the_gold_dataset_in_the_duckdb_pool(dagbag: DagBag) -> None:
-    task = dagbag.dags["dbt_build"].get_task("dbt_build")
+def test_dbt_build_runs_in_the_duckdb_pool_and_publish_gold_owns_the_outlet(
+    dagbag: DagBag,
+) -> None:
+    dag = dagbag.dags["dbt_build"]
+    bash = dag.get_task("dbt_build")
+    publish = dag.get_task("publish_gold")
 
-    assert [cast(Dataset, o).uri for o in task.outlets] == [GOLD.uri] == ["duckdb://oap/gold"]
-    assert task.pool == dbt_runner.DUCKDB_POOL == "duckdb_writer"
+    assert bash.pool == dbt_runner.DUCKDB_POOL == "duckdb_writer"
+    assert not bash.outlets
+    assert [cast(Dataset, o).uri for o in publish.outlets] == [GOLD.uri] == ["duckdb://oap/gold"]
+
+
+def _publish_gold(dagbag: DagBag, monkeypatch: pytest.MonkeyPatch, mode: str) -> None:
+    context = {"run_id": "r", "params": {"mode": mode, "full_refresh": False}}
+    task = cast(Any, dagbag.dags["dbt_build"].get_task("publish_gold"))
+    monkeypatch.setitem(task.python_callable.__globals__, "get_current_context", lambda: context)
+    task.python_callable()
+
+
+def test_publish_gold_skips_after_a_test_run_so_no_dataset_event_fires(
+    dagbag: DagBag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(AirflowSkipException, match="mode=test"):
+        _publish_gold(dagbag, monkeypatch, "test")
+
+
+def test_publish_gold_succeeds_after_a_build_run(
+    dagbag: DagBag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _publish_gold(dagbag, monkeypatch, "build")
 
 
 def test_select_and_exclude_are_rendered_as_dbt_flags() -> None:

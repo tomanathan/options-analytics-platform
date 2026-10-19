@@ -2,9 +2,9 @@
 
 ``dbt_build`` is scheduled on the ``BRONZE_OPTION_CHAIN`` and ``BRONZE_UNDERLYING_PRICE``
 Datasets, so it runs whenever either bronze table has been updated; ``max_active_runs=1``
-keeps one writer on the DuckDB file. It has one task, ``dbt_build``, which runs
-``/opt/dbt-venv/bin/dbt`` (dbt lives in its own virtualenv, see ``docker/airflow.Dockerfile``)
-against the ``dev`` target.
+keeps one writer on the DuckDB file. Tasks run ``dbt_build >> publish_gold``. ``dbt_build``
+runs ``/opt/dbt-venv/bin/dbt`` (dbt lives in its own virtualenv, see
+``docker/airflow.Dockerfile``) against the ``dev`` target.
 
 * ``dbt build`` runs models and tests in dependency order. A dbt test failing at error
   severity skips every model downstream of it and fails the task: the dbt tests are the
@@ -20,8 +20,10 @@ against the ``dev`` target.
   slice; it only applies to ``mode=build``.
 
 * The Python models tagged ``analytics`` (calibration and spread scores) are excluded here and
-  built by ``score_spreads``, which runs when this DAG succeeds: the task updates the ``GOLD``
-  Dataset, so a failing silver or gold test blocks the analytics.
+  built by ``score_spreads``, which runs when this DAG succeeds: ``publish_gold`` updates the
+  ``GOLD`` Dataset, so a failing silver or gold test blocks the analytics. ``publish_gold``
+  raises ``AirflowSkipException`` unless ``params.mode`` is ``build``; a skipped task emits no
+  Dataset event, so a ``mode=test`` run, which builds nothing, does not trigger the analytics.
 
 Only one process may write ``oap.duckdb`` at a time. The task runs in the one-slot
 ``duckdb_writer`` pool, shared with ``score_spreads``; do not run ``make dbt-build-local`` or
@@ -31,6 +33,7 @@ Only one process may write ``oap.duckdb`` at a time. The task runs in the one-sl
 from datetime import UTC, datetime, timedelta
 
 from airflow.decorators import dag, task
+from airflow.exceptions import AirflowSkipException
 from airflow.models.param import Param
 from airflow.operators.python import get_current_context
 
@@ -57,7 +60,6 @@ def dbt_build() -> None:
         append_env=True,
         cwd=AIRFLOW_HOME,
         pool=DUCKDB_POOL,
-        outlets=[GOLD],
         retries=1,
         retry_delay=timedelta(minutes=2),
     )
@@ -71,7 +73,19 @@ def dbt_build() -> None:
             exclude=("tag:analytics",),
         )
 
-    dbt_build()
+    @task(outlets=[GOLD])
+    def publish_gold() -> None:
+        """Update the GOLD Dataset after a ``build`` run; skip after a ``test`` run.
+
+        Raises:
+            AirflowSkipException: If ``params.mode`` is not ``build``: nothing was built, so
+                there is no new gold to announce.
+        """
+        mode = get_current_context()["params"]["mode"]
+        if mode != "build":
+            raise AirflowSkipException(f"mode={mode} builds nothing; GOLD not updated")
+
+    dbt_build() >> publish_gold()
 
 
 dbt_build()

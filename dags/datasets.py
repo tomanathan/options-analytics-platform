@@ -14,10 +14,10 @@ BRONZE_OPTION_CHAIN = Dataset("iceberg://oap/bronze/option_chain")
 """``bronze.option_chain``: updated after the daily gate passes and after a backfill."""
 
 BRONZE_UNDERLYING_PRICE = Dataset("iceberg://oap/bronze/underlying_price")
-"""``bronze.underlying_price``: updated by the price DAGs."""
+"""``bronze.underlying_price``: updated by the price DAGs (the daily one if a slice changed)."""
 
 GOLD = Dataset("duckdb://oap/gold")
-"""The gold marts, built and tested: updated by ``dbt_build``."""
+"""The gold marts, built and tested: updated by ``publish_gold`` of ``dbt_build`` after a build."""
 
 GOLD_ANALYTICS = Dataset("duckdb://oap/gold/analytics")
 """The calibration tables and spread scores: updated by the analytics task of ``score_spreads``."""

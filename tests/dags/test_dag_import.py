@@ -16,7 +16,7 @@ EXPECTED_TASKS = {
     "backfill_chains": {"plan", "plan_months", "fetch_month", "write_month", "summarize"},
     "daily_chain_snapshot": {"snapshot", "write", "quality"},
     "iceberg_maintenance": {"expire_snapshots", "compact"},
-    "dbt_build": {"dbt_build"},
+    "dbt_build": {"dbt_build", "publish_gold"},
     "backfill_prices": {"plan", "fetch_month", "write_month", "summarize"},
     "daily_prices": {"fetch", "write"},
     "score_spreads": {"analytics", "report"},
