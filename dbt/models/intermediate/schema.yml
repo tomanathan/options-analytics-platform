@@ -102,7 +102,7 @@ models:
       - name: bronze_ingested_at
         description: UTC instant the bronze slice of the surviving row was written.
       - name: trade_date_ingested_at
-        description: Latest bronze write time over every source of this trade date; the incremental watermark of fct_option_quote.
+        description: Latest bronze write time of this trade date, the greater of the newest chain slice write over every source and the newest underlying price write; the incremental watermark of fct_option_quote, so a late or corrected price rebuilds the date.
 
   - name: int_chain_snapshots
     description: "{{ doc('int_chain_snapshots') }}"

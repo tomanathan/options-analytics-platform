@@ -53,12 +53,13 @@ day's strikes, such as a split-adjusted close against unadjusted strikes.
 The engine's input: one quote per contract per trade date. Grain: `occ_symbol` x `trade_date`,
 the columns of `int_option_quotes` plus surrogate keys to `dim_contract` and `dim_underlying`.
 Incremental with `delete+insert` on `trade_date`: a run rebuilds every trade date whose
-`trade_date_ingested_at` (the latest bronze write across all sources of the date) is newer than
-the newest one already loaded, which mirrors the partition-replace writes of ADR 0003, so a
-corrected backfill slice is reprocessed. A bronze slice that is deleted outright is not seen by
-that watermark; `assert_fct_option_quote_matches_silver` compares per-date row counts with the
-silver view and fails on drift, and a `full_refresh` run of the `dbt_build` DAG rebuilds the
-table. Prices are dollars per share, `dte_years` is calendar days over 365, volatility is a
+`trade_date_ingested_at` (the latest bronze write across all chain sources and the price
+table for the date) is newer than the newest one already loaded, which mirrors the
+partition-replace writes of ADR 0003, so a corrected backfill slice or a late price is
+reprocessed. A bronze slice that is deleted outright is not seen by that watermark;
+`assert_fct_option_quote_matches_silver` compares per-date row counts and an
+`underlying_close` checksum with the silver view and fails on drift, and a `full_refresh` run
+of the `dbt_build` DAG rebuilds the table. Prices are dollars per share, `dte_years` is calendar days over 365, volatility is a
 decimal.
 {% enddocs %}
 
