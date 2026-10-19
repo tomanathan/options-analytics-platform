@@ -36,6 +36,7 @@ Each arrow into a DAG that says "Dataset" is an Airflow Dataset event, not a dat
 | Great Expectations | Validates bronze. | `oap.quality.bronze_suite` runs on the staged daily chain slice before it is written. The price table has the pandera write contract but no Great Expectations suite. |
 | Spread engine | Pure functions that score put credit spreads. | `oap.engine`, built and tested, with `hypothesis` property tests. |
 | Analytics | Walk-forward calibration of the engine's probabilities and scoring of the latest session. | `oap.analytics` (pure frame functions) behind seven dbt Python models; `scripts/make_report.py` writes the report. DuckDB only. |
+| Explorer | A local web app to look at the distributions, the calibration and the ranked spreads. | `oap.api` (FastAPI: read-only DuckDB, in-memory cache, `oap.analytics` for every number) and `apps/web` (React and visx). Host processes (`make app`, `make serve`), bound to 127.0.0.1. ADR 0011. |
 | Redpanda | Intraday streaming. | Commented out in `docker-compose.yml`. |
 
 ## Bronze

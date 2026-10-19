@@ -1,6 +1,6 @@
 # Runbook
 
-For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the bronze pipelines (chain and price backfills, the daily DAGs, maintenance), the dbt build, the analytics and the results report, Terraform and the checks.
+For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the bronze pipelines (chain and price backfills, the daily DAGs, maintenance), the dbt build, the analytics and the results report, the explorer, Terraform and the checks.
 
 ## Airflow stack
 
@@ -517,6 +517,74 @@ set -a; source .env; set +a
 uv run dbt build --project-dir dbt --profiles-dir dbt --target prod
 ```
 
+## Explorer
+
+The explorer is a FastAPI service (`src/oap/api/`) and a React app (`apps/web/`) over the gold tables of `.dbt-local/oap.duckdb`. It is a host process, not part of the Compose stack, and it binds `127.0.0.1` only. The design is in [ADR 0011](decisions/0011-explorer-react-fastapi.md) and [design/explorer-v1.md](design/explorer-v1.md).
+
+### Start and stop
+
+| Command | Starts | Notes |
+| --- | --- | --- |
+| `make app` | The API on `127.0.0.1:8000` with reload, and Vite on `localhost:5173` | Open http://localhost:5173. Vite proxies `/api` and `/healthz` to the API. Ctrl-C stops both. Installs `apps/web/node_modules` on first use (`npm ci`, Node 22 or later). |
+| `make serve` | The API on `127.0.0.1:8000`, with the built web app mounted at `/` | Builds `apps/web/dist` first. Deep links such as `/spreads` return the app shell. |
+| `make api` | The API alone | `uvicorn oap.api.main:app --reload --reload-dir src`; it reloads on code changes only, not when dbt writes `.dbt-local`. |
+| `make web` | Vite alone | Needs the API on port 8000. |
+
+`make api`, `make app` and `make serve` read `.dbt-local/oap.duckdb`. To read another file, set `OAP_DUCKDB_PATH`. `OAP_WEB_DIST` moves the web build directory, and `OAP_API_CORS_ORIGINS` (comma-separated origins) turns on CORS; without it no CORS middleware is added, and the dev server does not need one. Without `apps/web/dist/index.html`, `GET /` answers a JSON 404 that says to run `make web-build`.
+
+### The database lock
+
+DuckDB lets one process write or many read, never both at once. The API opens the file read-only, runs its queries and closes it in the same call, one connection at a time. After the first load of an underlying (a fraction of a second to about a second cold, milliseconds warm) every request is served from memory, so scrubbing and playing a session sequence open nothing. The cache is keyed by the file's modification time and size, so a build invalidates it.
+
+**Do not leave the explorer playing during `make dbt-build-local`.** A load that lands while the writer holds the lock is refused, and a load that holds the file for a moment can make a writer's open fail; `dbt_build` has `retries=1` with a 2-minute delay, a host build has none. Pause playback and wait for the build to end.
+
+What a request sees while a writer holds the file:
+
+| Situation | Response |
+| --- | --- |
+| The data was loaded before and is in memory | `200` with the header `X-OAP-Data-Stale: 1`. The web app shows "Showing cached data while dbt writes". |
+| The data is not in memory (a first load, or an underlying not opened yet) | `503`, `Retry-After: 15`, body `{"code": "database_busy", ...}`. The web app retries by itself, at most 8 times, and keeps the last frame. |
+| The file does not exist | `503` `database_missing`, no `Retry-After`: run `make dbt-build-local`. |
+| A gold table or column is missing | `503` `gold_missing`: the file is from an older build; rebuild it. |
+
+Once the writer is done the next request reloads from the new file and the header disappears. `GET /healthz` always answers `200` with `{"status": "ok", "db": "ok" | "busy" | "missing", "db_path": ..., "last_good_signature_at": ...}`, so it is safe to poll. Check it first when something looks wrong:
+
+```bash
+curl -s http://127.0.0.1:8000/healthz
+curl -si http://127.0.0.1:8000/api/underlyings | head -5
+```
+
+File locks may not propagate across a Colima bind mount, so the lock protection above is tested for host processes only. When `dbt_build` or `score_spreads` runs in the container, pause playback by hand; the API cannot always tell that the writer is active.
+
+### Calibration map choice
+
+`map=auto` (the default) uses the `production` map for the latest session and `fold_<year>` for any earlier one, so a historic session is not shown through a map that has seen its outcome. `production` and `walk_forward` force one or the other. A response says which map it used (`map_id`) and whether the map was fitted on outcomes that settle after the session (`look_ahead`); the web app shows that as an "in-sample map" chip. `fold_2020` is the identity (the burn-in year), and the app says "no calibration (2020 burn-in)" for it.
+
+### Regenerate the API schema
+
+The web app's types are generated from the API. After changing a model or a route in `src/oap/api/`:
+
+```bash
+make api-schema      # writes apps/web/openapi.json, then apps/web/src/api/schema.ts
+```
+
+Commit both files. `uv run pytest tests/api/test_openapi.py` fails, and says to run `make api-schema`, when `openapi.json` is out of date; `npm --prefix apps/web run check:api` fails when `schema.ts` is.
+
+### Tests
+
+`uv run pytest tests/api -q` runs the API tests against a small gold schema built in a temporary DuckDB file, including a test that holds the write lock from a subprocess. `make web-check` runs the web app's checks and build. `make check` includes the API tests and not the web checks.
+
+### Explorer failures
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| The page says "dbt is writing the database. Retrying in 15 s" | A build or `score_spreads` holds `oap.duckdb`. | Wait. It retries and recovers by itself. |
+| The page says "No gold data yet" | `.dbt-local/oap.duckdb` does not exist or has no gold schema. | `make dbt-build-local`. |
+| `make app` fails with "port 8000 is already in use" or `--strictPort` fails on 5173 | An earlier server is still running. | `lsof -i :8000` or `lsof -i :5173`, stop the holder. |
+| `GET /` returns `The web app is not built` | `make serve` was not used, or `apps/web/dist` is gone. | `make web-build`, or use `make app`. |
+| `make dbt-build-local` fails with `Could not set lock` while the explorer runs | The API was loading at that moment. | Run the build again; stop playback first. |
+| `tests/api/test_openapi.py` fails | A model or route changed without regenerating the schema. | `make api-schema`, then commit `apps/web/openapi.json` and `src/api/schema.ts`. |
+
 ## Terraform
 
 Terraform needs an AWS account and a named profile. Create the profile once with `aws configure --profile oap-admin`, using an administrator or a role allowed to create S3, Glue and IAM resources. This is separate from the `oap-pipeline` profile the ingest code uses (see `.env.example`), so day-to-day runs never carry admin rights.
@@ -567,6 +635,7 @@ make lock-check     # docker/requirements*.txt match uv.lock (also part of make 
 make dbt-build      # dbt build on the synthetic bronze catalog, three passes, then the report to .dbt-local/report-synthetic
 make dbt-build-local  # real bronze into .dbt-local/oap.duckdb (not while dbt_build or score_spreads runs)
 make report         # docs/results.md, docs/img/*.png and the README excerpt, from oap.duckdb
+make web-check      # explorer web app: lint, format, typecheck, tests, schema drift, build (not part of make check)
 make tf-fmt         # needs terraform on PATH
 make tf-validate
 make compose-config # needs docker on PATH

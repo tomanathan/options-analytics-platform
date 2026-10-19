@@ -51,6 +51,22 @@ make report                          # after score_spreads finishes: docs/result
 
 [docs/results.md](docs/results.md) has the coverage, exclusions, metrics by segment, the top spreads and the caveats. To read the reliability diagram, compare each series with the dashed diagonal: a point on it means events of that predicted probability happened that often. The calibrated series should lie closer to the diagonal than the risk-neutral one on out-of-sample years (2021 onward), and the lower panel shows how many predictions each bin holds.
 
+## Explorer
+
+A local web app over the same gold tables. It shows what the options market implies and how the calibration changes it, and it lets you filter and inspect the ranked spreads.
+
+![Explorer](docs/img/explorer.png)
+
+- **Landscape** (`/landscape`): for one underlying and session, the risk-neutral CDF and density of each expiration (raw and calibrated), a heatmap of P(S < K) over strikes 80% to 120% of the close, the volatility smile and the option chain. A scrubber moves through every session; play animates it. The calibration map is `auto` by default (the production map for the latest session, the walk-forward map of that year for history), and a chip says when a map was fitted on outcomes that settle after the session.
+- **Spreads** (`/spreads`): the scored put credit spreads of the latest session, as a scatter of calibrated probability of profit against expected return, a sortable table, and for one spread its payoff and the calibrated density behind it. Eligible spreads only by default.
+
+```bash
+make app      # API on http://127.0.0.1:8000 and Vite on http://localhost:5173, with reload
+make serve    # one process: the built web app and the API on http://127.0.0.1:8000
+```
+
+The API (`src/oap/api/`, FastAPI) reads `.dbt-local/oap.duckdb` read-only and serves from memory, so it does not block the dbt writer except for a moment on each load. It binds `127.0.0.1` only: the data is derived from vendor quotes that are for personal analysis (see Data). Pause playback while `make dbt-build-local` runs. If the file is locked the API answers `503` with `Retry-After`, or serves what it already holds with `X-OAP-Data-Stale: 1`; see the runbook. The web app is `apps/web/` (React, TypeScript and visx), and its types are generated from the API's OpenAPI document. [ADR 0011](docs/decisions/0011-explorer-react-fastapi.md) records the design and [docs/design/explorer-v1.md](docs/design/explorer-v1.md) holds the full spec. `docs/img/explorer.png` is the one hand-captured image in `docs/img/`.
+
 ## Highlights
 
 - **Medallion on Iceberg.** Two bronze tables hold 1,811,734 option rows and 18,190 price rows for 11 underlyings over 1,194 trading days (2020-01-06 to 2026-10-02). Every write replaces its (trade_date, source) slice and skips unchanged content, so a re-run commits nothing and adds no snapshot.
@@ -59,7 +75,7 @@ make report                          # after score_spreads finishes: docs/result
 - **Walk-forward calibration with leakage gates.** A yearly isotonic map is fitted only on expirations before 1 January of the year it scores; a singular test checks that in SQL. Metrics carry a cluster-bootstrap interval over expiration dates, and six exclusion rules count what they drop.
 - **Airflow 2.11 orchestration.** Eight DAGs chained by Datasets (bronze, `dbt_build`, `score_spreads`), one-slot pools for the two single-writer stores, and fail-fast on errors a retry cannot fix. The daily gate runs before the write, so a failed gate publishes nothing. The full backfills ran through Airflow with no task failures on the final runs.
 - **Lock-based image policy.** The Airflow image installs from `uv.lock` and a `pip check` gate; `make lock-check` fails when the exported requirements drift from the lock.
-- **Quality bar.** 986 tests including the property tests, `mypy --strict`, `ruff`, `detect-secrets` in pre-commit, and CI jobs (`check`, `infra`) that are green on `main`; the `infra` job builds the Airflow image.
+- **Quality bar.** 1,110 tests including the property tests, `mypy --strict`, `ruff`, `detect-secrets` in pre-commit, and CI jobs (`check`, `infra`) that are green on `main`; the `infra` job builds the Airflow image.
 
 ## Data
 
@@ -85,21 +101,22 @@ Both sources are for personal analysis only; their terms do not allow redistribu
 
 | Path | Contents |
 | --- | --- |
-| `src/oap/` | The Python package. `calendar.py`: NYSE trading days and half days. `ingest/`: the DoltHub (`dolthub`, `dolthub_stocks`) and Alpaca clients, the bronze contracts (`schema`, `price_schema`), `tables` (one `TableSpec` per bronze table), the Iceberg writer, `merge` and the local catalog. `quality/`: the bronze Great Expectations suite. `engine/`: pure numpy functions: `conventions`, `black_scholes`, `implied_distribution`, `calibration`, `spread_scoring`. `analytics/`: the calibration backtest and spread scoring over gold frames (`config`, `sample`, `backtest`, `scoring`, `io`), pure apart from `io`. |
-| `tests/` | pytest and hypothesis tests for the package, the DAGs, the scripts and the dbt project, in paths that mirror the code. 986 in all. |
+| `src/oap/` | The Python package. `calendar.py`: NYSE trading days and half days. `ingest/`: the DoltHub (`dolthub`, `dolthub_stocks`) and Alpaca clients, the bronze contracts (`schema`, `price_schema`), `tables` (one `TableSpec` per bronze table), the Iceberg writer, `merge` and the local catalog. `quality/`: the bronze Great Expectations suite. `engine/`: pure numpy functions: `conventions`, `black_scholes`, `implied_distribution`, `calibration`, `spread_scoring`. `analytics/`: the calibration backtest and spread scoring over gold frames (`config`, `sample`, `backtest`, `scoring`, `io`), pure apart from `io`. `api/`: the explorer's FastAPI service (`db`, `store`, `landscape`, `spreads`, `models`, `routers/`); only `db` and `store` touch the database. |
+| `apps/web/` | The explorer web app: Vite, React, TypeScript and visx. `openapi.json` is generated from the API by `make api-schema` and the types in `src/api/schema.ts` are generated from it. `make web-check` runs its lint, format, typecheck, tests, schema drift check and build. |
+| `tests/` | pytest and hypothesis tests for the package, the DAGs, the scripts and the dbt project, in paths that mirror the code, with `tests/api/` for the explorer API. 1,110 in all. |
 | `dags/` | Airflow DAGs: `backfill_chains`, `daily_chain_snapshot`, `backfill_prices`, `daily_prices`, `iceberg_maintenance`, `dbt_build`, `score_spreads` and `smoke`. Shared code: `common.py` (defaults, the `bronze_writers` pool name, `fail_fast`), `datasets.py` (bronze, `GOLD` and `GOLD_ANALYTICS` Datasets), `dbt_runner.py` (the dbt and report commands, the `duckdb_writer` pool name) and `timetables.py`. |
 | `plugins/` | Airflow plugins. `oap_timetables.py` registers `NYSECloseTimetable`, which schedules the daily DAGs at 16:30 America/New_York on NYSE trading days only. |
 | `dbt/` | dbt project `oap`. The watchlist seed; `models/staging` and `models/intermediate` (silver, views and one table); `models/marts` (gold: two dimensions and three facts, one incremental); `models/analytics` (seven Python models over `oap.analytics`, DuckDB only); `macros/register_bronze.sql`, which pins the Iceberg snapshot dbt reads; singular tests in `tests/`; and `profiles.yml` with a DuckDB `dev` and a Snowflake `prod` target. |
-| `scripts/` | `iceberg_count.py` (`make iceberg-count`), `make_synthetic_bronze.py` (the catalog `make dbt-build` runs on), `make_report.py` (`make report`: results markdown, two figures and the README excerpt) and `image_requirements.py` (picks the lock pins the Airflow image installs). |
+| `scripts/` | `iceberg_count.py` (`make iceberg-count`), `make_synthetic_bronze.py` (the catalog `make dbt-build` runs on), `make_report.py` (`make report`: results markdown, two figures and the README excerpt), `image_requirements.py` (picks the lock pins the Airflow image installs) and `export_openapi.py` (`make api-schema`: the API's OpenAPI document). |
 | `infra/` | Terraform for the S3 bucket, Glue catalog database and a scoped IAM user. Validated, never applied. |
 | `docker/` | `airflow.Dockerfile` (official Airflow image, dependencies installed from `uv.lock`, a separate dbt virtualenv; tagged `oap-airflow:dev`), the generated `requirements.txt` and `requirements-dbt.txt` it installs from (`make lock-export`), and the Dockerfile for the on-demand dbt container. |
-| `docs/` | Architecture notes, the operator runbook, decision records, and the generated `results.md` with `img/calibration.png` and `img/spread_scores.png` (written by `make report`). |
-| `.github/workflows/` | CI: the `check` job (`make check`, then `pre-commit`) and the `infra` job (Terraform and Compose validation, and the dbt and Airflow image builds). |
+| `docs/` | Architecture notes, the operator runbook, decision records, the explorer design spec in `design/`, and the generated `results.md` with `img/calibration.png` and `img/spread_scores.png` (written by `make report`). `img/explorer.png` is hand-captured. |
+| `.github/workflows/` | CI: the `check` job (`make check`, then `pre-commit`), the `web` job (`npm run check` and the build of `apps/web`) and the `infra` job (Terraform and Compose validation, and the dbt and Airflow image builds). |
 | `.claude/` | Claude Code hooks, slash commands and agents for working in this repo. |
 
 ## Checks
 
-`make check` runs the checks below and must pass before every commit. It needs no credentials and no vendor data. CI runs the same target (with the deterministic `ci` hypothesis profile) and then `pre-commit` over every file.
+`make check` runs every check below except `make web-check` and must pass before every commit. It needs no credentials and no vendor data. CI runs the same target (with the deterministic `ci` hypothesis profile) and then `pre-commit` over every file.
 
 | Check | What it guards |
 | --- | --- |
@@ -109,8 +126,9 @@ Both sources are for personal analysis only; their terms do not allow redistribu
 | `make test` | `pytest`: package, DAG, script and dbt-project conventions, plus the `hypothesis` property tests of the engine. |
 | `make dbt-compile` | `dbt compile` on DuckDB: Jinja, refs and YAML in every model. |
 | `make dbt-build` | `make synthetic-bronze`, then `dbt build` on that synthetic Iceberg catalog in three passes: everything, the incremental model again, and the incremental model after two slices are rewritten the way a vendor correction rewrites them (a gold fact that missed the rewrite fails `assert_fct_option_quote_matches_silver`). It runs the real bronze read path, every model, including the analytics, and every test, then renders the report from the synthetic gold schema. It does not prove the SQL on Snowflake (ADR 0002). |
+| `make web-check` | The web app: lint, format, typecheck, Vitest, a drift check of the generated API types against `apps/web/openapi.json`, then the production build. Not part of `make check`, which stays Python-only; CI runs it as the `web` job, and `tests/api/test_openapi.py` (in `make check`) fails when `openapi.json` is out of date with the API (fix: `make api-schema`). |
 
-Outside `make check`: `make dbt-build-local` builds silver, gold and the analytics from the real local bronze tables into `.dbt-local/oap.duckdb`, and `make report` renders `docs/results.md` from that file (stop `dbt_build` and `score_spreads` first; only one process may write the file). `make tf-fmt`, `make tf-validate` and `make compose-config` check the Terraform and Compose files and run in the CI `infra` job. `pre-commit` (install once with `uv run pre-commit install`) runs `detect-secrets`, ruff and file hygiene hooks on each commit.
+Outside `make check`: `make dbt-build-local` builds silver, gold and the analytics from the real local bronze tables into `.dbt-local/oap.duckdb`, and `make report` renders `docs/results.md` from that file (stop `dbt_build` and `score_spreads` first; only one process may write the file). `make api-schema` regenerates `apps/web/openapi.json` and the web types after an API model changes. `make tf-fmt`, `make tf-validate` and `make compose-config` check the Terraform and Compose files and run in the CI `infra` job. `pre-commit` (install once with `uv run pre-commit install`) runs `detect-secrets`, ruff and file hygiene hooks on each commit.
 
 ## Roadmap
 
@@ -136,5 +154,6 @@ Provisioning the cloud accounts (AWS for S3 and Glue, Snowflake, Alpaca) is not 
 - [0008: dbt reads the Iceberg bronze tables through DuckDB](docs/decisions/0008-dbt-reads-iceberg-via-duckdb.md). Models and tests see one pinned snapshot, with no Snowflake account.
 - [0009: Engine conventions](docs/decisions/0009-engine-conventions.md). APY rates, ACT/365 years and numpy only.
 - [0010: Analytics as dbt Python models over a pure core](docs/decisions/0010-analytics-as-dbt-python-models.md). One writer for DuckDB, walk-forward calibration, moneyness-grid sampling.
+- [0011: The explorer is React over FastAPI](docs/decisions/0011-explorer-react-fastapi.md). Animation and a small bundle (visx), and a read-only DuckDB that never holds the writer lock.
 
 Architecture and data flow: [docs/architecture.md](docs/architecture.md). Operating the stack: [docs/runbook.md](docs/runbook.md). License: MIT.
