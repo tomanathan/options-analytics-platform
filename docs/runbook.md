@@ -1,6 +1,6 @@
 # Runbook
 
-For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the bronze pipelines (chain and price backfills, the daily DAGs, maintenance), the dbt build, the analytics and the results report, the explorer, Terraform and the checks.
+For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the bronze pipelines (chain and price backfills, the daily DAGs, maintenance), the dbt build, the analytics and the results report, the explorer, the nightly cloud refresh, Terraform and the checks.
 
 ## Airflow stack
 
@@ -584,6 +584,81 @@ Commit both files. `uv run pytest tests/api/test_openapi.py` fails, and says to 
 | `GET /` returns `The web app is not built` | `make serve` was not used, or `apps/web/dist` is gone. | `make web-build`, or use `make app`. |
 | `make dbt-build-local` fails with `Could not set lock` while the explorer runs | The API was loading at that moment. | Run the build again; stop playback first. |
 | `tests/api/test_openapi.py` fails | A model or route changed without regenerating the schema. | `make api-schema`, then commit `apps/web/openapi.json` and `src/api/schema.ts`. |
+
+## Nightly cloud refresh
+
+`.github/workflows/nightly.yml` refreshes the data without the laptop ([ADR 0012](decisions/0012-nightly-cloud-refresh.md)). It is a second path to the same bronze tables and the same gold schema as the Airflow stack, which stays the reference pipeline. The two can differ by a day.
+
+### How it runs
+
+The workflow `nightly` starts at 06:30 UTC, Tuesday to Saturday, an hour after DoltHub publishes the previous session. One job, `refresh`, has a 180-minute timeout and never runs twice at once (a second run waits).
+
+| Step | What it does |
+| --- | --- |
+| Restore | Restores `.iceberg-local/` from the newest Actions cache whose key starts with `iceberg-`. |
+| Refresh | `scripts/refresh_bronze.py`. With a restored warehouse: the last 10 sessions of both tables. Without one, or with `full_history`: everything from 2020-01-01. The step prints `path: ...` to say which. An explicit `start` input uses that window instead. |
+| Save | Saves the warehouse under a new `iceberg-<run id>-<attempt>` key, straight after a successful refresh, so a failed build keeps the new bronze. A failed refresh saves nothing. |
+| Build | `make dbt-build-local` with `OAP_DUCKDB_MEMORY_LIMIT=4GB` and `OAP_DUCKDB_THREADS=2`: silver, gold and the analytics, with every test. Then `make report`. |
+| Publish | Uploads the artifacts `gold-duckdb` (`oap.duckdb`) and `results` (the report), both kept 14 days. If `docs/results.md`, the two figures or `README.md` changed, commits those four paths to `main` as `chore(results): nightly refresh through <max trade_date>`. Nothing else is ever committed. |
+
+The run's summary page shows the path taken, the refresh summary line and the latest `trade_date` in gold. A run started from a branch other than `main` builds everything and uploads the artifacts, but does not commit.
+
+`scripts/refresh_bronze.py` also runs by hand against any catalog the environment selects, for example into a scratch warehouse:
+
+```bash
+OAP_ICEBERG_URI=sqlite:////tmp/scratch/catalog.db OAP_ICEBERG_WAREHOUSE=file:///tmp/scratch/warehouse \
+  uv run python scripts/refresh_bronze.py --start 2026-10-13 --end 2026-10-16 --symbols SPY --tables prices
+```
+
+Without `OAP_ICEBERG_*` it writes to `.iceberg-local/`, the Airflow stack's warehouse, so stop `backfill_*` and `daily_*` first (see "The `bronze_writers` pool"). It exits 1 if any fetch failed after the client's own retries, and prints which; everything that did arrive is already written, and running it again is safe.
+
+### Trigger it by hand
+
+```bash
+make nightly-run                                        # the default path
+make nightly-run START=2026-10-01 END=2026-10-15        # an explicit window
+make nightly-run FULL=1                                 # everything from 2020-01-01
+make nightly-status                                     # the last five runs
+```
+
+These need the GitHub CLI (`gh auth login` once). The workflow file must be on the default branch for `gh workflow run` to find it. The Actions tab offers the same inputs.
+
+### Pull the gold file to the laptop
+
+```bash
+make serve                  # if it runs, stop it (Ctrl-C), and stop dbt_build and score_spreads
+make pull-gold              # replaces .dbt-local/oap.duckdb with the latest successful run's file
+make serve                  # the explorer shows the new data
+```
+
+`make pull-gold` takes the `gold-duckdb` artifact of the latest successful `nightly` run, moves the current file to `.dbt-local/oap.duckdb.bak` (and its WAL, if any, to `.bak.wal`), puts the new one in place and prints its latest `trade_date`. **Only one process may use the file**, and the target cannot tell whether one does: a running explorer API keeps serving its cache from the old file, and a running `dbt_build` would write to a file that was just replaced. Stop them first.
+
+Artifacts expire after 14 days. If the latest successful run is older, `pull-gold` says so; run `make nightly-run` and pull again once it finishes (`make nightly-status`).
+
+The pulled file was built from the cloud's warehouse, not the laptop's. If the laptop warehouse is older than the cloud's, do not run `make dbt-build-local` over the pulled file without `--full-refresh`: the incremental `fct_option_quote` keeps only rows stamped later than the newest stamp it holds, and the cloud's stamps are later than the laptop's. To go back, `mv .dbt-local/oap.duckdb.bak .dbt-local/oap.duckdb`.
+
+### When the cache was evicted
+
+GitHub evicts a cache entry that has not been used for 7 days, and the repository's total above 10 GB. A holiday week, a disabled workflow or a stretch of failed runs can empty it. The next run restores nothing, prints `path: full history, because no warehouse cache was restored`, and refetches 2020-01-01 to today with four workers, about 45 minutes (an estimate; check the first real run). Nothing needs doing: it is the same code as the nightly path with a wider window. To force it, `make nightly-run FULL=1`.
+
+If that run fails part way (a DoltHub outage), no cache is saved and the next run starts the full history again. Slices that already landed are not rewritten, so only the fetching repeats.
+
+GitHub disables scheduled workflows in a repository with no activity for 60 days. The nightly commits count as activity while they happen; if the schedule was switched off, enable it in the Actions tab and run `make nightly-run`.
+
+### Cost
+
+On a public repository, hosted runner minutes are free. A normal night restores the cache, fetches 10 sessions (one or two months, so a handful of queries per symbol) and builds gold, which is most of the time. No run has happened yet, so there is no measured duration; read it from the first runs in the Actions tab and record it here. A full-history night is the 45-minute fetch estimate above plus the same build. On a private repository a free account has 2,000 minutes a month: about 22 normal nights fit if each stays under an hour, and a full rebuild takes a large part of what is left.
+
+### Failures
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| The refresh step exits 1 and prints `failed: chains SPY 2026-10: ...` | DoltHub did not answer after six attempts, or returned rows that broke the bronze contract. | Re-run with `make nightly-run`. The merge is idempotent. If it repeats, query DoltHub by hand. |
+| The date input is rejected | `start` or `end` is not `YYYY-MM-DD`. | Re-run with a valid date. |
+| The build fails and the cache was saved | A dbt test failed on the new data. | Read the dbt log in the run; bronze is saved, so a re-run starts from it. Fix the model or the data, then `make nightly-run`. |
+| `make pull-gold` says there is no successful run | The workflow has not succeeded yet, or is not on the default branch. | `make nightly-status`, then `make nightly-run`. |
+| The commit step fails with a rejected push | `main` is protected, or moved while the job ran and the rebase conflicted. | Allow the pushing identity, or pull and re-run. |
+| The pushed results commit has no CI run | Pushes with the default token do not start workflows. | Store a personal access token as the secret `NIGHTLY_PUSH_TOKEN`. |
 
 ## Terraform
 

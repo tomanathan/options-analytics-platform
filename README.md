@@ -63,6 +63,7 @@ A local web app over the same gold tables. It shows what the options market impl
 ```bash
 make app      # API on http://127.0.0.1:8000 and Vite on http://localhost:5173, with reload
 make serve    # one process: the built web app and the API on http://127.0.0.1:8000
+make pull-gold  # replace .dbt-local/oap.duckdb with the gold file of the latest nightly run (needs gh; stop make serve first)
 ```
 
 The API (`src/oap/api/`, FastAPI) reads `.dbt-local/oap.duckdb` read-only and serves from memory, so it does not block the dbt writer except for a moment on each load. It binds `127.0.0.1` only: the data is derived from vendor quotes that are for personal analysis (see Data). Pause playback while `make dbt-build-local` runs. If the file is locked the API answers `503` with `Retry-After`, or serves what it already holds with `X-OAP-Data-Stale: 1`; see the runbook. The web app is `apps/web/` (React, TypeScript and visx), and its types are generated from the API's OpenAPI document. [ADR 0011](docs/decisions/0011-explorer-react-fastapi.md) records the design and [docs/design/explorer-v1.md](docs/design/explorer-v1.md) holds the full spec. `docs/img/explorer.png` is the one hand-captured image in `docs/img/`.
@@ -96,6 +97,8 @@ The watchlist (`dbt/seeds/watchlist.csv`) has 11 symbols: SPY, DIA, XLF, AAPL, M
 **Price caveats.** DoltHub publishes session D at about 05:30 UTC on D+1, so `daily_prices` lags one session and re-fetches the last five. The `open` column is not range-checked, because the feed holds a row with an open above its high. Before 2022-06-09 the `META` ticker in this database is a different security (the Roundhill Metaverse ETF) and the FB history is not loaded; the loaded META chains start on 2022-07-01, so they never meet those rows, and the backtest drops quotes before that date.
 
 Both sources are for personal analysis only; their terms do not allow redistribution. For that reason no raw data is ever committed: the local Iceberg warehouse (`.iceberg-local/`), `.dbt-local/` and `data/` are gitignored, and API keys live in `.env`, which is gitignored too. Vendor implied volatility and greeks are kept as received ([ADR 0004](docs/decisions/0004-keep-source-greeks.md)).
+
+**Nightly refresh.** The GitHub Actions workflow `nightly` runs at 06:30 UTC, Tuesday to Saturday. It refreshes both bronze tables from DoltHub with `scripts/refresh_bronze.py` (the last 10 sessions on a warehouse kept in the Actions cache, the whole history when the cache is empty), builds silver, gold and the analytics, commits the regenerated `docs/results.md`, the two figures and the results excerpt above, and uploads the gold DuckDB file as an artifact kept 14 days. The warehouse and the DuckDB file never enter git. An artifact of a public repository can be downloaded by anyone with read access, and the vendor terms allow personal analysis only, so the artifact is a way to move the file to my own machine, not a distribution. The workflow is written and linted but has not run on GitHub yet. The local Airflow stack stays the reference pipeline, and the two can differ by a day ([ADR 0012](docs/decisions/0012-nightly-cloud-refresh.md), [runbook](docs/runbook.md)).
 
 ## Repo layout
 
@@ -155,5 +158,6 @@ Provisioning the cloud accounts (AWS for S3 and Glue, Snowflake, Alpaca) is not 
 - [0009: Engine conventions](docs/decisions/0009-engine-conventions.md). APY rates, ACT/365 years and numpy only.
 - [0010: Analytics as dbt Python models over a pure core](docs/decisions/0010-analytics-as-dbt-python-models.md). One writer for DuckDB, walk-forward calibration, moneyness-grid sampling.
 - [0011: The explorer is React over FastAPI](docs/decisions/0011-explorer-react-fastapi.md). Animation and a small bundle (visx), and a read-only DuckDB that never holds the writer lock.
+- [0012: Refresh the data nightly in GitHub Actions](docs/decisions/0012-nightly-cloud-refresh.md). The warehouse lives in the Actions cache and gold is an artifact; no vendor data in git.
 
 Architecture and data flow: [docs/architecture.md](docs/architecture.md). Operating the stack: [docs/runbook.md](docs/runbook.md). License: MIT.
