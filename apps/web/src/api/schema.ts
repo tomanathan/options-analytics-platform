@@ -541,12 +541,12 @@ export interface components {
             n_quotes: number;
             /**
              * Prob Below Settlement
-             * @description Raw P(S < settlement close), a decimal.
+             * @description Raw P(S < settlement close), a decimal. None when the settlement is outside the quoted strikes; the CDF is not extrapolated.
              */
             prob_below_settlement: number | null;
             /**
              * Prob Below Settlement Calibrated
-             * @description Calibrated P(S < settlement close), a decimal.
+             * @description Calibrated P(S < settlement close), a decimal. None when the settlement is outside the quoted strikes; the CDF is not extrapolated.
              */
             prob_below_settlement_calibrated: number | null;
             /**
@@ -593,7 +593,7 @@ export interface components {
             db: "ok" | "busy" | "missing";
             /**
              * Db Path
-             * @description The DuckDB file the service reads.
+             * @description File name of the DuckDB file the service reads, without its directory.
              */
             db_path: string;
             /**
