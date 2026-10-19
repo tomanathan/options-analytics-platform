@@ -28,6 +28,13 @@ import {
 } from '../lib/format';
 import { MAX_HIGHLIGHTS, useHighlightSlots, useSpreadFilters } from '../state/useSpreadFilters';
 
+/** Interest arrives in dollars per share (often under a cent); the tile shows one contract. */
+const SHARES_PER_CONTRACT = 100;
+
+/** Pixels reserved by the charts until their width is measured (see `Measured`). */
+const SCATTER_MIN_HEIGHT = 460;
+const PAYOFF_HEIGHT = 340;
+
 const COLUMNS: Column<SpreadRow>[] = [
   {
     key: 'rank',
@@ -271,7 +278,7 @@ export default function SpreadsPage() {
                   hint="Widen the filters or switch off Eligible only."
                 />
               ) : (
-                <Measured>
+                <Measured minHeight={SCATTER_MIN_HEIGHT}>
                   {(width) => (
                     <SpreadScatter
                       rows={rows}
@@ -280,7 +287,7 @@ export default function SpreadsPage() {
                       onSelect={select}
                       minProbProfit={data.min_prob_profit}
                       width={width}
-                      height={Math.round(Math.min(460, Math.max(300, width * 0.6)))}
+                      height={Math.round(Math.min(SCATTER_MIN_HEIGHT, Math.max(300, width * 0.6)))}
                       refreshing={refreshing}
                     />
                   )}
@@ -311,11 +318,12 @@ export default function SpreadsPage() {
                   <div className="stats">
                     <StatTile
                       label="Credit"
+                      unit="$/sh"
                       value={usd(spread.credit)}
                       sub={`natural ${usd(spread.credit_natural)}`}
                     />
-                    <StatTile label="Max loss" value={usd(spread.max_loss)} />
-                    <StatTile label="Breakeven" value={usd(spread.breakeven)} />
+                    <StatTile label="Max loss" unit="$/sh" value={usd(spread.max_loss)} />
+                    <StatTile label="Breakeven" unit="$/sh" value={usd(spread.breakeven)} />
                     <StatTile
                       label="POP"
                       value={pct(spread.prob_profit)}
@@ -327,11 +335,17 @@ export default function SpreadsPage() {
                       value={signedPct(spread.expected_roc, 2)}
                       sub={`raw ${signedPct(spread.expected_roc_raw, 2)}`}
                     />
-                    <StatTile label="Interest" value={usd(spread.interest)} />
+                    <StatTile
+                      label="Interest"
+                      unit="per contract"
+                      value={usd(spread.interest * SHARES_PER_CONTRACT)}
+                    />
                     <StatTile label="Kelly" value={pct(spread.kelly_fraction)} />
                   </div>
-                  <Measured>
-                    {(width) => <PayoffChart detail={spread} width={width} height={340} />}
+                  <Measured minHeight={PAYOFF_HEIGHT}>
+                    {(width) => (
+                      <PayoffChart detail={spread} width={width} height={PAYOFF_HEIGHT} />
+                    )}
                   </Measured>
                 </div>
               )}

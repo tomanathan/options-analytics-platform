@@ -351,7 +351,7 @@ export function makeSpreadDetail(key: string): SpreadDetail | null {
     years: 0.0384,
     underlying_close: close,
     expected_payoff: 0.27,
-    interest: 0.01,
+    interest: 0.0017,
     annualised_roc_raw: 2.9,
     calibrated: true,
     map_id: 'production',
