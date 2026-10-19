@@ -1,29 +1,147 @@
-"""Print row counts per (source, trade_date) of the bronze table, and its content hash.
+"""Print bronze row counts per slice and per underlying, optionally with content hashes.
 
 Run it inside the Airflow scheduler container with ``make iceberg-count``. The table metadata
 stores the container's absolute file paths (``/opt/airflow/.iceberg-local/...``), so the
 local catalog written by the stack cannot be read from the host. The catalog comes from the
-``OAP_ICEBERG_*`` environment like every ingest task. The hash is ``content_hash`` over the
-selected rows, so comparing it before and after re-running a load shows whether the load is
-idempotent.
-``--start``/``--end``/``--source`` narrow the selection; the default is the whole table.
+``OAP_ICEBERG_*`` environment like every ingest task.
+
+The default run streams three columns (``trade_date``, ``source``, ``underlying``) in Arrow
+record batches and never builds a DataFrame of the table, so memory stays flat however many
+rows the table holds. ``--hash`` additionally reads each slice on its own, one at a time, and
+prints ``content_hash`` per slice plus ``content_digest``, a SHA-256 over the sorted
+``(source, trade_date, hash)`` lines. Comparing the digest before and after re-running a load
+shows whether the load is idempotent. ``content_digest`` is not comparable with the
+``content_hash`` line this script printed before, which hashed one whole frame.
+``--start``/``--end``/``--source`` narrow the selection (default: the whole table) and
+``--summary`` skips the per-slice lines.
 """
 
 import argparse
+import hashlib
 import sys
+from collections import Counter
+from collections.abc import Iterable, Mapping
 from datetime import date
 from typing import cast
+
+import pyarrow as pa
+from pyiceberg.expressions import (
+    AlwaysTrue,
+    And,
+    BooleanExpression,
+    EqualTo,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
+    Reference,
+)
+from pyiceberg.expressions.literals import literal
 
 from oap.ingest.iceberg_writer import (
     catalog_from_env,
     content_hash,
-    read_range,
+    read_partition,
     table_identifier,
 )
+from oap.ingest.schema import SOURCES
+
+type SliceCounts = Counter[tuple[str, date, str]]
+
+
+def row_filter(start: date | None, end: date | None, source: str | None) -> BooleanExpression:
+    """Build the scan filter from the optional bounds and source.
+
+    Args:
+        start: First trade date, inclusive; None for no lower bound.
+        end: Last trade date, inclusive; None for no upper bound.
+        source: Feed to keep; None for all feeds.
+
+    Returns:
+        The conjunction of the given conditions, ``AlwaysTrue`` when none is given.
+    """
+    result: BooleanExpression = AlwaysTrue()
+    conditions: list[BooleanExpression] = []
+    if start is not None:
+        conditions.append(
+            GreaterThanOrEqual(term=Reference("trade_date"), value=literal(start.isoformat()))
+        )
+    if end is not None:
+        conditions.append(
+            LessThanOrEqual(term=Reference("trade_date"), value=literal(end.isoformat()))
+        )
+    if source is not None:
+        conditions.append(EqualTo(term=Reference("source"), value=literal(source)))
+    for condition in conditions:
+        result = condition if isinstance(result, AlwaysTrue) else And(result, condition)
+    return result
+
+
+def count_rows(batches: Iterable[pa.RecordBatch]) -> SliceCounts:
+    """Count rows per ``(source, trade_date, underlying)`` over a stream of record batches.
+
+    Args:
+        batches: Batches with ``source``, ``trade_date`` and ``underlying`` columns.
+
+    Returns:
+        The accumulated counts; only one batch is held at a time.
+    """
+    counts: SliceCounts = Counter()
+    for batch in batches:
+        counts.update(
+            zip(
+                cast(list[str], batch.column("source").to_pylist()),
+                cast(list[date], batch.column("trade_date").to_pylist()),
+                cast(list[str], batch.column("underlying").to_pylist()),
+                strict=True,
+            )
+        )
+    return counts
+
+
+def slice_totals(counts: SliceCounts) -> dict[tuple[str, date], int]:
+    """Sum the per-underlying counts into rows per ``(source, trade_date)`` slice."""
+    totals: Counter[tuple[str, date]] = Counter()
+    for (source, day, _underlying), rows in counts.items():
+        totals[(source, day)] += rows
+    return dict(totals)
+
+
+def underlying_summary(counts: SliceCounts) -> list[tuple[str, str, int, int, date, date]]:
+    """Summarise each ``(source, underlying)``: days, rows, first day and last day.
+
+    Args:
+        counts: Output of ``count_rows``.
+
+    Returns:
+        ``(source, underlying, days, rows, first, last)`` tuples sorted by source, underlying.
+    """
+    rows: Counter[tuple[str, str]] = Counter()
+    days: dict[tuple[str, str], set[date]] = {}
+    for (source, day, underlying), n in counts.items():
+        rows[(source, underlying)] += n
+        days.setdefault((source, underlying), set()).add(day)
+    return [
+        (source, underlying, len(seen), rows[(source, underlying)], min(seen), max(seen))
+        for (source, underlying), seen in sorted(days.items())
+    ]
+
+
+def combined_digest(hashes: Mapping[tuple[str, date], str]) -> str:
+    """Combine per-slice content hashes into one digest, independent of insertion order.
+
+    Args:
+        hashes: ``content_hash`` of every ``(source, trade_date)`` slice.
+
+    Returns:
+        Lower-case hexadecimal SHA-256 over the sorted ``source<TAB>date<TAB>hash`` lines.
+    """
+    digest = hashlib.sha256()
+    for (source, day), value in sorted(hashes.items()):
+        digest.update(f"{source}\t{day.isoformat()}\t{value}\n".encode())
+    return digest.hexdigest()
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Print the counts and hash; return the process exit code.
+    """Print the counts (and hashes with ``--hash``); return the process exit code.
 
     Args:
         argv: Command-line arguments; ``sys.argv[1:]`` when omitted.
@@ -31,10 +149,14 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         0 on success, 1 when the table does not exist yet.
     """
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--start", type=date.fromisoformat, help="first trade date (inclusive)")
     parser.add_argument("--end", type=date.fromisoformat, help="last trade date (inclusive)")
-    parser.add_argument("--source", help="only this source, e.g. dolthub")
+    parser.add_argument("--source", choices=sorted(SOURCES), help="only this source")
+    parser.add_argument("--summary", action="store_true", help="omit the per-slice lines")
+    parser.add_argument(
+        "--hash", action="store_true", help="add a content hash per slice and a combined digest"
+    )
     args = parser.parse_args(argv)
 
     catalog = catalog_from_env()
@@ -44,24 +166,36 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     table = catalog.load_table(identifier)
 
-    days: list[date] = [
-        day
-        for day in table.scan(selected_fields=("trade_date",)).to_arrow()["trade_date"].to_pylist()
-        if day is not None
-    ]
-    if not days:
-        print("total 0 rows")
-        return 0
-    start: date = args.start or min(days)
-    end: date = args.end or max(days)
-    frame = read_range(table, start=start, end=end, source=args.source)
+    scan = table.scan(
+        row_filter=row_filter(args.start, args.end, args.source),
+        selected_fields=("trade_date", "source", "underlying"),
+    )
+    counts = count_rows(scan.to_arrow_batch_reader())
+    totals = slice_totals(counts)
 
-    counts = frame.groupby(["source", "trade_date"], observed=True).size().sort_index()
-    for key, rows in counts.items():
-        source, trade_date = cast(tuple[str, date], key)
-        print(f"{source}\t{trade_date}\t{rows}")
-    print(f"total {len(frame)} rows in {len(counts)} slices, {start} to {end}")
-    print(f"content_hash {content_hash(frame)}")
+    hashes: dict[tuple[str, date], str] = {}
+    if args.hash:
+        for source, day in sorted(totals):
+            hashes[(source, day)] = content_hash(
+                read_partition(table, trade_date=day, source=source)
+            )
+
+    if not args.summary:
+        for (source, day), rows in sorted(totals.items()):
+            suffix = f"\t{hashes[(source, day)]}" if args.hash else ""
+            print(f"{source}\t{day}\t{rows}{suffix}")
+    for source, underlying, n_days, n_rows, first, last in underlying_summary(counts):
+        print(f"underlying\t{source}\t{underlying}\t{n_days} days\t{n_rows} rows\t{first}..{last}")
+    if totals:
+        first_day = min(day for _, day in totals)
+        last_day = max(day for _, day in totals)
+        print(
+            f"total {sum(totals.values())} rows in {len(totals)} slices, {first_day} to {last_day}"
+        )
+    else:
+        print("total 0 rows")
+    if args.hash:
+        print(f"content_digest {combined_digest(hashes)}")
     return 0
 
 
