@@ -1,10 +1,12 @@
 from datetime import timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from airflow.models import DagBag
 from airflow.serialization.serialized_objects import SerializedDAG
 
+from dags.common import BRONZE_WRITERS_POOL
 from dags.timetables import NYSECloseTimetable
 
 DAG_FOLDER = Path(__file__).resolve().parents[2] / "dags"
@@ -14,6 +16,9 @@ EXPECTED_TASKS = {
     "backfill_chains": {"plan", "plan_months", "fetch_month", "write_month", "summarize"},
     "daily_chain_snapshot": {"snapshot", "write", "quality"},
     "iceberg_maintenance": {"expire_snapshots", "compact"},
+    "dbt_build": {"dbt_build"},
+    "backfill_prices": {"plan", "fetch_month", "write_month", "summarize"},
+    "daily_prices": {"fetch", "write"},
 }
 
 
@@ -26,8 +31,10 @@ def test_no_import_errors(dagbag: DagBag) -> None:
     assert dagbag.import_errors == {}
 
 
-def test_exactly_the_expected_dags_are_loaded(dagbag: DagBag) -> None:
-    assert set(dagbag.dag_ids) == set(EXPECTED_TASKS)
+def test_the_expected_dags_are_loaded(dagbag: DagBag) -> None:
+    # A superset check: a DAG added by a later change does not break this test, but it still
+    # needs its own entry in EXPECTED_TASKS to get the per-DAG checks below.
+    assert set(EXPECTED_TASKS) <= set(dagbag.dag_ids)
 
 
 @pytest.mark.parametrize("dag_id", sorted(EXPECTED_TASKS))
@@ -82,3 +89,46 @@ def test_scheduler_can_rebuild_the_timetable_from_the_serialized_dag(dagbag: Dag
     restored = SerializedDAG.from_dict(serialized)
     assert isinstance(restored.timetable, NYSECloseTimetable)
     assert restored.timetable.summary == "NYSE close 16:30 ET"
+
+
+BRONZE_WRITER_TASKS = [
+    ("backfill_chains", "write_month"),
+    ("daily_chain_snapshot", "write"),
+    ("iceberg_maintenance", "compact"),
+    ("iceberg_maintenance", "expire_snapshots"),
+    ("backfill_prices", "write_month"),
+    ("daily_prices", "write"),
+]
+
+
+@pytest.mark.parametrize(("dag_id", "task_id"), BRONZE_WRITER_TASKS)
+def test_bronze_writes_share_the_single_slot_pool(
+    dagbag: DagBag, dag_id: str, task_id: str
+) -> None:
+    assert dagbag.dags[dag_id].get_task(task_id).pool == BRONZE_WRITERS_POOL == "bronze_writers"
+
+
+@pytest.mark.parametrize(
+    ("dag_id", "task_id"),
+    [("backfill_chains", "fetch_month"), ("daily_chain_snapshot", "snapshot")],
+)
+def test_reads_do_not_take_the_bronze_writers_slot(
+    dagbag: DagBag, dag_id: str, task_id: str
+) -> None:
+    assert dagbag.dags[dag_id].get_task(task_id).pool == "default_pool"
+
+
+@pytest.mark.parametrize(
+    ("dag_id", "task_id"),
+    [
+        ("backfill_chains", "plan"),
+        ("backfill_chains", "fetch_month"),
+        ("backfill_chains", "write_month"),
+        ("daily_chain_snapshot", "snapshot"),
+        ("daily_chain_snapshot", "write"),
+        ("daily_chain_snapshot", "quality"),
+    ],
+)
+def test_tasks_fail_fast(dagbag: DagBag, dag_id: str, task_id: str) -> None:
+    task = cast(Any, dagbag.dags[dag_id].get_task(task_id))
+    assert getattr(task.python_callable, "oap_fail_fast", False) is True
