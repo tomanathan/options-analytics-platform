@@ -97,6 +97,25 @@ Brier change +0.0024 (95% cluster-bootstrap interval -0.0007 to +0.0064, resampl
 | 0.8-0.9 | 24,617 | 0.8482 | 0.8157 | 16,411 | 0.8509 | 0.8624 |
 | 0.9-1.0 | 32,308 | 0.9619 | 0.9559 | 27,157 | 0.9674 | 0.9673 |
 
+## Top 10 to enter (2026-10-16)
+
+Passes every guard (eligible, calibrated POP ≥ 65%, credit ≥ $0.25, natural credit ≥ 50% of mid with positive natural edge, inside quoted strikes, no tail flags), ranked by annualised return on max loss, then reward/risk.
+
+| Rank | Underlying | Session | Expiration | DTE | Short/long | Natural credit | Mid credit | POP calibrated | Expected return on max loss | Annualised return on max loss | Edge (% of mid) | Reward/risk |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | AMD | 2026-10-16 | 2026-10-30 | 14 | 525/515 | 2.75 | 3.40 | 74.3% | 11.99% | 1816.8% | 23.0% | 0.18 |
+| 2 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/242.5 | 1.45 | 1.78 | 70.8% | 11.80% | 1731.5% | 21.2% | 0.17 |
+| 3 | NVDA | 2026-10-16 | 2026-10-30 | 14 | 212.5/210 | 0.75 | 0.84 | 71.2% | 10.67% | 1307.1% | 20.6% | 0.16 |
+| 4 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/240 | 2.20 | 2.53 | 70.9% | 10.55% | 1266.4% | 20.5% | 0.16 |
+| 5 | GOOGL | 2026-10-16 | 2026-10-30 | 14 | 340/327.5 | 3.74 | 4.52 | 69.1% | 10.53% | 1261.5% | 18.4% | 0.16 |
+| 6 | AMD | 2026-10-16 | 2026-10-30 | 14 | 525/510 | 4.16 | 4.58 | 74.3% | 9.49% | 962.6% | 21.3% | 0.16 |
+| 7 | META | 2026-10-16 | 2026-10-30 | 14 | 700/680 | 5.45 | 6.18 | 75.0% | 9.34% | 926.9% | 20.6% | 0.15 |
+| 8 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/235 | 3.49 | 3.75 | 75.0% | 9.02% | 851.4% | 20.7% | 0.16 |
+| 9 | NVDA | 2026-10-16 | 2026-10-30 | 14 | 212.5/207.5 | 1.44 | 1.51 | 75.0% | 8.98% | 842.3% | 20.5% | 0.15 |
+| 10 | AMD | 2026-10-16 | 2026-10-30 | 14 | 520/510 | 2.46 | 2.88 | 74.3% | 8.94% | 832.5% | 21.8% | 0.16 |
+
+This is a ranking of a historical calibration, not trade advice: it orders spreads by what one pooled calibration map says happened on average, and that map is optimistic (see the caveats). Credits are dollars per share; the edge is the mid credit minus the calibrated fair credit, as a share of the mid credit; reward/risk is per trade.
+
 ## Top put credit spreads (2026-10-16)
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss | Annualised return on max loss |
@@ -115,6 +134,18 @@ Brier change +0.0024 (95% cluster-bootstrap interval -0.0007 to +0.0064, resampl
 Credits are dollars per share. POP is the probability the underlying settles above the breakeven; return on max loss is the expected return over the trade as a share of the maximum loss, which is the collateral held, annualised in the last column.
 
 ![Eligible spreads](img/spread_scores.png)
+
+## Top spreads by edge (2026-10-16)
+
+| Rank (edge) | Underlying | Expiration | Short/long | Mid credit | Natural credit | Fair credit | Edge | Edge (% of mid) | POP calibrated | POP risk-neutral | Price-implied POP | POP gap | Reward/risk |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | SPY | 2026-12-18 | 630/610 | 0.30 | 0.29 | 0.05 | +0.25 | 84.4% | 99.7% | 98.3% | 98.5% | +1.2 pp | 0.27 |
+| 2 | AMD | 2026-10-30 | 425/395 | 0.34 | 0.25 | 0.05 | +0.29 | 84.4% | 99.8% | 98.6% | 98.9% | +0.9 pp | 0.24 |
+| 3 | SPY | 2026-12-18 | 630/570 | 0.70 | 0.69 | 0.11 | +0.59 | 84.2% | 99.7% | 98.3% | 98.8% | +0.8 pp | 0.25 |
+| 4 | SPY | 2026-12-18 | 610/570 | 0.40 | 0.39 | 0.06 | +0.34 | 84.1% | 99.8% | 98.7% | 99.0% | +0.8 pp | 0.23 |
+| 5 | SPY | 2026-11-27 | 670/630 | 0.50 | 0.49 | 0.08 | +0.42 | 84.1% | 99.7% | 98.2% | 98.8% | +0.9 pp | 0.25 |
+
+Edge measures the mid credit against one pooled calibration map, so it is the historical variance risk premium applied to this chain, not a contract-specific mispricing; it is correlated across strikes, concentrated in the far tail, and partly the half-spread the natural credit gives up. Price-implied POP is the maximum loss over the width, the probability of profit at which the price breaks even, and the POP gap is the calibrated POP minus it: the same information as the edge in probability units. Out of sample, predictions with a raw probability under 2% saw 52 breaches in 52,508, which is how thin the evidence for the far tail is.
 
 ## How to read this
 
