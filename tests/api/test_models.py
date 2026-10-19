@@ -2,6 +2,8 @@ import json
 from datetime import date
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from oap.api.models import (
@@ -82,3 +84,30 @@ def test_spread_detail_is_a_spread_row_plus_the_gold_columns() -> None:
 def test_curve_fields_carry_the_documented_units() -> None:
     for name, field in DistributionCurve.model_fields.items():
         assert field.description, name
+
+
+def test_a_fastapi_response_serialises_non_finite_floats_as_null() -> None:
+    app = FastAPI()
+
+    @app.get("/curve", response_model=DistributionCurve)
+    def curve() -> DistributionCurve:
+        nan, inf = float("nan"), float("inf")
+        return DistributionCurve(
+            knots=[1.0, inf],
+            moneyness=[nan, 1.0],
+            cdf=[0.0, 1.0],
+            raw_cdf=[0.0, 1.0],
+            cdf_calibrated=[0.0, 1.0],
+            density_mid=[1.5],
+            density=[-inf],
+            density_calibrated=[nan],
+        )
+
+    response = TestClient(app).get("/curve")
+    assert response.status_code == 200
+    assert "NaN" not in response.text
+    assert "Infinity" not in response.text
+    body = response.json()
+    assert body["knots"] == [1.0, None]
+    assert body["moneyness"] == [None, 1.0]
+    assert body["density"] == [None]
