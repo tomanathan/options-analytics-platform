@@ -131,6 +131,7 @@ export function SpreadScatter({
             className={p.slot === null ? 'pt pt--other pt--pinned' : 'pt pt--pinned'}
             data-testid="pt-pinned"
             data-underlying={p.row.underlying}
+            data-key={p.row.spread_key}
             data-slot={p.slot === null ? 'other' : String(p.slot + 1)}
             fill={p.slot === null ? 'var(--ink-muted)' : SERIES_VARS[p.slot]}
             fillOpacity={p.slot === null ? 0.6 : 1}
@@ -149,6 +150,7 @@ export function SpreadScatter({
             className="pt pt--other"
             data-testid="pt"
             data-underlying={p.row.underlying}
+            data-key={p.row.spread_key}
             data-slot="other"
             fill="var(--ink-muted)"
             fillOpacity={0.35}
@@ -162,6 +164,7 @@ export function SpreadScatter({
           className="pt"
           data-testid="pt"
           data-underlying={p.row.underlying}
+          data-key={p.row.spread_key}
           data-slot={String(p.slot + 1)}
           fill={SERIES_VARS[p.slot]}
           stroke="var(--surface-1)"

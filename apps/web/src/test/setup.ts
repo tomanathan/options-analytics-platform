@@ -38,14 +38,21 @@ window.matchMedia = (query: string): MediaQueryList =>
 (SVGElement.prototype as unknown as { getComputedTextLength: () => number }).getComputedTextLength =
   () => 0;
 
-// Node's fetch needs absolute URLs; the app uses same-origin paths.
-const nativeFetch = globalThis.fetch.bind(globalThis);
-globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
-  typeof input === 'string' && input.startsWith('/')
-    ? nativeFetch(new URL(input, window.location.href).toString(), init)
-    : nativeFetch(input, init);
-
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+// Node's fetch needs absolute URLs (the app uses same-origin paths) and rejects jsdom's
+// AbortSignal. The wrapper resolves paths and drops the signal; it goes on after server.listen()
+// so it is the outermost layer, in front of MSW's interceptor.
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: 'error' });
+  const intercepted = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const { signal: _signal, ...rest } = init ?? {};
+    const target =
+      typeof input === 'string' && input.startsWith('/')
+        ? new URL(input, window.location.href).toString()
+        : input;
+    return intercepted(target, rest);
+  };
+});
 afterEach(() => {
   cleanup();
   server.resetHandlers();

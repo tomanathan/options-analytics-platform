@@ -21,7 +21,7 @@ if (!container) throw new Error('Missing #root element');
 createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route element={<App />}>
             <Route index element={<Navigate to="/landscape" replace />} />
