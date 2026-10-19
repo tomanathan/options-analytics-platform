@@ -1,5 +1,10 @@
 from datetime import date
+from typing import Any, cast
 
+import pytest
+from airflow.exceptions import AirflowFailException
+
+from dags import backfill_chains
 from dags.backfill_chains import month_jobs, plan_jobs
 from dags.common import read_watchlist
 from oap.calendar import is_trading_day
@@ -55,3 +60,30 @@ def test_month_jobs_group_symbols_per_month() -> None:
         {"month": "2024-01", "start": "2024-01-02", "end": "2024-01-31", "symbols": ["SPY", "QQQ"]},
         {"month": "2024-02", "start": "2024-02-01", "end": "2024-02-29", "symbols": ["SPY", "QQQ"]},
     ]
+
+
+@pytest.mark.parametrize("symbols", [["SPY", "SPY;DROP"], ["TOOLONGX"], ["1ABC"]])
+def test_malformed_symbols_fail_the_plan(symbols: list[str]) -> None:
+    with pytest.raises(ValueError, match="malformed symbols") as caught:
+        plan_jobs(date(2024, 1, 2), date(2024, 1, 31), symbols)
+
+    assert symbols[-1] in str(caught.value)
+
+
+def test_non_string_symbol_fails() -> None:
+    with pytest.raises(ValueError, match="symbols must be strings"):
+        plan_jobs(date(2024, 1, 2), date(2024, 1, 31), cast(Any, [123]))
+
+
+def test_dotted_symbol_is_accepted() -> None:
+    jobs = plan_jobs(date(2024, 1, 2), date(2024, 1, 31), ["BRK.B"])
+    assert [job["symbol"] for job in jobs] == ["BRK.B"]
+
+
+def test_plan_task_fails_fast_on_bad_symbols(monkeypatch: pytest.MonkeyPatch) -> None:
+    params = {"start": "2024-01-01", "end": "2024-01-31", "symbols": ["BAD;"]}
+    monkeypatch.setattr(backfill_chains, "get_current_context", lambda: {"params": params})
+    task = backfill_chains.backfill_chains().get_task("plan")
+
+    with pytest.raises(AirflowFailException, match="^ValueError: malformed symbols"):
+        cast(Any, task).python_callable()

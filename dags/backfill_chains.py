@@ -11,9 +11,13 @@ Tasks:
   a session produce no job; ``plan_months`` groups them into one write job per month.
 * ``fetch_month`` (mapped per symbol and month, four at a time) pulls the month from DoltHub
   and stages it as a parquet file. It is skipped when DoltHub has no rows for it.
-* ``write_month`` (mapped per month, one at a time) merges the staged symbols into each
+* ``write_month`` (mapped per month, one at a time, in the one-slot ``bronze_writers`` pool
+  so it never commits alongside the daily DAG) merges the staged symbols into each
   day's ``(trade_date, "dolthub")`` slice and writes it with ``write_partition``.
 * ``summarize`` logs the totals.
+
+Every task fails at once, without retries, on an error that retrying cannot fix (see
+``fail_fast``), and ``plan`` rejects malformed symbols before any month is fetched.
 
 Fetching and writing are separate because a bronze slice holds every underlying of a day:
 writing one symbol's rows on their own would replace the other symbols' rows (ADR 0003).
@@ -40,7 +44,16 @@ from airflow.models.param import Param
 from airflow.operators.python import get_current_context
 from airflow.utils.trigger_rule import TriggerRule
 
-from dags.common import DEFAULT_ARGS, bronze_table, normalize_symbols, read_watchlist, staging_dir
+from dags.common import (
+    BRONZE_WRITERS_POOL,
+    DEFAULT_ARGS,
+    bronze_table,
+    fail_fast,
+    normalize_symbols,
+    read_watchlist,
+    staging_dir,
+)
+from dags.datasets import BRONZE_OPTION_CHAIN
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -71,12 +84,21 @@ def plan_jobs(start: date, end: date, symbols: Sequence[str]) -> list[dict[str, 
         that are the first and last session of the month within the range.
 
     Raises:
-        ValueError: If ``start`` is after ``end``.
+        ValueError: If ``start`` is after ``end``, a symbol is not a string, or a symbol is not
+            a well-formed ticker (checked here so a typo fails the plan, not every fetch).
     """
     from oap.calendar import trading_days
-    from oap.ingest.dolthub import month_chunks
+    from oap.ingest.dolthub import _SYMBOL, month_chunks
 
+    not_strings = [symbol for symbol in symbols if not isinstance(symbol, str)]
+    if not_strings:
+        raise ValueError(f"symbols must be strings, got {not_strings!r}")
     tickers = normalize_symbols(symbols) or read_watchlist()
+    bad = [symbol for symbol in tickers if not _SYMBOL.fullmatch(symbol)]
+    if bad:
+        raise ValueError(
+            f"malformed symbols {bad}: expected 1-6 of A-Z, 0-9, '.', '-' starting with a letter"
+        )
     return [
         {"symbol": symbol, "start": chunk[0].isoformat(), "end": chunk[-1].isoformat()}
         for chunk in month_chunks(trading_days(start, end))
@@ -178,6 +200,7 @@ def backfill_chains() -> None:
     """Load DoltHub history for a date range into bronze, one slice per session day."""
 
     @task
+    @fail_fast
     def plan() -> list[dict[str, str]]:
         """Build the (symbol, month) fetch jobs from the run's params."""
         params = get_current_context()["params"]
@@ -203,6 +226,7 @@ def backfill_chains() -> None:
         max_retry_delay=timedelta(minutes=10),
         sla=None,
     )
+    @fail_fast
     def fetch_month(job: dict[str, str]) -> dict[str, Any]:
         """Fetch one symbol's month from DoltHub and stage it as parquet."""
         from oap.ingest.dolthub import DoltHubClient, fetch_chain
@@ -226,7 +250,13 @@ def backfill_chains() -> None:
         days = _session_dates(frame).nunique()
         return {"symbol": job["symbol"], "month": month, "days": days, "rows": len(frame)}
 
-    @task(trigger_rule=TriggerRule.ALL_DONE, max_active_tis_per_dag=1, sla=None)
+    @task(
+        trigger_rule=TriggerRule.ALL_DONE,
+        max_active_tis_per_dag=1,
+        pool=BRONZE_WRITERS_POOL,
+        sla=None,
+    )
+    @fail_fast
     def write_month(job: dict[str, Any]) -> dict[str, Any]:
         """Merge one month's staged symbols into its daily slices and overwrite them."""
         import pandas as pd
@@ -260,7 +290,7 @@ def backfill_chains() -> None:
         )
         return {"month": job["month"], **counts}
 
-    @task(trigger_rule=TriggerRule.NONE_FAILED)
+    @task(trigger_rule=TriggerRule.NONE_FAILED, outlets=[BRONZE_OPTION_CHAIN])
     def summarize(results: Sequence[dict[str, Any]]) -> dict[str, int]:
         """Log the totals of the run."""
         totals = {"months": 0, "days": 0, "unchanged": 0, "rows": 0}

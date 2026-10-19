@@ -16,9 +16,12 @@ Tasks run ``snapshot >> write >> quality``:
 
 * ``snapshot`` pulls the chain and stages it as a parquet file (a DataFrame never travels
   through XCom). An empty response fails the task rather than wiping the day's slice.
-* ``write`` overwrites the ``(session, "alpaca_indicative")`` slice with the staged file.
+* ``write`` overwrites the ``(session, "alpaca_indicative")`` slice with the staged file,
+  in the one-slot ``bronze_writers`` pool.
 * ``quality`` reads the slice back and runs the bronze suite against the previous 20
   sessions of the same source.
+
+Each task fails without retries on an error retrying cannot fix (``fail_fast``).
 
 The gate runs after the write, as ADR 0003 decides: it inspects what was actually written,
 not a copy that might differ from it. A failure fails the run and leaves the slice in place
@@ -31,7 +34,15 @@ from datetime import UTC, date, datetime, timedelta
 from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
 
-from dags.common import DEFAULT_ARGS, bronze_table, read_watchlist, staging_dir
+from dags.common import (
+    BRONZE_WRITERS_POOL,
+    DEFAULT_ARGS,
+    bronze_table,
+    fail_fast,
+    read_watchlist,
+    staging_dir,
+)
+from dags.datasets import BRONZE_OPTION_CHAIN
 from dags.timetables import NYSECloseTimetable, session_of
 
 logger = logging.getLogger(__name__)
@@ -58,6 +69,7 @@ def daily_chain_snapshot() -> None:
     """Snapshot the watchlist's option chains after the close, write them, then gate them."""
 
     @task
+    @fail_fast
     def snapshot() -> str:
         """Pull the watchlist chains from Alpaca and stage them; return the parquet path."""
         from oap.ingest.alpaca import AlpacaClient, snapshot_chain
@@ -72,7 +84,8 @@ def daily_chain_snapshot() -> None:
         logger.info("staged %d contracts for %s at %s", len(frame), session, path)
         return str(path)
 
-    @task
+    @task(pool=BRONZE_WRITERS_POOL)
+    @fail_fast
     def write(path: str) -> int:
         """Overwrite the session's slice with the staged snapshot; return the row count."""
         import pandas as pd
@@ -85,7 +98,8 @@ def daily_chain_snapshot() -> None:
         logger.info("wrote %d rows to (%s, %s)", rows, session, SOURCE)
         return rows
 
-    @task
+    @task(outlets=[BRONZE_OPTION_CHAIN])
+    @fail_fast
     def quality(written: int) -> None:
         """Run the bronze suite on the written slice; BronzeQualityError fails the task."""
         from oap.calendar import previous_trading_day, trading_days

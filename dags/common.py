@@ -11,18 +11,22 @@ helpers so that parsing a DAG file never pays for them.
 """
 
 import csv
+import functools
 import logging
 import re
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from airflow.exceptions import AirflowException, AirflowFailException
 from airflow.utils.context import Context
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
+
+    from oap.ingest.tables import TableSpec
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +62,71 @@ DEFAULT_ARGS: dict[str, Any] = {
 }
 
 
+BRONZE_WRITERS_POOL = "bronze_writers"
+"""A one-slot Airflow pool, created by ``airflow-init``; every bronze table commit runs in it.
+
+The local catalog is a single SQLite file, so two tasks committing to the bronze table at the
+same time (a backfill month and the daily snapshot, say) would fight over its write lock.
+"""
+
+
+def is_deterministic(exc: BaseException) -> bool:
+    """Say whether retrying a task that raised ``exc`` cannot change the outcome.
+
+    Deterministic: bad or missing Alpaca credentials, an HTTP 4xx other than 429, the wrong
+    session, a schema or quality failure, and any ``ValueError`` (``pyarrow.ArrowInvalid`` is
+    one). Retryable: DoltHub and transport errors, and an ``AlpacaError`` raised after its
+    own retries ran out, which carries the retryable error as ``__cause__``.
+
+    Args:
+        exc: The exception a task raised.
+
+    Returns:
+        True when the task should fail at once instead of using its retries.
+    """
+    import pandera.errors
+    import pyarrow as pa
+
+    from oap.ingest.alpaca import AlpacaError, _RetryableError
+    from oap.quality.bronze_suite import BronzeQualityError
+
+    if isinstance(exc, AlpacaError):
+        return not isinstance(exc.__cause__, _RetryableError)
+    return isinstance(
+        exc, ValueError | pa.ArrowInvalid | pandera.errors.SchemaErrors | BronzeQualityError
+    )
+
+
+def fail_fast[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+    """Turn deterministic errors into ``AirflowFailException`` so the task is not retried.
+
+    Put it under ``@task``. Retries (``DEFAULT_ARGS`` allows two, five minutes apart) exist
+    for flaky networks; a malformed symbol or a failed quality gate fails identically every
+    time and would only delay the red run by ten minutes. Airflow's own exceptions (skip,
+    fail) and retryable errors pass through unchanged.
+
+    Args:
+        func: The task body.
+
+    Returns:
+        A wrapper with the same name, docstring and signature.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return func(*args, **kwargs)
+        except AirflowException:
+            raise
+        except Exception as exc:
+            if is_deterministic(exc):
+                raise AirflowFailException(f"{type(exc).__name__}: {exc}") from exc
+            raise
+
+    cast(Any, wrapper).oap_fail_fast = True
+    return wrapper
+
+
 WATCHLIST_PATH = Path(__file__).resolve().parents[1] / "dbt" / "seeds" / "watchlist.csv"
 """The dbt watchlist seed; ``/opt/airflow/dbt/seeds/watchlist.csv`` in the Airflow containers."""
 
@@ -88,17 +157,22 @@ def read_watchlist(path: Path = WATCHLIST_PATH) -> list[str]:
         return normalize_symbols([row["symbol"] for row in csv.DictReader(handle)])
 
 
-def bronze_table() -> "Table":
-    """Load the bronze option chain table from the catalog the environment selects.
+def bronze_table(spec: "TableSpec | None" = None) -> "Table":
+    """Load a bronze table (the option chain by default) from the catalog the environment selects.
 
     Creates the namespace and table on first use, so a fresh local stack needs no setup.
 
+    Args:
+        spec: Which bronze table; ``OPTION_CHAIN`` when omitted.
+
     Returns:
-        The bronze table.
+        The table.
     """
     from oap.ingest.iceberg_writer import catalog_from_env, ensure_table, table_identifier
+    from oap.ingest.tables import OPTION_CHAIN
 
-    return ensure_table(catalog_from_env(), table_identifier())
+    spec = OPTION_CHAIN if spec is None else spec
+    return ensure_table(catalog_from_env(), table_identifier(spec=spec), spec=spec)
 
 
 def staging_dir(*parts: str) -> Path:
