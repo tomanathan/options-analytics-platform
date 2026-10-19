@@ -1,6 +1,6 @@
 # Runbook
 
-For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the bronze pipelines (chain and price backfills, the daily DAGs, maintenance), the dbt build, Terraform and the checks.
+For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the bronze pipelines (chain and price backfills, the daily DAGs, maintenance), the dbt build, the analytics and the results report, Terraform and the checks.
 
 ## Airflow stack
 
@@ -65,7 +65,7 @@ docker compose exec airflow-scheduler airflow dags list
 
 ## Bronze pipelines
 
-Six DAGs write, maintain or build on the two bronze tables, `bronze.option_chain` and `bronze.underlying_price`:
+Seven DAGs write, maintain or build on the two bronze tables, `bronze.option_chain` and `bronze.underlying_price` (the `smoke` DAG only imports `oap`):
 
 | DAG | Trigger | Writes |
 | --- | --- | --- |
@@ -75,6 +75,9 @@ Six DAGs write, maintain or build on the two bronze tables, `bronze.option_chain
 | `daily_prices` | 16:30 New York on NYSE sessions | `underlying_price`, trailing five sessions |
 | `iceberg_maintenance` | Weekly | Both tables: expire snapshots, compact |
 | `dbt_build` | On a bronze Dataset update | Nothing in bronze; see "dbt" below |
+| `score_spreads` | On the `gold` Dataset, after `dbt_build` | Nothing in bronze; see "Analytics and the report" below |
+
+Every DAG starts paused. Unpause the ones you want to run: `for d in backfill_prices dbt_build score_spreads; do docker compose exec -T airflow-scheduler airflow dags unpause $d; done` (`make backfill` unpauses `backfill_chains` itself).
 
 The table design and the overwrite rule are in [architecture.md](architecture.md) and [ADR 0003](decisions/0003-partition-overwrite-for-idempotency.md). Locally the tables live in `.iceberg-local/` (gitignored); inside the containers that directory is mounted at `/opt/airflow/.iceberg-local`. The local catalog is a standard-library SQLite file, `.iceberg-local/catalog.db` ([ADR 0005](decisions/0005-stdlib-sqlite-local-catalog.md)); it supports one writer host, so do not point two machines at one file. Iceberg metadata records container-absolute file paths. pyiceberg therefore works only inside the containers (`make iceberg-count`), while DuckDB reads the same files from the host, which is how `make dbt-build-local` works ([ADR 0008](decisions/0008-dbt-reads-iceberg-via-duckdb.md)).
 
@@ -106,6 +109,26 @@ docker compose exec -T airflow-scheduler /opt/dbt-venv/bin/dbt --version
 
 If a DAG fails with `ModuleNotFoundError` for a third-party package, the image is stale: run `make airflow-build`, then `make up`.
 
+### Pools
+
+Two Airflow pools, each with one slot, stand in for locks on the two single-writer stores. `airflow-init` creates both on every start (`airflow pools set` is an upsert).
+
+| Pool | Protects | Tasks in it |
+| --- | --- | --- |
+| `bronze_writers` | The SQLite Iceberg catalog, one commit at a time. | `write_month` of both backfills, `write` of both daily DAGs, both tasks of `iceberg_maintenance`. |
+| `duckdb_writer` | `.dbt-local/oap.duckdb`, one process at a time. | `dbt_build` of `dbt_build`; `analytics` and `report` of `score_spreads`. |
+
+```bash
+docker compose exec -T airflow-scheduler airflow pools list
+docker compose exec -T airflow-scheduler airflow pools get duckdb_writer
+```
+
+A task of either DAG waiting in `queued` while another holds the pool is normal: a `score_spreads` run waits for a `dbt_build` run to end, and the reverse. Do not raise either slot count. A pool does not stop a process outside Airflow, so `make dbt-build-local` and `make report` are not covered (see "One writer"). If a task never leaves `scheduled` and the scheduler log names a missing pool, recreate it:
+
+```bash
+docker compose exec -T airflow-scheduler airflow pools set duckdb_writer 1 "One process at a time on .dbt-local/oap.duckdb"
+```
+
 ### The `bronze_writers` pool
 
 The SQLite catalog allows one writer, so every task that commits to a bronze table runs in the Airflow pool `bronze_writers`, which has one slot. `airflow-init` creates it on every start (`airflow pools set` is an upsert). The tasks in it are `write_month` of both backfills, `write` of both daily DAGs, and both tasks of `iceberg_maintenance`. They run one at a time, in the order the scheduler queues them.
@@ -129,11 +152,11 @@ docker compose exec -T airflow-scheduler airflow pools set bronze_writers 1 "One
 - any `ValueError`, which includes `pyarrow.ArrowInvalid` and the symbol check in `plan`;
 - a pandera `SchemaErrors`, raised when a frame breaks the bronze contract before a write;
 - `BronzeQualityError`, raised by the Great Expectations gate;
-- Alpaca errors that are not transient: bad or missing credentials, an HTTP 4xx other than 429, and a snapshot whose session is not the run's.
+- Vendor errors that are not transient: bad or missing Alpaca credentials, an HTTP 4xx other than 429, a non-JSON body or unexpected response shape, a DoltHub SQL error, and an Alpaca snapshot whose session is not the run's.
 
-DoltHub errors, timeouts, HTTP 429 and 5xx still retry. When a task fails fast, the first line of its log reads `AirflowFailException: <ErrorType>: <message>`. Fix the cause, then clear the task (UI grid, or `airflow tasks clear`). Retrying it first would only repeat the error.
+Transport errors, timeouts, HTTP 429 and 5xx still retry: a `DoltHubError` or `AlpacaError` raised after the client's own retries ran out carries the retryable cause and uses the task's retries. When a task fails fast, the first line of its log reads `AirflowFailException: <ErrorType>: <message>`. Fix the cause, then clear the task (UI grid, or `airflow tasks clear`). Retrying it first would only repeat the error.
 
-`dbt_build` is not wrapped in `fail_fast`. It retries once after two minutes, so a failing dbt test fails twice with the same result.
+`dbt_build` is not wrapped in `fail_fast`. It retries once after two minutes, so a failing dbt test fails twice with the same result. The `analytics` task of `score_spreads` has `retries=0`, because a failed leakage or monotonicity gate fails the same way again.
 
 ### Run a backfill for one month
 
@@ -171,6 +194,14 @@ docker compose exec -T airflow-scheduler airflow dags trigger backfill_prices \
 Add `"symbols": ["DIA", "XLF"]` to limit it. The DAG runs one DoltHub query per month for all symbols (four months at a time), then one merge-and-write per month in the `bronze_writers` pool. It is safe to repeat: unchanged slices are skipped.
 
 The refresh. `daily_prices` runs at 16:30 New York on NYSE sessions. DoltHub publishes session D at about 05:30 UTC on D+1, so at 16:30 on D its own bar is not there. Each run fetches the last five sessions up to its own, so it picks up D-1 and fills small gaps, and D's bar arrives with the next run. The latest session in the table is therefore normally one session behind. An empty response for the whole window fails the task on purpose, because five sessions without a single bar means the feed is stale.
+
+On a day when nothing changed, `write` raises `AirflowSkipException` and ends `skipped`, not `success`. That is normal, for example when the next bar has not been published yet or the run repeats the previous window. A skipped task emits no Dataset event, so `daily_prices` then does not start `dbt_build`. To see which case it was, read the task log: it says how many slices were unchanged.
+
+```bash
+docker compose exec -T airflow-scheduler airflow tasks states-for-dag-run daily_prices <run_id>
+```
+
+A `skipped` write is a problem only when the latest session in the table is more than one session behind. Check with the verification snippet below, then re-run `backfill_prices` for the gap.
 
 Verify what landed. `make iceberg-count` reads `bronze.option_chain` only, so use this for prices:
 
@@ -233,13 +264,13 @@ Run `--hash` before and after a re-run: an unchanged `content_digest` shows the 
 
 ### Quality failures
 
-The `quality` task of `daily_chain_snapshot` reads the written slice back and runs the bronze suite (`src/oap/quality/bronze_suite.py`) against the previous 20 sessions of the same source. A failed expectation raises `BronzeQualityError`, naming the failed expectations, and fails the task without a retry. The backfill DAGs do not run the suite; check their output with `make iceberg-count`. A failure does not roll back the write: the slice stays as written until it is re-run. Frames are also validated against the bronze contract before every write (for chains: bid not above ask, expiration not before trade date, unique key, strike above zero, right in C/P; for prices: close above zero, volume not negative, high not below low, close inside the range, unique key); a violation fails the write task with the list of failed checks and commits nothing. The price table has no Great Expectations suite.
+The `quality` task of `daily_chain_snapshot` runs the bronze suite (`src/oap/quality/bronze_suite.py`) on the staged frame, before anything is committed, against the previous 20 sessions of the same source. A failed expectation raises `BronzeQualityError`, naming the failed expectations, and fails the task without a retry. The `write` task then does not run, so nothing was published: the slice of that session is exactly as it was before the run, and no Dataset event fired, so `dbt_build` did not start. After a good write, `write` reads the slice back and fails if its row count differs from the staged frame. The backfill DAGs do not run the suite; check their output with `make iceberg-count`. To repeat a gated run, fix the cause and clear the failed task (the same evening for Alpaca; see "Re-run a failed day"). Frames are also validated against the bronze contract before every write (for chains: bid not above ask, expiration not before trade date, unique key, strike above zero, right in C/P; for prices: close above zero, volume not negative, high not below low, close inside the range, unique key); a violation fails the write task with the list of failed checks and commits nothing. The price table has no Great Expectations suite.
 
 **`row_count:<SYMBOL>`.** The underlying's row count for the day is outside the band: within 50% of the median over its previous 20 sessions. Underlyings with fewer than 5 days of history are not bounded.
 - Below the band: usually a vendor outage or a partial response. Re-run the day (the same evening for Alpaca). If it stays low, check the vendor directly.
-- Above the band: new expirations were listed, or the same data was written under two source tags. Inspect the slice with `make iceberg-count` before re-running.
+- Above the band: new expirations were listed, or the same data was written under two source tags. Compare the session's neighbours with `make iceberg-count` before re-running; the gated slice itself was not written.
 
-**`occ_symbol_not_null`.** The parser failed to build the compact OCC symbol for some rows. This is a bug in `src/oap/ingest/`, not a data problem. Do not re-run until the parser is fixed, because the re-run overwrites with the same bad rows.
+**`occ_symbol_not_null`.** The parser failed to build the compact OCC symbol for some rows. This is a bug in `src/oap/ingest/`, not a data problem. Do not re-run until the parser is fixed, because the re-run stages the same bad rows and fails the gate again.
 
 **`strike_positive` or `right_in_set`.** Malformed vendor rows or a column mapping error. Read the failing expectation in the task log. If the vendor changed a format, fix the mapping, then re-run.
 
@@ -277,7 +308,7 @@ Chains, run overnight:
 make backfill START=2020-01-01 END=<yesterday as YYYY-MM-DD>
 ```
 
-For 11 symbols over about 81 months that is roughly 900 fetch tasks at 4 concurrent, about one hour when DoltHub answers quickly. DoltHub rate limits can stretch it. The run is resumable: if tasks fail after their retries, re-run the same command; unchanged slices are skipped and the overwrite rule makes the repeat safe. Then prices, with the trigger command in the price section above. Finish with `make iceberg-count`, the price verification snippet and the maintenance DAG.
+For 11 symbols over about 81 months that is roughly 900 fetch tasks at 4 concurrent, about one hour when DoltHub answers quickly. DoltHub rate limits can stretch it. The run is resumable: if tasks fail after their retries, re-run the same command; unchanged slices are skipped and the overwrite rule makes the repeat safe. Then prices, with the trigger command in the price section above. Finish with `make iceberg-count`, the price verification snippet and the maintenance DAG. The load of 2026-10-02 holds 1,811,734 chain rows over 1,194 trading days and 18,190 price rows over 1,697 sessions (2020-01-02 to 2026-10-02); the chain total is a check on a rebuild, and a later total is higher only because DoltHub published more sessions.
 
 ### Schema changes
 
@@ -285,11 +316,11 @@ If `ensure_table` raises `ValueError` about a column type after a schema change 
 
 ## dbt
 
-The dbt project `oap` builds the `silver` and `gold` schemas from the two bronze tables ([architecture.md](architecture.md) lists the models). It runs in three places, all on the DuckDB `dev` target and all reading bronze through the `register_bronze` hook ([ADR 0008](decisions/0008-dbt-reads-iceberg-via-duckdb.md)): the `dbt_build` DAG in the Airflow container, `make dbt-build-local` on the host, and `make check` on synthetic data. No Snowflake run has been done; `prod` is a target in `profiles.yml` only, and the models have only been compiled and built on DuckDB.
+The dbt project `oap` builds the `silver` and `gold` schemas from the two bronze tables, and the analytics models in `gold` on top of them ([architecture.md](architecture.md) lists the models). It runs in three places, all on the DuckDB `dev` target and all reading bronze through the `register_bronze` hook ([ADR 0008](decisions/0008-dbt-reads-iceberg-via-duckdb.md)): the `dbt_build` DAG in the Airflow container, `make dbt-build-local` on the host, and `make check` on synthetic data. No Snowflake run has been done; `prod` is a target in `profiles.yml` only, and the models have only been compiled and built on DuckDB.
 
 ### The `dbt_build` DAG
 
-`dbt_build` runs `/opt/dbt-venv/bin/dbt` in a bash task, `dbt_build`, against `.dbt-local/oap.duckdb` and the catalog in `.iceberg-local/`. A second task, `publish_gold`, updates the `GOLD` Dataset after a `build` run and skips after a `test` run, so `mode=test` does not trigger the analytics. It has no cron schedule: it runs when either bronze Dataset is updated (next section). Unpause it once; a paused DAG does not run.
+`dbt_build` runs `/opt/dbt-venv/bin/dbt` in a bash task, `dbt_build`, against `.dbt-local/oap.duckdb` and the catalog in `.iceberg-local/`, in the `duckdb_writer` pool. It excludes the models tagged `analytics`; `score_spreads` builds those. A second task, `publish_gold`, updates the `GOLD` Dataset after a `build` run whose models and tests passed, and raises `AirflowSkipException` after a `test` run, so `mode=test` does not trigger the analytics. A `skipped` `publish_gold` on a `mode=test` run is correct. On a `build` run it means something is wrong: check `params.mode` in the run's conf. It has no cron schedule: it runs when either bronze Dataset is updated (next section). Unpause it once; a paused DAG does not run.
 
 ```bash
 docker compose exec -T airflow-scheduler airflow dags unpause dbt_build
@@ -321,10 +352,11 @@ PY
 
 The statuses are `error`, `fail`, `warn` and `skipped`. The full dbt output is in the task log (UI, task `dbt_build`, Logs) and on disk under `logs/airflow/dag_id=dbt_build/`.
 
-**One writer.** Only one process may write `oap.duckdb` at a time. `max_active_runs=1` keeps `dbt_build` from overlapping itself, but nothing stops you from starting a second writer by hand. Do not run `make dbt-build-local`, `docker compose run --rm dbt build` or any read-write DuckDB session on the file while a `dbt_build` run is active. A collision shows as `Could not set lock on file ... Conflicting lock is held`. Check what is running, then wait or stop the other process:
+**One writer.** Only one process may write `oap.duckdb` at a time. `max_active_runs=1` and the `duckdb_writer` pool keep `dbt_build` and `score_spreads` from overlapping, but nothing stops you from starting a second writer by hand. Do not run `make dbt-build-local`, `make report`, `docker compose run --rm dbt build` or any read-write DuckDB session on the file while a `dbt_build` or `score_spreads` run is active. A collision shows as `Could not set lock on file ... Conflicting lock is held`. Check what is running, then wait or stop the other process:
 
 ```bash
 docker compose exec -T airflow-scheduler airflow dags list-runs -d dbt_build --state running
+docker compose exec -T airflow-scheduler airflow dags list-runs -d score_spreads --state running
 ```
 
 To look at the data without blocking anything, copy the file and open the copy read-only:
@@ -355,13 +387,53 @@ Each event names the `dataset_uri` and the `source_dag_id`, `source_task_id` and
 
 A manual trigger does not need a Dataset. A bronze commit made outside Airflow (for example a script) records no Dataset event, so run `dbt_build` by hand afterwards.
 
+The same mechanism links `dbt_build` to `score_spreads`: `publish_gold` lists `duckdb://oap/gold` in `outlets`, and `score_spreads` is scheduled on it. Its runs are `dataset_triggered` too, and the events call `publish_gold` their source task. A skipped `publish_gold` emits no event, which is how a failed silver or gold test, or a `mode=test` run, keeps the analytics from starting.
+
+### Analytics and the report
+
+`score_spreads` has two tasks, `analytics >> report`, both in the `duckdb_writer` pool. `analytics` runs `dbt build --select tag:analytics`: the seven Python models of `dbt/models/analytics/` (snapshots, predictions, calibration maps, the backtest sample, metrics, reliability bins and the spread scores) and their tests. It has no retries, because the verdict of a failed gate does not change. `report` then runs `scripts/make_report.py` with the dbt virtualenv, reading `oap.duckdb` read-only. It is the container's copy of the report: it writes `results.md` and `img/*.png` to `.dbt-local/report/` on the host (the directory is mounted), never to `docs/`.
+
+Run it by hand, which is the way to rerun it after fixing a failure, because nothing in bronze changed and no Dataset event will fire:
+
+```bash
+docker compose exec -T airflow-scheduler airflow dags unpause score_spreads   # once
+docker compose exec -T airflow-scheduler airflow dags trigger score_spreads
+docker compose exec -T airflow-scheduler airflow dags list-runs -d score_spreads
+ls -l .dbt-local/report .dbt-local/report/img
+```
+
+Triggering `score_spreads` by hand builds the analytics over whatever gold holds now. It does not rebuild gold: after a bronze change, trigger `dbt_build` and let it start `score_spreads`, so the analytics never read a gold table that failed its tests.
+
+The same models can be built from the host, which is what `make dbt-build-local` does for the whole project. For the analytics alone (stop both DAGs first, or pause them; only one writer):
+
+```bash
+OAP_DBT_SOURCE=iceberg OAP_ICEBERG_LOCAL_DIR=$PWD/.iceberg-local OAP_DUCKDB_PATH=$PWD/.dbt-local/oap.duckdb \
+  uv run dbt build --project-dir dbt --profiles-dir dbt --target dev --select tag:analytics
+```
+
+**`make report`** writes the committed copy: `docs/results.md`, `docs/img/calibration.png` and `docs/img/spread_scores.png`, and replaces the text between `<!-- results:start -->` and `<!-- results:end -->` in `README.md` with the overall out-of-sample metrics and the top three spreads. It reads `.dbt-local/oap.duckdb` read-only, so run it after `make dbt-build-local` or after a `score_spreads` run has finished, and not while either DAG is running. The output is deterministic: a second run on the same database leaves `git diff` empty. Review the diff, then commit `docs/results.md`, `docs/img/` and `README.md`. The report holds derived statistics and a few derived spread rows, never raw vendor quotes.
+
+```bash
+make report
+git diff --stat docs README.md
+```
+
+`make_report.py` exits with 2 and a message when it cannot proceed:
+
+| Message | Cause | Fix |
+| --- | --- | --- |
+| `.dbt-local/oap.duckdb does not exist: run make dbt-build-local first` | No build has written the file. | `make dbt-build-local`, or wait for `score_spreads`. |
+| `gold tables missing: ...` | The file holds silver and gold but not the analytics. | Trigger `score_spreads`, or run the host command above. |
+| `cannot open ... (is a build writing it?)` | A build holds the write lock. | Wait for the running DAG (`list-runs --state running`) and retry. |
+| `README excerpt not written: ...` | `README.md` lost a results marker. | Restore both marker comments, with the start marker first. |
+
 ### Build on the host
 
 ```bash
 make dbt-build-local
 ```
 
-This runs `dbt deps`, then `dbt build` on the real local catalog (`OAP_DBT_SOURCE=iceberg`, `OAP_ICEBERG_LOCAL_DIR=.iceberg-local`) into `.dbt-local/oap.duckdb`, the same file the DAG writes. It needs both bronze tables to exist, and the first run downloads the DuckDB iceberg, avro and sqlite extensions into `~/.duckdb/extensions`, so it needs network once. Stop `dbt_build` first (see "One writer"). A full build with tests took about 12 seconds on 1.48 million option rows.
+This runs `dbt deps`, then `dbt build` on the real local catalog (`OAP_DBT_SOURCE=iceberg`, `OAP_ICEBERG_LOCAL_DIR=.iceberg-local`) into `.dbt-local/oap.duckdb`, the same file the DAGs write. It builds silver, gold and the seven analytics models, with every test, and needs both bronze tables to exist. The first run downloads the DuckDB iceberg, avro and sqlite extensions into `~/.duckdb/extensions`, so it needs network once. Stop `dbt_build` and `score_spreads` first (see "One writer"). The silver and gold part took about 12 seconds on 1.48 million option rows; no timing is recorded for the analytics. Follow it with `make report` to write `docs/results.md`.
 
 ### Build on synthetic data
 
@@ -385,7 +457,11 @@ Find the failing test in `run_results.json` (above) or the task log. The first t
 | `bronze.underlying_price is not in .../catalog.db` (or `bronze.option_chain`) | That table has never been written, so it is not in the catalog. The first chain commit starts `dbt_build` before any price exists. | Run `backfill_prices` (or the missing table's backfill), then trigger `dbt_build`. |
 | `this DuckDB file was built from X bronze, this run reads Y` | Mode lock; see "Build on synthetic data". | Delete the file or set `OAP_DUCKDB_PATH`. |
 | `assert_close_within_strike_range` | On some day, an underlying's close lies outside the strike range of its own chain. Usually the price rows hold split-adjusted values, or a ticker stands for another instrument. | List the days (query below). Re-run `backfill_prices` for those months; if a price row is wrong at the vendor, there is nothing to fix here, and the test should not be loosened. |
-| `assert_fct_option_quote_matches_silver` | Gold holds different rows from silver for some trade date: a bronze slice was deleted or rewritten without a newer `ingested_at`, so the incremental watermark skipped it. | Trigger `dbt_build` with `{"full_refresh": true}`. |
+| `assert_fct_option_quote_matches_silver` | Gold differs from silver for some trade date, in row count or in the sum of `underlying_close`: a bronze slice was deleted, or a chain or price slice changed without a newer write time, so the incremental watermark skipped it. | Trigger `dbt_build` with `{"full_refresh": true}`. |
+| `assert_calibration_out_of_sample` (analytics) | A fold map was fitted on an expiration on or after its own year start, or on or after the first trade date it is applied to. That is leakage: the walk-forward rule in `oap.analytics.backtest` or the model that calls it was changed. | Do not loosen the test. Find the change (`git log -p src/oap/analytics/backtest.py dbt/models/analytics/`) and fix the training mask. |
+| `assert_calibration_map_monotone` (analytics) | A calibration map has a knot that does not increase, or a calibrated value that falls. The isotonic fit or the knot compaction broke. | Read the rows the test returns, then reproduce with `uv run pytest tests/analytics/test_backtest.py -q`. |
+| `assert_predictions_from_ok_snapshots` or `assert_spread_rank_contiguous` (analytics) | A prediction exists for an excluded snapshot, or the ranks of eligible spreads have a gap or a rank on an ineligible spread. | A logic error in `oap.analytics`, not a data problem. The test output lists the rows. |
+| `unique_combination_of_columns` or `accepted_values` on an analytics model | A new snapshot status, or duplicate keys in a model's output. | Check the exclusion rules in `calibration_snapshot` against `src/oap/analytics/config.py` before touching the test. |
 | `unique_combination_of_columns` on `stg_option_chain` | Duplicate (occ_symbol, trade_date, source) in bronze. The Great Expectations `key_unique` check should have caught it. | Treat as `key_unique` above, then re-run the day. |
 | `unique_combination_of_columns` on `stg_underlying_price` | A second price source landed. The test deliberately excludes `source` so it fails closed. | A rule for choosing between sources has to be written first; see the model's docs block. |
 | `relationships` of `underlying` to `stg_watchlist` on `stg_option_chain` | Bronze holds an underlying that is not in `dbt/seeds/watchlist.csv`. | Add the symbol to the seed (the build reloads it) or stop ingesting it. On `stg_underlying_price` this test is warn-only. |
@@ -488,7 +564,9 @@ Deactivate first, wait a day, then delete, so a forgotten consumer fails loudly 
 uv sync --all-groups
 make check          # lock-check, lint, typecheck, test, dbt-compile, dbt-build on synthetic data
 make lock-check     # docker/requirements*.txt match uv.lock (also part of make check)
-make dbt-build      # dbt build twice on the synthetic bronze catalog
+make dbt-build      # dbt build on the synthetic bronze catalog, three passes, then the report to .dbt-local/report-synthetic
+make dbt-build-local  # real bronze into .dbt-local/oap.duckdb (not while dbt_build or score_spreads runs)
+make report         # docs/results.md, docs/img/*.png and the README excerpt, from oap.duckdb
 make tf-fmt         # needs terraform on PATH
 make tf-validate
 make compose-config # needs docker on PATH
@@ -525,7 +603,13 @@ The scheduler log (`docker compose logs airflow-scheduler`) holds the traceback.
 
 **`dbt_build` fails before any model runs.** The `register_bronze` hook could not find a bronze table or the DuckDB file was built in the other mode; both are in "dbt failures".
 
-**`dbt` cannot lock `oap.duckdb`.** Another process holds the file; see "One writer".
+**`dbt` or `make report` cannot lock `oap.duckdb`.** Another process holds the file; see "One writer".
+
+**`score_spreads` never starts.** It runs only on a `GOLD` update, and only a `build` run of `dbt_build` that passed its tests emits one. Check that `score_spreads` is unpaused, that the last `dbt_build` run succeeded and was not `mode=test`, and that `publish_gold` was not skipped (`airflow tasks states-for-dag-run dbt_build <run_id>`). To run it anyway, trigger it by hand (see "Analytics and the report").
+
+**`score_spreads` fails in `analytics`.** A singular or column test of an analytics model failed. The task is not retried. Read the failing test in `.dbt-local/artifacts/run_results.json` (the snippet in "The `dbt_build` DAG") and see "dbt failures".
+
+**`make report` writes a placeholder figure or empty tables.** The out-of-sample set or the latest session has no rows. Check `calibration_metrics` and `spread_scores` in a copy of the file; this happens on synthetic data and before the history is loaded.
 
 **`dbt compile` cannot find packages.** Run `make dbt-deps`. Packages install to `dbt/dbt_packages/`, which is gitignored. In the Airflow image they are baked in at `/opt/dbt-packages/dbt_packages`.
 
