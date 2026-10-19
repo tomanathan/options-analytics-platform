@@ -1,0 +1,80 @@
+version: 2
+
+# Bronze is gated by the Great Expectations suite in Airflow, so these sources carry no dbt tests.
+# On DuckDB the `bronze` schema holds views over the Iceberg tables, created by the register_bronze
+# hook. On Snowflake it is the external Iceberg tables infra creates over the same Glue tables.
+sources:
+  - name: bronze
+    description: Raw vendor data as landed in the Iceberg bronze tables, one row per vendor record.
+    database: "{{ env_var('OAP_SNOWFLAKE_BRONZE_DATABASE', target.database) if target.type == 'snowflake' else target.database }}"
+    schema: "{{ env_var('OAP_SNOWFLAKE_BRONZE_SCHEMA', 'bronze') if target.type == 'snowflake' else 'bronze' }}"
+    tables:
+      - name: option_chain
+        description: >
+          One row per option contract per trade date per source (DoltHub history, Alpaca daily
+          snapshot). Prices are dollars, volatility is a decimal (0.20 is 20%). Written by
+          write_partition, which replaces whole (trade_date, source) slices.
+        columns:
+          - name: trade_date
+            description: Exchange session date of the quote.
+          - name: underlying
+            description: Ticker of the underlying, as the vendor spells it.
+          - name: occ_symbol
+            description: Compact OCC option symbol, for example SPY240119P00450000.
+          - name: expiration
+            description: Expiration date of the contract.
+          - name: strike
+            description: Strike price in dollars, decimal(10,3).
+          - name: right
+            description: Option right, C for a call and P for a put.
+          - name: bid
+            description: Best bid in dollars per share; null when the vendor has no bid.
+          - name: ask
+            description: Best ask in dollars per share; null when the vendor has no ask.
+          - name: last
+            description: Last trade price in dollars per share; null when not reported.
+          - name: volume
+            description: Contracts traded that session; null when not reported.
+          - name: open_interest
+            description: Open contracts at the previous close; null when not reported.
+          - name: iv
+            description: Vendor implied volatility as a decimal, annualised; may be zero or negative on bad quotes.
+          - name: delta
+            description: Vendor delta, change in option price in dollars per 1 dollar move in the underlying.
+          - name: gamma
+            description: Vendor gamma, change in delta per 1 dollar move in the underlying.
+          - name: theta
+            description: Vendor theta, change in option price in dollars per day.
+          - name: vega
+            description: Vendor vega, change in option price in dollars per 1.00 (100 percentage points) of volatility.
+          - name: rho
+            description: Vendor rho, change in option price in dollars per 1.00 change in the interest rate.
+          - name: underlying_price
+            description: Price of the underlying in dollars as the chain vendor reports it; null for DoltHub rows.
+          - name: source
+            description: Vendor feed, dolthub or alpaca_indicative.
+          - name: ingested_at
+            description: UTC instant the slice holding this row was written to bronze.
+      - name: underlying_price
+        description: >
+          One daily open-high-low-close-volume bar per underlying per source, as traded on that
+          date (not adjusted for splits or dividends). Prices are dollars per share.
+        columns:
+          - name: trade_date
+            description: Exchange session date of the bar.
+          - name: underlying
+            description: Ticker of the underlying.
+          - name: open
+            description: Opening price in dollars per share, as traded.
+          - name: high
+            description: Highest price in dollars per share, as traded.
+          - name: low
+            description: Lowest price in dollars per share, as traded.
+          - name: close
+            description: Official closing price in dollars per share, as traded (unadjusted for splits).
+          - name: volume
+            description: Shares traded that session.
+          - name: source
+            description: Vendor feed, dolthub_stocks.
+          - name: ingested_at
+            description: UTC instant the slice holding this row was written to bronze.

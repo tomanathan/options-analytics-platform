@@ -34,3 +34,236 @@ models:
                   - Utilities
       - name: added_on
         description: Date the symbol was added to the watchlist.
+
+  - name: fct_option_quote
+    description: "{{ doc('fct_option_quote') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [occ_symbol, trade_date]
+    columns:
+      - name: option_quote_key
+        description: Surrogate key, an MD5 hash of occ_symbol and trade_date.
+        data_tests:
+          - unique
+          - not_null
+      - name: contract_key
+        description: Surrogate key of the contract, an MD5 hash of occ_symbol; joins to dim_contract.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_contract')
+                field: contract_key
+      - name: underlying_key
+        description: Surrogate key of the underlying, an MD5 hash of the symbol; joins to dim_underlying.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_underlying')
+                field: underlying_key
+      - name: occ_symbol
+        description: Compact OCC option symbol, for example SPY240119P00450000.
+      - name: trade_date
+        description: Exchange session date of the quote.
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: expiration
+        description: Expiration date of the contract.
+      - name: strike
+        description: Strike price in dollars, decimal(10,3).
+      - name: option_right
+        description: Option right, C for a call and P for a put.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [C, P]
+      - name: bid
+        description: Best bid in dollars per share; null when the vendor has no bid.
+      - name: ask
+        description: Best ask in dollars per share; null when the vendor has no ask.
+      - name: mid
+        description: Midpoint of bid and ask in dollars per share; null unless both sides are quoted.
+      - name: spread
+        description: Ask minus bid in dollars per share.
+      - name: spread_pct
+        description: Spread as a decimal fraction of the mid (0.10 is 10%).
+      - name: last_price
+        description: Last trade price in dollars per share; null when not reported.
+      - name: volume
+        description: Contracts traded that session; null when not reported.
+      - name: open_interest
+        description: Open contracts at the previous close; null when not reported.
+      - name: source_iv
+        description: Vendor implied volatility as a decimal (0.20 is 20%).
+      - name: source_delta
+        description: Vendor delta, dollars of option price per 1 dollar move in the underlying.
+      - name: source_gamma
+        description: Vendor gamma, change in delta per 1 dollar move in the underlying.
+      - name: source_theta
+        description: Vendor theta, dollars of option price per day.
+      - name: source_vega
+        description: Vendor vega, dollars of option price per 1.00 of volatility.
+      - name: source_rho
+        description: Vendor rho, dollars of option price per 1.00 change in the interest rate.
+      - name: underlying_close
+        description: Official close of the underlying in dollars on the trade date (stocks first, chain as fallback).
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: underlying_close_source
+        description: Where underlying_close came from, stocks or chain.
+      - name: moneyness
+        description: Strike divided by underlying_close (1.00 is at the money).
+      - name: dte_days
+        description: Calendar days from trade date to expiration.
+      - name: dte_years
+        description: Time to expiration in years, calendar days divided by 365.
+        data_tests:
+          - not_null
+      - name: source
+        description: Vendor feed of the surviving row, dolthub or alpaca_indicative.
+      - name: trade_date_ingested_at
+        description: Latest bronze write time over every source of this trade date; the incremental watermark.
+        data_tests:
+          - not_null
+
+  - name: dim_contract
+    description: "{{ doc('dim_contract') }}"
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "first_seen <= last_seen and last_seen <= expiration"
+    columns:
+      - name: contract_key
+        description: Surrogate key, an MD5 hash of occ_symbol.
+        data_tests:
+          - unique
+          - not_null
+      - name: underlying_key
+        description: Surrogate key of the underlying, an MD5 hash of the symbol; joins to dim_underlying.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_underlying')
+                field: underlying_key
+      - name: occ_symbol
+        description: Compact OCC option symbol, for example SPY240119P00450000.
+        data_tests:
+          - unique
+          - not_null
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: expiration
+        description: Expiration date of the contract.
+      - name: strike
+        description: Strike price in dollars, decimal(10,3).
+      - name: option_right
+        description: Option right, C for a call and P for a put.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [C, P]
+      - name: first_seen
+        description: First trade date on which the contract was quoted.
+      - name: last_seen
+        description: Last trade date on which the contract was quoted.
+      - name: n_quote_days
+        description: Number of trade dates on which the contract was quoted.
+
+  - name: fct_underlying_daily
+    description: "{{ doc('fct_underlying_daily') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [underlying, trade_date]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "high_price >= low_price"
+          config:
+            where: "high_price is not null and low_price is not null"
+            severity: warn
+    columns:
+      - name: underlying_daily_key
+        description: Surrogate key, an MD5 hash of underlying and trade date.
+        data_tests:
+          - unique
+          - not_null
+      - name: underlying_key
+        description: Surrogate key of the underlying, an MD5 hash of the symbol; joins to dim_underlying.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_underlying')
+                field: underlying_key
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: trade_date
+        description: Exchange session date of the bar.
+      - name: open_price
+        description: Opening price in dollars per share, as traded (unadjusted for splits).
+      - name: high_price
+        description: Highest price in dollars per share, as traded.
+      - name: low_price
+        description: Lowest price in dollars per share, as traded.
+      - name: close_price
+        description: Official closing price in dollars per share, as traded (unadjusted for splits).
+        data_tests:
+          - not_null
+      - name: volume
+        description: Shares traded that session.
+      - name: prev_close_price
+        description: Close of the previous session present for this underlying, in dollars; null on the first row.
+      - name: simple_return
+        description: Close over previous close minus 1, as a decimal (0.01 is 1%); not adjusted for splits.
+      - name: log_return
+        description: Natural log of close over previous close, as a decimal; a split day shows as a large move.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: -0.5
+                max_value: 0.5
+              config:
+                severity: warn
+      - name: source
+        description: Vendor feed of the bar, dolthub_stocks.
+
+  - name: fct_expiration_outcome
+    description: "{{ doc('fct_expiration_outcome') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [underlying, expiration]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "settlement_date <= expiration"
+    columns:
+      - name: expiration_outcome_key
+        description: Surrogate key, an MD5 hash of underlying and expiration.
+        data_tests:
+          - unique
+          - not_null
+      - name: underlying_key
+        description: Surrogate key of the underlying, an MD5 hash of the symbol; joins to dim_underlying.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_underlying')
+                field: underlying_key
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: expiration
+        description: Expiration date of the contracts that settled.
+      - name: settlement_date
+        description: Last session on or before the expiration (within 4 days); the date whose close settles the expiration.
+      - name: settlement_lag_days
+        description: Calendar days from settlement_date to expiration; 0 on a session expiration, more when the expiration falls on a holiday or weekend.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 4
+      - name: settlement_close
+        description: Close of the underlying in dollars on settlement_date, as traded (unadjusted for splits).
+        data_tests:
+          - not_null

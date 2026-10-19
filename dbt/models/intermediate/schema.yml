@@ -1,0 +1,145 @@
+version: 2
+
+models:
+  - name: int_option_quotes
+    description: "{{ doc('int_option_quotes') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [occ_symbol, trade_date]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "bid <= ask"
+          config:
+            where: "bid is not null and ask is not null"
+    columns:
+      - name: occ_symbol
+        description: Compact OCC option symbol, for example SPY240119P00450000.
+      - name: trade_date
+        description: Exchange session date of the quote.
+      - name: underlying
+        description: Ticker of the underlying, trimmed and upper-cased.
+      - name: expiration
+        description: Expiration date of the contract.
+      - name: strike
+        description: Strike price in dollars, decimal(10,3).
+      - name: option_right
+        description: Option right, C for a call and P for a put.
+      - name: bid
+        description: Best bid in dollars per share; null when the vendor has no bid.
+      - name: ask
+        description: Best ask in dollars per share; null when the vendor has no ask.
+      - name: mid
+        description: Midpoint of bid and ask in dollars per share; null unless both sides are quoted.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+      - name: spread
+        description: Ask minus bid in dollars per share; null unless both sides are quoted.
+      - name: spread_pct
+        description: Spread as a decimal fraction of the mid (0.10 is 10%); null when the mid is zero or missing. Bounded by 2 because the bid is not negative.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 2
+      - name: last_price
+        description: Last trade price in dollars per share; null when not reported.
+      - name: volume
+        description: Contracts traded that session; null when not reported.
+      - name: open_interest
+        description: Open contracts at the previous close; null when not reported.
+      - name: source_iv
+        description: Vendor implied volatility as a decimal (0.20 is 20%); the engine recomputes its own.
+      - name: source_delta
+        description: Vendor delta, dollars of option price per 1 dollar move in the underlying.
+      - name: source_gamma
+        description: Vendor gamma, change in delta per 1 dollar move in the underlying.
+      - name: source_theta
+        description: Vendor theta, dollars of option price per day.
+      - name: source_vega
+        description: Vendor vega, dollars of option price per 1.00 of volatility.
+      - name: source_rho
+        description: Vendor rho, dollars of option price per 1.00 change in the interest rate.
+      - name: underlying_close
+        description: Official close of the underlying in dollars on the trade date; the stocks close when present, otherwise the chain vendor's underlying price.
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+          - dbt_utils.not_null_proportion:
+              arguments:
+                at_least: 0.99
+      - name: underlying_close_source
+        description: Where underlying_close came from, stocks (bronze.underlying_price) or chain (the chain vendor's underlying price).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [stocks, chain]
+      - name: moneyness
+        description: Strike divided by underlying_close (1.00 is at the money); below 1 is out of the money for a put.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: dte_days
+        description: Calendar days from trade date to expiration.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+      - name: dte_years
+        description: Time to expiration in years, calendar days divided by 365.
+      - name: source
+        description: Vendor feed of the surviving row, dolthub or alpaca_indicative (dolthub wins when both cover a contract-day).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [dolthub, alpaca_indicative]
+      - name: bronze_ingested_at
+        description: UTC instant the bronze slice of the surviving row was written.
+      - name: trade_date_ingested_at
+        description: Latest bronze write time over every source of this trade date; the incremental watermark of fct_option_quote.
+
+  - name: int_chain_snapshots
+    description: "{{ doc('int_chain_snapshots') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [underlying, trade_date, expiration]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "min_strike <= max_strike"
+    columns:
+      - name: chain_snapshot_key
+        description: Surrogate key, an MD5 hash of underlying, trade date and expiration.
+        data_tests:
+          - unique
+          - not_null
+      - name: underlying
+        description: Ticker of the underlying.
+      - name: trade_date
+        description: Exchange session date of the snapshot.
+      - name: expiration
+        description: Expiration date of the contracts in the snapshot.
+      - name: dte_days
+        description: Calendar days from trade date to expiration.
+      - name: n_strikes
+        description: Number of distinct strikes listed, in contracts per side.
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1
+      - name: n_puts
+        description: Number of put quotes in the snapshot.
+      - name: n_calls
+        description: Number of call quotes in the snapshot.
+      - name: min_strike
+        description: Lowest listed strike in dollars.
+      - name: max_strike
+        description: Highest listed strike in dollars.
+      - name: underlying_close
+        description: Official close of the underlying in dollars on the trade date.

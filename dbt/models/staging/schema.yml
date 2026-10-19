@@ -18,3 +18,125 @@ models:
         description: Date the symbol was added to the watchlist.
         data_tests:
           - not_null
+
+  - name: stg_option_chain
+    description: "{{ doc('stg_option_chain') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [occ_symbol, trade_date, source]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "expiration >= trade_date"
+    columns:
+      - name: trade_date
+        description: Exchange session date of the quote.
+        data_tests:
+          - not_null
+      - name: underlying
+        description: Ticker of the underlying, trimmed and upper-cased.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_watchlist')
+                field: symbol
+      - name: occ_symbol
+        description: Compact OCC option symbol, for example SPY240119P00450000.
+        data_tests:
+          - not_null
+      - name: expiration
+        description: Expiration date of the contract, on or after the trade date.
+      - name: strike
+        description: Strike price in dollars, decimal(10,3), strictly positive.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: option_right
+        description: Option right, C for a call and P for a put. Renamed from the reserved word right.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [C, P]
+      - name: bid
+        description: Best bid in dollars per share; null when the vendor has no bid.
+      - name: ask
+        description: Best ask in dollars per share, not below the bid; null when the vendor has no ask.
+      - name: last_price
+        description: Last trade price in dollars per share; null when not reported.
+      - name: volume
+        description: Contracts traded that session; null when not reported.
+      - name: open_interest
+        description: Open contracts at the previous close; null when not reported.
+      - name: source_iv
+        description: Vendor implied volatility as a decimal (0.20 is 20%); not validated, may be zero or negative.
+      - name: source_delta
+        description: Vendor delta, dollars of option price per 1 dollar move in the underlying.
+      - name: source_gamma
+        description: Vendor gamma, change in delta per 1 dollar move in the underlying.
+      - name: source_theta
+        description: Vendor theta, dollars of option price per day.
+      - name: source_vega
+        description: Vendor vega, dollars of option price per 1.00 of volatility.
+      - name: source_rho
+        description: Vendor rho, dollars of option price per 1.00 change in the interest rate.
+      - name: source_underlying_price
+        description: Price of the underlying in dollars as the chain vendor reports it; null for DoltHub rows.
+      - name: source
+        description: Vendor feed of the row, dolthub or alpaca_indicative.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [dolthub, alpaca_indicative]
+      - name: bronze_ingested_at
+        description: UTC instant the bronze slice holding this row was written.
+        data_tests:
+          - not_null
+
+  - name: stg_underlying_price
+    description: "{{ doc('stg_underlying_price') }}"
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [underlying, trade_date]
+    columns:
+      - name: trade_date
+        description: Exchange session date of the bar.
+        data_tests:
+          - not_null
+      - name: underlying
+        description: Ticker of the underlying, trimmed and upper-cased.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_watchlist')
+                field: symbol
+              config:
+                severity: warn
+      - name: open_price
+        description: Opening price in dollars per share, as traded (unadjusted for splits).
+      - name: high_price
+        description: Highest price in dollars per share, as traded.
+      - name: low_price
+        description: Lowest price in dollars per share, as traded.
+      - name: close_price
+        description: Official closing price in dollars per share, as traded (unadjusted for splits), strictly positive.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+      - name: volume
+        description: Shares traded that session.
+      - name: source
+        description: Vendor feed of the bar, dolthub_stocks.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [dolthub_stocks]
+      - name: bronze_ingested_at
+        description: UTC instant the bronze slice holding this row was written.

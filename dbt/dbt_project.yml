@@ -12,18 +12,26 @@ seed-paths: ["seeds"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
 target-path: target
+packages-install-path: "{{ env_var('DBT_PACKAGES_INSTALL_PATH', 'dbt_packages') }}"
 clean-targets:
   - target
   - dbt_packages
+
+# Bronze views are registered once per invocation, pinned to one Iceberg snapshot (ADR 0006).
+on-run-start:
+  - "{{ register_bronze() }}"
 
 models:
   oap:
     staging:
       +materialized: view
-      +schema: staging
+      +schema: silver
+    intermediate:
+      +materialized: view
+      +schema: silver
     marts:
       +materialized: table
-      +schema: marts
+      +schema: gold
 
 seeds:
   oap:

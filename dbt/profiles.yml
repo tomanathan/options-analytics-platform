@@ -9,6 +9,10 @@ oap:
       type: duckdb
       path: "{{ env_var('OAP_DUCKDB_PATH', '.dbt-local/oap.duckdb') }}"
       threads: 4
+      # The bronze hook loads the iceberg, avro and sqlite extensions from here; the Airflow
+      # image bakes them into /opt/duckdb-extensions so a DAG run needs no network.
+      settings:
+        extension_directory: "{{ env_var('OAP_DUCKDB_EXTENSION_DIR', '~/.duckdb/extensions') }}"
     prod:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
