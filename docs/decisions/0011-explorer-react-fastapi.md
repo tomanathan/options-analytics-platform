@@ -27,6 +27,10 @@ Measurements on the real file decided the details. A session has at most 266 quo
 
 **Map choice is `auto`, and a response says when it looked ahead.** The production map is fitted on every settled prediction, so showing history through it is in-sample (ADR 0010). `auto` therefore uses `production` for the latest session and the walk-forward map `fold_<year>` for any earlier one; `production` and `walk_forward` force either. A response carries `map_id`, `map_is_identity` (the 2020 burn-in map is the identity) and `look_ahead`, which is true when the map's latest training expiration is after the session, so the app can label an in-sample view.
 
+**`look_ahead` compares the map's training window with the session.** `look_ahead` is true when the map's latest training expiration is after the session date. An outcome that settles on the session itself was known at the close the quotes were taken, so a map trained through that expiration is not looking ahead for that session, and the flag stays false.
+
+**`auto` keys off the global latest session.** The production map is defined on the global sample: it is fitted on every settled prediction across all underlyings, not per underlying. `auto` therefore compares the session with the latest session of the whole table, not of the selected underlying, so any earlier session is shown through the walk-forward map.
+
 **Non-finite numbers are null.** `gold.spread_scores` holds extreme values: `expected_roc` reaches 4.5e13 across all rows, and `annualised_roc` can be infinite. Response models serialise with `ser_json_inf_nan="null"` and type any float that can be non-finite as `float | None`. The spread list is eligible-only by default, which keeps `expected_roc` between 0.002 and 0.37, and the scatter clamps the rest.
 
 ## Consequences
