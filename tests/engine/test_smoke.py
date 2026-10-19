@@ -4,11 +4,19 @@ import pytest
 
 import oap
 import oap.engine
+import oap.engine.black_scholes
+import oap.engine.calibration
+import oap.engine.conventions
+import oap.engine.errors
 import oap.engine.implied_distribution
 import oap.engine.spread_scoring
 
 ENGINE_MODULES = [
     oap.engine,
+    oap.engine.black_scholes,
+    oap.engine.calibration,
+    oap.engine.conventions,
+    oap.engine.errors,
     oap.engine.implied_distribution,
     oap.engine.spread_scoring,
 ]

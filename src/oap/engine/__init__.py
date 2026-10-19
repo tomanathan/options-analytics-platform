@@ -11,3 +11,7 @@ Units are fixed across the package:
 * Interest rates are decimal annual percentage yields (0.036 means 3.6% APY).
 * Probabilities are decimals in [0, 1].
 """
+
+from oap.engine.errors import EngineError, EngineInputError
+
+__all__ = ["EngineError", "EngineInputError"]
