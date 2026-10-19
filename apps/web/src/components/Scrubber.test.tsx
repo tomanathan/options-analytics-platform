@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { Speed } from './Scrubber';
@@ -66,6 +66,26 @@ describe('Scrubber', () => {
   it('labels the play button by state and reports it as pressed', () => {
     setup({ playing: true });
     expect(screen.getByRole('button', { name: 'Pause' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('calls the play button Replay when the last session is on screen', () => {
+    setup({ atEnd: true });
+    expect(screen.getByRole('button', { name: 'Replay' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull();
+  });
+
+  it('keeps the transport apart from Speed and Stride', () => {
+    setup();
+    const transport = document.querySelector('.scrubber__transport') as HTMLElement;
+    const options = document.querySelector('.scrubber__options') as HTMLElement;
+    expect(within(transport).getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    expect(within(transport).getByRole('button', { name: 'Previous session' })).toBeInTheDocument();
+    expect(within(transport).getByRole('button', { name: 'Next session' })).toBeInTheDocument();
+    expect(within(transport).getByRole('slider', { name: 'Session date' })).toBeInTheDocument();
+    expect(within(transport).queryByRole('radiogroup', { name: 'Speed' })).toBeNull();
+    expect(within(transport).queryByRole('radiogroup', { name: 'Stride' })).toBeNull();
+    expect(within(options).getByRole('radiogroup', { name: 'Speed' })).toBeInTheDocument();
+    expect(within(options).getByRole('radiogroup', { name: 'Stride' })).toBeInTheDocument();
   });
 
   it('steps with the buttons', async () => {

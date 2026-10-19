@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { DistributionResponse } from '../api/types';
 import { ordColor } from '../lib/colors';
 import { CdfOverlay, CdfPanel } from './CdfPanel';
-import { xDomainFor } from './options';
+import { overlayDomain, xDomainFor } from './options';
 import type { Layout, PlotSeries, View, XMode } from './options';
 
 /** The page shows at most this many expirations; the grid always has this many slots. */
@@ -49,7 +49,7 @@ export function CdfSmallMultiples({
         series={series}
         view={view}
         xMode={xMode}
-        xDomain={xDomain}
+        xDomain={overlayDomain(series, xMode)}
         width={overlayWidth}
         height={Math.round(Math.min(420, Math.max(300, overlayWidth * 0.5)))}
         refreshing={refreshing}

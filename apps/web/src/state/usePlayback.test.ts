@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PREFETCH_AHEAD, usePlayback } from './usePlayback';
+import { PREFETCH_AHEAD, REPLAY_FRAMES, usePlayback } from './usePlayback';
 
 interface Harness {
   length?: number;
@@ -88,11 +88,33 @@ describe('usePlayback', () => {
     expect(result.current.playing).toBe(false);
   });
 
-  it('starts over when played from the last frame', () => {
+  it('replays only the last 60 frames when played from the last frame', () => {
+    const { result } = renderHook(() => useHarness({ length: 500, start: 499 }));
+    expect(result.current.atEnd).toBe(true);
+    act(() => result.current.play());
+    expect(result.current.index).toBe(499 - (REPLAY_FRAMES - 1));
+    expect(result.current.playing).toBe(true);
+    expect(result.current.atEnd).toBe(false);
+  });
+
+  it('spaces the replay window by the stride', () => {
+    const { result } = renderHook(() => useHarness({ length: 500, start: 499, stride: 5 }));
+    act(() => result.current.play());
+    expect(result.current.index).toBe(499 - 59 * 5);
+  });
+
+  it('replays from the first frame when the list is shorter than the window', () => {
     const { result } = renderHook(() => useHarness({ length: 5, start: 4 }));
     act(() => result.current.play());
     expect(result.current.index).toBe(0);
     expect(result.current.playing).toBe(true);
+  });
+
+  it('does not rewind when played from the middle', () => {
+    const { result } = renderHook(() => useHarness({ length: 500, start: 100 }));
+    expect(result.current.atEnd).toBe(false);
+    act(() => result.current.play());
+    expect(result.current.index).toBe(100);
   });
 
   it('runs at the requested frame rate', () => {

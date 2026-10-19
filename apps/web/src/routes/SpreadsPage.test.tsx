@@ -119,6 +119,24 @@ describe('SpreadsPage', () => {
     expect(within(panel).getByText(/P\(loss\) 41\.9%/)).toBeInTheDocument();
   });
 
+  it('shows interest per contract and labels the units of the money tiles', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText(/of 9 spreads/);
+    await user.click(screen.getByRole('row', { name: /TSLA.*370\/367\.5/ }));
+    const panel = screen.getByRole('region', { name: 'Spread detail' });
+    await within(panel).findByText('Breakeven');
+
+    const tile = (label: string) => within(panel).getByText(label).closest('.stat') as HTMLElement;
+    // 0.0017 $/sh is 17 cents per 100-share contract, not "$0.00".
+    expect(tile('Interest')).toHaveTextContent('$0.17');
+    expect(tile('Interest')).toHaveTextContent('per contract');
+    expect(tile('Interest')).not.toHaveTextContent('$0.00');
+    ['Credit', 'Max loss', 'Breakeven'].forEach((label) => {
+      expect(tile(label)).toHaveTextContent('$/sh');
+    });
+  });
+
   it('restores a selection from the URL', async () => {
     renderPage('/spreads?sel=MSFT%7C2026-10-16%7C510%7C505');
     expect(

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export const BASE_FPS = 4;
 /** How many frames ahead of the current one are prefetched while playing. */
 export const PREFETCH_AHEAD = 6;
+/** Frames shown by a replay: pressing Play at the end rewinds this far, not to the first frame. */
+export const REPLAY_FRAMES = 60;
 
 export interface PlaybackOptions {
   /** Number of frames (positions) in the strided list. */
@@ -22,6 +24,8 @@ export interface PlaybackOptions {
 
 export interface Playback {
   playing: boolean;
+  /** True when the current frame is the last one, so the next Play is a replay. */
+  atEnd: boolean;
   play: () => void;
   pause: () => void;
   toggle: () => void;
@@ -30,6 +34,8 @@ export interface Playback {
 /**
  * Timer-driven playback over a frame list. It advances only when the next frame is ready (no
  * blank frames), stops at the end instead of looping, and prefetches ahead while playing.
+ * Play at the end replays the last `REPLAY_FRAMES` frames (at the current stride); reaching an
+ * earlier date is the slider's job.
  */
 export function usePlayback(options: PlaybackOptions): Playback {
   const { fps } = options;
@@ -72,7 +78,10 @@ export function usePlayback(options: PlaybackOptions): Playback {
   const play = useCallback(() => {
     const { index: at, length: total, setIndex } = latest.current;
     if (total === 0) return;
-    if (at >= total - 1) setIndex(0);
+    if (at >= total - 1) {
+      const step = Math.max(1, latest.current.stride);
+      setIndex(Math.max(0, total - 1 - (REPLAY_FRAMES - 1) * step));
+    }
     setPlaying(true);
   }, []);
   const pause = useCallback(() => setPlaying(false), []);
@@ -81,7 +90,8 @@ export function usePlayback(options: PlaybackOptions): Playback {
     else play();
   }, [playing, play]);
 
-  return { playing, play, pause, toggle };
+  const atEnd = length > 0 && index >= length - 1;
+  return { playing, atEnd, play, pause, toggle };
 }
 
 /** True when the user prefers reduced motion; playback speed is capped at 1x then. */

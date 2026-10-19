@@ -37,6 +37,11 @@ import type { MapChoice } from '../api/types';
 import { DEFAULT_UNDERLYING, useLandscapeParams } from '../state/useLandscapeParams';
 import { BASE_FPS, usePlayback, usePrefersReducedMotion } from '../state/usePlayback';
 
+/** Pixels reserved by each chart block until its width is measured (see `Measured`). */
+const CDF_MIN_HEIGHT = 340;
+const SMILE_HEIGHT = 260;
+const SPARKLINES_HEIGHT = 56;
+
 const MAP_OPTIONS = [
   { value: 'auto', label: 'Auto' },
   { value: 'production', label: 'Production' },
@@ -233,21 +238,24 @@ export default function LandscapePage() {
 
       {dates && dates.length > 0 && sessions && (
         <section className="card playbar" aria-label="Session scrubber">
-          <Measured>
-            {(width) => (
-              <SessionSparklines
-                sessions={sessions}
-                index={Math.max(0, shownIndex)}
-                width={width}
-                onSeek={seek}
-              />
-            )}
-          </Measured>
+          <div className="playbar__context">
+            <Measured minHeight={SPARKLINES_HEIGHT}>
+              {(width) => (
+                <SessionSparklines
+                  sessions={sessions}
+                  index={Math.max(0, shownIndex)}
+                  width={width}
+                  onSeek={seek}
+                />
+              )}
+            </Measured>
+          </div>
           <Scrubber
             dates={dates}
             index={Math.max(0, shownIndex)}
             onSeek={seek}
             playing={playback.playing}
+            atEnd={playback.atEnd}
             onToggle={onToggle}
             onStep={(delta) => seek(shownIndex + delta)}
             speed={effectiveSpeed as Speed}
@@ -265,7 +273,7 @@ export default function LandscapePage() {
             <h2>Implied CDF and density</h2>
             <Legend items={legend} />
           </div>
-          <Measured>
+          <Measured minHeight={CDF_MIN_HEIGHT}>
             {(width) => (
               <CdfSmallMultiples
                 data={dist}
@@ -288,7 +296,7 @@ export default function LandscapePage() {
               {heatmapVariant === 'raw' ? 'Raw' : 'Calibrated'} · {shortDate(heatmap.data.session)}
             </span>
           </div>
-          <Measured>
+          <Measured minHeight={heatmapHeight(heatmap.data.rows.length)}>
             {(width) => (
               <ProbabilityHeatmap
                 data={heatmap.data}
@@ -308,7 +316,7 @@ export default function LandscapePage() {
             <h2>Implied volatility smile</h2>
             <span className="muted">Out-of-the-money quotes</span>
           </div>
-          <Measured>
+          <Measured minHeight={SMILE_HEIGHT}>
             {(width) => (
               <SmileChart
                 expiries={chainData.expirations}
@@ -316,7 +324,7 @@ export default function LandscapePage() {
                 xMode={xMode}
                 xDomain={xDomain}
                 width={width}
-                height={260}
+                height={SMILE_HEIGHT}
                 refreshing={refreshing}
               />
             )}
