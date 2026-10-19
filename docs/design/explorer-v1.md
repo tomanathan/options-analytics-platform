@@ -7,7 +7,7 @@ I checked this against the code and the real data in `.dbt-local/oap.duckdb`, op
 - **The engine is fast.** `chain_cdf` takes about 7 ms for 3 expirations.
 - **Calibrated curves have too many knots to send.** `apply_calibration` returns about 400 knots per expiry, because the production map has 368 knots. The API must evaluate the calibrated CDF at the raw knots and never send the composed knot set.
 - **Loading one underlying is cheap.** All of one underlying's quotes (about 170 k rows, about 22 MB in pandas) load in 36 ms warm and 1.1 s cold. Opening and closing a read-only connection costs about 9 ms.
-- **`gold.spread_scores` has extreme values.** It holds 3,253 rows, 1,141 of them eligible, for session 2026-10-02. `expected_roc` reaches 4.5e13 across all rows but stays within 0.002 to 0.37 for eligible rows. 227 rows have ROC above 100%. `annualised_roc` can be infinite.
+- **`gold.spread_scores` has extreme values.** It holds 3,253 rows, 1,141 of them eligible, for session 2026-10-02. `expected_roc` (return on max loss; collateral equals max loss) reaches 4.5e13 across all rows but stays within 0.002 to 0.37 for eligible rows. 227 rows have a return on max loss above 100%. `annualised_roc` can be infinite.
 - **Calibration maps.** `gold.calibration_map` holds `fold_2020` (identity, n=0), `fold_2021` to `fold_2026`, and `production` (n=487,352). The overall metrics are raw versus calibrated: ECE 0.0352 to 0.0167, Brier 0.1267 to 0.1293.
 - **Locked versions and tools.** DuckDB is 1.5.6 (`docker/requirements-dbt.txt` pins the same) and pydantic is 2.13.5. FastAPI and uvicorn are not in the lock yet. Node on this laptop is v24.
 - **The writer lock is the main risk.** Any read-only connection the API holds blocks the dbt writer, and `dbt_build` has `retries=1` with a 2-minute delay. So the API opens the database rarely and briefly, and serves from memory.
@@ -297,20 +297,20 @@ These are the reference palette's dark steps. I ran the validator: the 3 categor
 - `CalibrationBadge` on this page reads: "ECE 3.5%→1.7% · Brier 0.127→0.129 (out of sample, 2021+)", with the confidence intervals in the tooltip.
 
 **Scatter:**
-- x = `prob_profit` (calibrated, %); y = `expected_roc` (%, holding period).
+- x = `prob_profit` (calibrated, %); y = `expected_roc` (expected return on max loss, %, holding period; the axis label reads "Expected return on max loss, holding period").
 - When eligible-only is off, clamp y to [−100%, +100%]. Pin points beyond that at the edge with a ▲ or ▼ marker and the caption "n points beyond ±100% pinned".
 - Size = credit: a sqrt scale from radius 4 to 12 px over [0, p95 credit].
 - **Colour.** Highlighted underlyings use `--series-1/2/3` with the symbols circle, square and triangle. The slot is assigned in the order the underlying was added and kept while it stays highlighted. All other points are `--ink-muted` at 0.35 opacity and appear as "Other" in the legend.
 - Reference lines: a dashed vertical line at `min_prob_profit` labelled "eligibility POP ≥ 50%", and y = 0.
-- **Hover.** `@visx/voronoi` picks the nearest point within 24 px. The tooltip shows values first ("POP 70.0% · ROC 12.9%") and then "MSFT 512.5/507.5 · Oct 16 · credit $1.90".
+- **Hover.** `@visx/voronoi` picks the nearest point within 24 px. The tooltip shows values first ("POP 70.0% · E[R/max loss] 12.9%") and then "MSFT 512.5/507.5 · Oct 16 · credit $1.90".
 - **Click** selects the spread (`sel`). The selected point gets a 2 px surface ring and an ink ring.
 
 **Table:**
-- Columns: Rank, Underlying, Exp (DTE), Short/Long, Width, Credit, Natural, POP cal, POP raw, P(max loss), E[ROC], Ann. ROC, Kelly, Flags.
+- Columns: Rank, Underlying, Exp (DTE), Short/Long, Width, Credit, Natural, POP cal, POP raw, P(max loss), E[R/max loss], Ann. R/max loss, Kelly, Flags.
 - Sorted by rank by default. Paginated 50 per page. Selecting a row is the same as clicking its point.
 
 **Detail panel** (`useSpreadDetail(sel)`):
-- **Stat tiles:** Credit (and natural), Max loss, Breakeven, POP cal (with raw), P(max loss), E[ROC] (with raw), Interest, Kelly.
+- **Stat tiles:** Credit (and natural), Max loss, Breakeven, POP cal (with raw), P(max loss), Exp. return on max loss (with raw), Interest, Kelly.
 - **`PayoffChart`:**
   - Top: payoff at expiry ($/sh) as a 2 px `--ink-1` line with a zero baseline, and markers for long, short and breakeven.
   - Bottom: the calibrated density, filled `--series-2` at 0.30 left of the breakeven and `--series-1` at 0.30 right of it, with labels "P(loss) 41.9%" and "P(profit) 58.1%". The raw density is a dashed outline, the close is marked "S", and the forward "F".
@@ -443,7 +443,7 @@ serve: web-build ## One process: built explorer and API on :8000
    - **/landscape:** SPY at 2026-10-02 shows 4 CDF panels with F and S markers and chips, the heatmap, the smile and the straddle table.
    - **Playback:** Play from 2020-02-03 with monthly stride animates smoothly, and the network panel shows prefetches ahead of the frame.
    - **Map toggle:** switching it changes `map_id`.
-   - **/spreads:** shows 1,141 eligible rows by default. Rank 1 is "TSLA 370/367.5", POP 58.1% (raw 51.1%), E[ROC] 14.38%. Its detail shows the payoff over the density.
+   - **/spreads:** shows 1,141 eligible rows by default. Rank 1 is "TSLA 370/367.5", POP 58.1% (raw 51.1%), E[R/max loss] 14.38%. Its detail shows the payoff over the density.
 4. **Busy path.** `curl -i localhost:8000/api/underlyings` while `make dbt-build-local` runs returns 503 with `Retry-After`. A warm session returns 200 with `X-OAP-Data-Stale: 1`. After the build finishes, data refreshes on its own.
 5. `make serve`: http://localhost:8000/spreads loads directly through the SPA fallback.
 6. The integrator captures `docs/img/explorer.png` (landscape at 1440 px wide) and commits it.
@@ -452,7 +452,7 @@ serve: web-build ## One process: built explorer and API on :8000
 - **DuckDB lock in both directions.** A held read connection blocks the dbt writer, so connections are opened per load, closed at once and serialised. After the first load per underlying, scrubbing reads memory only. If the writer collides anyway, `dbt_build` has `retries=1`. Locks across the Colima bind mount may not propagate, so test on the host and document "pause playback during host builds".
 - **Calibrated knot blow-up.** About 400 knots per expiry if sent raw, so always evaluate at the raw knots.
 - **Non-finite JSON.** Use `ser_json_inf_nan="null"` and `float | None`. The test with an infinite `annualised_roc` covers it.
-- **Scatter outliers.** ROC reaches 4.5e13, handled by eligible-only by default plus y-clamping with pinned markers.
+- **Scatter outliers.** The return on max loss reaches 4.5e13, handled by eligible-only by default plus y-clamping with pinned markers.
 - **jsdom.** `ResizeObserver`, `matchMedia` and `getComputedTextLength` are stubbed. Charts take explicit sizes in tests, and there is no canvas.
 - **CORS in dev.** Not needed: Vite proxies `/api`. The CORS middleware is opt-in through `OAP_API_CORS_ORIGINS`.
 - **Large sessions.** The maximum is 266 quotes; `limit` caps spreads at 5000 rows, and gzip is on.

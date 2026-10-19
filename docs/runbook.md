@@ -519,7 +519,7 @@ uv run dbt build --project-dir dbt --profiles-dir dbt --target prod
 
 ## Explorer
 
-The explorer is a FastAPI service (`src/oap/api/`) and a React app (`apps/web/`) over the gold tables of `.dbt-local/oap.duckdb`. It is a host process, not part of the Compose stack, and it binds `127.0.0.1` only. The design is in [ADR 0011](decisions/0011-explorer-react-fastapi.md) and [design/explorer-v1.md](design/explorer-v1.md).
+The explorer is a FastAPI service (`src/oap/api/`) and a React app (`apps/web/`) over the gold tables of `.dbt-local/oap.duckdb`. It is a host process, not part of the Compose stack, and it binds `127.0.0.1` only. The spread table and scatter show return on max loss (labelled "E[R/max loss]" and "Ann. R/max loss"); it is the gold columns `expected_roc` and `annualised_roc`, and the collateral held equals the max loss. The design is in [ADR 0011](decisions/0011-explorer-react-fastapi.md) and [design/explorer-v1.md](design/explorer-v1.md).
 
 ### Start and stop
 

@@ -5,7 +5,7 @@ Date: 2026-10-19
 
 ## Context
 
-The spread engine (`src/oap/engine/`) turns option mids into a distribution of the price at expiry and scores spreads on return on collateral. Its inputs come from three places that each have their own habits. The gold table `fct_option_quote` carries time to expiry as calendar days over 365. The cash rate the score uses is the figure a broker publishes: Robinhood Gold's 3.6% is an annual percentage yield. Textbook Black-Scholes uses a continuously compounded rate and a year of whatever length suits the author.
+The spread engine (`src/oap/engine/`) turns option mids into a distribution of the price at expiry and scores spreads on return on max loss (`expected_return_on_collateral`; the collateral held equals the max loss). Its inputs come from three places that each have their own habits. The gold table `fct_option_quote` carries time to expiry as calendar days over 365. The cash rate the score uses is the figure a broker publishes: Robinhood Gold's 3.6% is an annual percentage yield. Textbook Black-Scholes uses a continuously compounded rate and a year of whatever length suits the author.
 
 A unit mismatch here does not raise an error. It shifts a probability by a point or two, and a ranking built on those probabilities is wrong in a way no test on the code alone will show. The engine also runs inside the Airflow image, where every added dependency has to survive the lock-based install and the `pip check` gate (ADR 0006).
 

@@ -1,6 +1,6 @@
 # options-analytics-platform
 
-A data platform that turns free options-chain history into a ranked list of put credit spreads. Chains and daily prices land in Apache Iceberg tables, dbt builds silver and gold tables on DuckDB, and a walk-forward backtest checks the market-implied probabilities against what happened since 2020 before it scores the latest session's spreads. The project exists to build that path end to end, from vendor data to a ranked decision, with a quality gate between every layer.
+A data platform that turns free options-chain history into a ranked list of put credit spreads, ordered by expected return on max loss. Chains and daily prices land in Apache Iceberg tables, dbt builds silver and gold tables on DuckDB, and a walk-forward backtest checks the market-implied probabilities against what happened since 2020 before it scores the latest session's spreads. The project exists to build that path end to end, from vendor data to a ranked decision, with a quality gate between every layer.
 
 ```
 DoltHub chains ─┐
@@ -49,7 +49,7 @@ make report                          # after score_spreads finishes: docs/result
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
 
-[docs/results.md](docs/results.md) has the coverage, exclusions, metrics by segment, the top spreads and the caveats. To read the reliability diagram, compare each series with the dashed diagonal: a point on it means events of that predicted probability happened that often. The calibrated series should lie closer to the diagonal than the risk-neutral one on out-of-sample years (2021 onward), and the lower panel shows how many predictions each bin holds.
+Spreads are ranked by calibrated annualised return on max loss. The collateral held for a cash-secured put credit spread equals its max loss, so this is the return on collateral under its other name; the code keeps the identifiers `expected_roc` and `annualised_roc`. [docs/results.md](docs/results.md) has the coverage, exclusions, metrics by segment, the top spreads and the caveats. To read the reliability diagram, compare each series with the dashed diagonal: a point on it means events of that predicted probability happened that often. The calibrated series should lie closer to the diagonal than the risk-neutral one on out-of-sample years (2021 onward), and the lower panel shows how many predictions each bin holds.
 
 ## Explorer
 
@@ -58,7 +58,7 @@ A local web app over the same gold tables. It shows what the options market impl
 ![Explorer](docs/img/explorer.png)
 
 - **Landscape** (`/landscape`): for one underlying and session, the risk-neutral CDF and density of each expiration (raw and calibrated), a heatmap of P(S < K) over strikes 80% to 120% of the close, the volatility smile and the option chain. A scrubber moves through every session; play animates it. The calibration map is `auto` by default (the production map for the latest session, the walk-forward map of that year for history), and a chip says when a map was fitted on outcomes that settle after the session.
-- **Spreads** (`/spreads`): the scored put credit spreads of the latest session, as a scatter of calibrated probability of profit against expected return, a sortable table, and for one spread its payoff and the calibrated density behind it. Eligible spreads only by default.
+- **Spreads** (`/spreads`): the scored put credit spreads of the latest session, as a scatter of calibrated probability of profit against expected return on max loss, a sortable table, and for one spread its payoff and the calibrated density behind it. Eligible spreads only by default.
 
 ```bash
 make app      # API on http://127.0.0.1:8000 and Vite on http://localhost:5173, with reload
@@ -72,7 +72,7 @@ The API (`src/oap/api/`, FastAPI) reads `.dbt-local/oap.duckdb` read-only and se
 
 - **Medallion on Iceberg.** Two bronze tables hold 1,811,734 option rows and 18,190 price rows for 11 underlyings over 1,194 trading days (2020-01-06 to 2026-10-02). Every write replaces its (trade_date, source) slice and skips unchanged content, so a re-run commits nothing and adds no snapshot.
 - **dbt silver and gold.** 17 models (5 silver, 5 gold, 7 analytics) with 109 schema tests and 8 singular tests. Models read Iceberg through DuckDB with an `on-run-start` hook that pins one table version per run; an incremental gold fact is guarded by a row-count and checksum drift gate.
-- **Pure numpy options engine.** Black-Scholes, vectorised implied volatility, a risk-neutral CDF from vertical spreads and spread scoring, with no scipy and units in every docstring. `hypothesis` property tests include recovering a known lognormal from synthetic chains.
+- **Pure numpy options engine.** Black-Scholes, vectorised implied volatility, a risk-neutral CDF from vertical spreads and spread scoring on expected return on max loss, with no scipy and units in every docstring. `hypothesis` property tests include recovering a known lognormal from synthetic chains.
 - **Walk-forward calibration with leakage gates.** A yearly isotonic map is fitted only on expirations before 1 January of the year it scores; a singular test checks that in SQL. Metrics carry a cluster-bootstrap interval over expiration dates, and six exclusion rules count what they drop.
 - **Airflow 2.11 orchestration.** Eight DAGs chained by Datasets (bronze, `dbt_build`, `score_spreads`), one-slot pools for the two single-writer stores, and fail-fast on errors a retry cannot fix. The daily gate runs before the write, so a failed gate publishes nothing. The full backfills ran through Airflow with no task failures on the final runs.
 - **Lock-based image policy.** The Airflow image installs from `uv.lock` and a `pip check` gate; `make lock-check` fails when the exported requirements drift from the lock.
@@ -140,7 +140,7 @@ Outside `make check`: `make dbt-build-local` builds silver, gold and the analyti
 | 0 | Scaffolding: tooling, CI, Airflow stack, dbt skeleton, Terraform. | Done |
 | 1 | Ingest DoltHub history, DoltHub daily prices and daily Alpaca snapshots into Iceberg bronze, with a quality gate. | Done. Chains and prices are fully backfilled; the Alpaca snapshot waits for a key. |
 | 2 | dbt silver and gold models with tests as the silver-to-gold gate, scheduled from the bronze Datasets. | Done on DuckDB. Snowflake is not provisioned and no model has run on it. |
-| 3 | Spread engine: implied distribution, walk-forward calibration against 2020+ outcomes, expected return on collateral, report. | Done on DuckDB, as dbt Python models over `oap.analytics`, scheduled from the gold Dataset. |
+| 3 | Spread engine: implied distribution, walk-forward calibration against 2020+ outcomes, expected return on max loss, report. | Done on DuckDB, as dbt Python models over `oap.analytics`, scheduled from the gold Dataset. |
 | 4 | A per-date risk-free rate from FRED DTB3 in bronze, and the analytics models as Snowpark Python models. | Not started. The constant 4.5% APY and DuckDB-only models stay until then. |
 
 Provisioning the cloud accounts (AWS for S3 and Glue, Snowflake, Alpaca) is not scheduled. Intraday streaming (a Redpanda service is stubbed out, commented, in `docker-compose.yml`) has no phase yet.

@@ -31,7 +31,7 @@ Measurements on the real file decided the details. A session has at most 266 quo
 
 **`auto` keys off the global latest session.** The production map is defined on the global sample: it is fitted on every settled prediction across all underlyings, not per underlying. `auto` therefore compares the session with the latest session of the whole table, not of the selected underlying, so any earlier session is shown through the walk-forward map.
 
-**Non-finite numbers are null.** `gold.spread_scores` holds extreme values: `expected_roc` reaches 4.5e13 across all rows, and `annualised_roc` can be infinite. Response models serialise with `ser_json_inf_nan="null"` and type any float that can be non-finite as `float | None`. The spread list is eligible-only by default, which keeps `expected_roc` between 0.002 and 0.37, and the scatter clamps the rest.
+**Non-finite numbers are null.** `gold.spread_scores` holds extreme values: `expected_roc` (return on max loss; collateral equals max loss) reaches 4.5e13 across all rows, and `annualised_roc` can be infinite. The explorer labels these "E[R/max loss]" and "Ann. R/max loss"; the field names are unchanged. Response models serialise with `ser_json_inf_nan="null"` and type any float that can be non-finite as `float | None`. The spread list is eligible-only by default, which keeps `expected_roc` between 0.002 and 0.37, and the scatter clamps the rest.
 
 ## Consequences
 

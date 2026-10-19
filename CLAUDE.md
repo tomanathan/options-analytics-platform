@@ -16,6 +16,7 @@ Status: Phases 0-3 built and verified locally (two bronze tables, eight DAGs, db
 
 ## Conventions
 - Python 3.12, `uv`, `ruff` (Google docstrings), `mypy --strict`, `pytest` + `hypothesis`.
+- Spread returns are presented as return on max loss (collateral equals max loss for a cash-secured spread). Identifiers (`expected_roc`, `annualised_roc`, `expected_return_on_collateral`, API fields, dbt columns) keep their names; labels, docs and report prose say "return on max loss".
 - Engine code is pure, no I/O. Every docstring states units: dollars per share, vol as decimal, time in years (ACT/365), rates as decimal APY (ADR 0009).
 - Analytics models are thin wrappers over tested pure functions in `oap.analytics` (ADR 0010). Calibration is walk-forward: the map for year Y trains only on expirations before 1 January of Y.
 - A new bronze table is a new `TableSpec`; write only through `write_partition` or `merge_into_slices` (ADR 0003). The quality gate runs before the write.
