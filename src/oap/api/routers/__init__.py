@@ -16,7 +16,12 @@ STALE_HEADER: Final = "X-OAP-Data-Stale"
 
 ERROR_RESPONSES: Final[dict[int | str, dict[str, Any]]] = {
     404: {"model": ErrorBody, "description": "Unknown underlying, session or spread."},
-    422: {"model": ErrorBody, "description": "A path or query parameter is invalid."},
+    422: {
+        "model": ErrorBody,
+        "description": "A path or query parameter is invalid (invalid), or the structures "
+        "calculator cannot answer: view_required, view_invalid, no_distribution or "
+        "no_implied_vol (see docs/runbook.md).",
+    },
     503: {
         "model": ErrorBody,
         "description": "The database is locked by a writer, missing, or lacks a gold table.",
