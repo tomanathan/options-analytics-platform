@@ -106,3 +106,16 @@ export function axisNumber(value: number): string {
   if (abs >= 1) return String(Number(value.toFixed(1)));
   return String(Number(value.toPrecision(2)));
 }
+
+/** A return per dollar of max loss as a multiple: 1.74 -> "1.74×", -0.5 -> "-0.50×". */
+export function multiple(value: number | null | undefined, digits = 2): string {
+  return finite(value) ? `${value.toFixed(digits)}×` : DASH;
+}
+
+/** A signed multiple, for differences of returns: 0.53 -> "+0.53×", -0.8 -> "-0.80×". */
+export function signedMultiple(value: number | null | undefined, digits = 2): string {
+  if (!finite(value)) return DASH;
+  const text = value.toFixed(digits);
+  if (Number(text) > 0) return `+${text}×`;
+  return Number(text) === 0 ? `${(0).toFixed(digits)}×` : `${text}×`;
+}

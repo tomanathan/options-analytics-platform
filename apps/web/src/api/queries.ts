@@ -8,10 +8,14 @@ import type {
   HeatmapResponse,
   IsoDate,
   MapChoice,
+  OutcomeMapQuery,
+  OutcomeMapResponse,
   SessionsResponse,
   SpreadDetail,
   SpreadQuery,
   SpreadsResponse,
+  StructureQuery,
+  StructuresResponse,
   UnderlyingsResponse,
 } from './types';
 
@@ -60,7 +64,42 @@ export const paths = {
   spreads: (query: SpreadQuery) => `/api/spreads?${spreadSearchParams(query).toString()}`,
   spread: (key: string) => `/api/spreads/${encodeURIComponent(key)}`,
   calibration: () => '/api/calibration/summary',
+  structures: (query: StructureQuery) =>
+    `/api/structures/${encodeURIComponent(query.symbol)}/${query.session}?${structureSearchParams(query).toString()}`,
+  outcomeMap: (query: OutcomeMapQuery) =>
+    `/api/structures/map?${outcomeMapSearchParams(query).toString()}`,
 };
+
+/** Rows of the "All qualifying structures" table the structures page asks for. */
+export const STRUCTURE_RANKING_LIMIT = 25;
+
+/** A preset wins over bounds; bounds go out only when no preset is chosen. */
+export function structureSearchParams(query: StructureQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  if (query.expiration) params.set('expiration', query.expiration);
+  if (query.preset !== null) {
+    params.set('preset', query.preset);
+  } else {
+    if (query.lo !== null) params.set('lo', String(query.lo));
+    if (query.hi !== null) params.set('hi', String(query.hi));
+    if (query.outside) params.set('outside', 'true');
+  }
+  params.set('fill', query.fill);
+  params.set('map', query.map);
+  params.set('min_pop_given', String(query.minPopGiven));
+  params.set('limit', String(STRUCTURE_RANKING_LIMIT));
+  return params;
+}
+
+export function outcomeMapSearchParams(query: OutcomeMapQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set('session', query.session);
+  params.set('target_dte', String(query.targetDte));
+  params.set('fill', query.fill);
+  params.set('map', query.map);
+  params.set('min_pop_given', String(query.minPopGiven));
+  return params;
+}
 
 export function spreadSearchParams(query: SpreadQuery): URLSearchParams {
   const params = new URLSearchParams();
@@ -89,6 +128,8 @@ export const qk = {
   spreads: (query: SpreadQuery) => ['spreads', query] as const,
   spread: (key: string) => ['spread', key] as const,
   calibration: () => ['calibration'] as const,
+  structures: (query: StructureQuery) => ['structures', query] as const,
+  outcomeMap: (query: OutcomeMapQuery) => ['outcome-map', query] as const,
 };
 
 /** Session data never changes for a given database signature, so it is never refetched. */
@@ -180,6 +221,26 @@ export function useCalibrationSummary() {
   return useQuery({
     queryKey: qk.calibration(),
     queryFn: ({ signal }) => fetchJson<CalibrationSummary>(paths.calibration(), signal),
+    staleTime: TABLE_STALE_TIME,
+  });
+}
+
+export function useStructures(query: StructureQuery | null) {
+  return useQuery({
+    queryKey: query === null ? (['structures', null] as const) : qk.structures(query),
+    queryFn: ({ signal }) =>
+      query === null
+        ? Promise.reject(new Error('No session yet'))
+        : fetchJson<StructuresResponse>(paths.structures(query), signal),
+    enabled: query !== null,
+    staleTime: TABLE_STALE_TIME,
+  });
+}
+
+export function useOutcomeMap(query: OutcomeMapQuery) {
+  return useQuery({
+    queryKey: qk.outcomeMap(query),
+    queryFn: ({ signal }) => fetchJson<OutcomeMapResponse>(paths.outcomeMap(query), signal),
     staleTime: TABLE_STALE_TIME,
   });
 }

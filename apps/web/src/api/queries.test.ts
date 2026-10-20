@@ -10,8 +10,9 @@ import {
   retryDelayMs,
   shouldRetry,
   spreadSearchParams,
+  structureSearchParams,
 } from './queries';
-import type { SpreadQuery } from './types';
+import type { SpreadQuery, StructureQuery } from './types';
 
 const busy = new ApiError(503, 'locked', 'database_busy', 15);
 
@@ -122,6 +123,67 @@ describe('query keys and paths', () => {
     expect(client.getQueryData(qk.spreads({ ...ENTRY_QUERY, sort: 'edge' }))).toBeUndefined();
     expect(client.getQueryData(qk.spreads({ ...ENTRY_QUERY, minEdgePct: 0.1 }))).toBeUndefined();
     expect(client.getQueryData(qk.spreads({ ...ENTRY_QUERY }))).toEqual({ rows: [] });
+  });
+});
+
+describe('structure paths', () => {
+  const query: StructureQuery = {
+    symbol: 'NVDA',
+    session: '2026-10-16',
+    expiration: null,
+    preset: 'up_moderate',
+    lo: null,
+    hi: null,
+    outside: false,
+    fill: 'natural',
+    map: 'auto',
+    minPopGiven: 0.5,
+  };
+
+  it('sends a preset and leaves the expiration to the API when none is chosen', () => {
+    const url = new URL(paths.structures(query), 'http://localhost');
+    expect(url.pathname).toBe('/api/structures/NVDA/2026-10-16');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      preset: 'up_moderate',
+      fill: 'natural',
+      map: 'auto',
+      min_pop_given: '0.5',
+      limit: '25',
+    });
+  });
+
+  it('sends the custom bounds, open ends left out, and outside only when set', () => {
+    const params = structureSearchParams({
+      ...query,
+      expiration: '2026-11-20',
+      preset: null,
+      lo: 1.05,
+      hi: null,
+      outside: true,
+    });
+    expect(params.get('expiration')).toBe('2026-11-20');
+    expect(params.has('preset')).toBe(false);
+    expect(params.get('lo')).toBe('1.05');
+    expect(params.has('hi')).toBe(false);
+    expect(params.get('outside')).toBe('true');
+  });
+
+  it('keys structure and map queries by every parameter', () => {
+    const client = new QueryClient();
+    client.setQueryData(qk.structures(query), { kinds: [] });
+    expect(client.getQueryData(qk.structures({ ...query }))).toEqual({ kinds: [] });
+    expect(client.getQueryData(qk.structures({ ...query, fill: 'mid' }))).toBeUndefined();
+    expect(
+      paths.outcomeMap({
+        session: 'latest',
+        targetDte: 35,
+        fill: 'mid',
+        map: 'production',
+        minPopGiven: 0.6,
+      }),
+    ).toBe(
+      '/api/structures/map?session=latest&target_dte=35&fill=mid&map=production&min_pop_given=0.6',
+    );
   });
 });
 
