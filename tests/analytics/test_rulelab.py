@@ -9,28 +9,29 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from oap.analytics.config import DEFAULT_CONFIG
+from oap.analytics.ranking import annualise, kelly_growth, rank_score
 from oap.analytics.rulelab import (
     BASELINE_RULE,
     IV_RANK_WINDOW,
     LAB_METRICS,
+    PREVIOUS_RULE,
     REGIME_COLUMNS,
     Rule,
-    annualise,
     apply_rule,
     atm_iv,
     describe_rule,
     evaluate,
     flatten,
     iv_features,
-    kelly_growth,
+    live_rule,
     pick_rules,
     prepare,
-    rank_score,
     regime_features,
     return_features,
     rule_fields,
     rule_grid,
 )
+from oap.analytics.scoring import ENTRY_RULE
 from oap.analytics.strategy import ELIGIBLE_ALL, SETTLED_COLUMNS, backtest_session, settle_trades
 from oap.engine.calibration import CalibrationMap
 from tests.analytics.frames import lognormal_quotes, outcomes_frame
@@ -122,7 +123,8 @@ def _keys(selected: pd.DataFrame) -> list[str]:
 
 
 def test_rule_ids_are_stable_short_and_unique() -> None:
-    assert BASELINE_RULE.rule_id == "rm-dany-many-all-any-e0-n10"
+    assert BASELINE_RULE.rule_id == "ps-d45_70-m95_100-all-any-e0-n10"
+    assert PREVIOUS_RULE.rule_id == "rm-dany-many-all-any-e0-n10"
     rule = Rule(
         rank_by="return_natural",
         dte_band=(21, 45),
@@ -134,8 +136,10 @@ def test_rule_ids_are_stable_short_and_unique() -> None:
     assert rule.rule_id == "rn-d21_45-m90_95-one-calm-e10-n10"
     assert Rule(**{**rule.__dict__}).rule_id == rule.rule_id
     assert len(GRID) == 1600
-    assert GRID[0] == BASELINE_RULE
+    assert GRID[:2] == (BASELINE_RULE, PREVIOUS_RULE)
     assert len({r.rule_id for r in GRID}) == 1600
+    assert {r.top_n for r in rule_grid(top_n=5)} == {5}
+    assert rule_grid(top_n=5)[0] == Rule(**{**BASELINE_RULE.__dict__, "top_n": 5})
     assert max(len(r.rule_id) for r in GRID) <= 40
 
 
@@ -156,6 +160,19 @@ def test_rules_reject_invalid_fields_and_describe_themselves() -> None:
     assert "20-session return is positive" in text
     assert text.endswith("top 5 per session, after every entry guard.")
     assert rule_fields(Rule(moneyness_band=(0.9, 0.95)))["moneyness_band"] == "0.90-0.95"
+
+
+def test_the_baseline_is_the_live_rule_of_the_config_in_the_same_words() -> None:
+    assert live_rule() == BASELINE_RULE
+    assert live_rule(top_n=3).top_n == 3
+    words = describe_rule(BASELINE_RULE)
+    assert "45 to 69 days to expiry" in words
+    assert "45 to 69 days to expiry" in ENTRY_RULE
+    assert "95% to below 100% of the close" in words
+    assert "95% to below 100% of the close" in ENTRY_RULE
+    shrunk = "annualised natural return with the POP shrunk halfway toward the market-implied POP"
+    assert shrunk in words
+    assert shrunk in ENTRY_RULE
 
 
 # --- rankings --------------------------------------------------------------------------------
@@ -205,7 +222,12 @@ def test_each_gate_keeps_only_matching_rows() -> None:
         _row(2, dte_days=30, short_moneyness=0.93),
         _row(3, dte_days=50, short_moneyness=0.97, credit_natural=0.85),
         _row(4, dte_days=21, short_moneyness=0.90, underlying="AAPL"),
-        _row(5, rank_entry=None),
+        _row(5, eligible=False),
+        _row(6, prob_profit=0.6),
+        _row(7, edge_natural=0.0),
+        _row(8, flags="sparse"),
+        _row(9, credit_natural=0.5),
+        _row(10, extrapolated=True),
     ]
     frame = _frame(rows)
     regime = _regime(
@@ -218,7 +240,7 @@ def test_each_gate_keeps_only_matching_rows() -> None:
     def keys(**fields: object) -> list[str]:
         return sorted(_keys(apply_rule(frame, regime, Rule(**fields))))  # type: ignore[arg-type]
 
-    assert keys() == ["k1", "k2", "k3", "k4"]  # k5 fails an entry guard
+    assert keys() == ["k1", "k2", "k3", "k4"]  # k5 to k10 each fail an entry guard
     assert keys(dte_band=(7, 21)) == ["k1"]
     assert keys(dte_band=(21, 45)) == ["k2", "k4"]
     assert keys(dte_band=(45, 70)) == ["k3"]
@@ -258,9 +280,42 @@ def test_one_per_underlying_expiry_keeps_the_best_ranked() -> None:
     assert _keys(apply_rule(frame, _regime(), Rule(top_n=2))) == ["k2", "k3", "k5"]
 
 
-def test_ties_break_by_rank_entry() -> None:
-    frame = _frame([_row(2, kelly_fraction=0.0), _row(1, kelly_fraction=0.0)])
-    assert _keys(apply_rule(frame, _regime(), Rule(rank_by="kelly_growth"))) == ["k1", "k2"]
+def test_ties_break_by_the_live_tiebreak_not_by_rank_entry() -> None:
+    # Both have no Kelly growth; the higher annualised return wins the tie whatever rank_entry says.
+    frame = _frame(
+        [
+            _row(1, kelly_fraction=0.0, annualised_roc=0.3),
+            _row(2, kelly_fraction=0.0, annualised_roc=0.6, rank_entry=None),
+        ]
+    )
+    assert _keys(apply_rule(frame, _regime(), Rule(rank_by="kelly_growth"))) == ["k2", "k1"]
+
+
+def _guarded(row: pd.Series) -> bool:
+    """The entry guard of one row, written out per row as a reference."""
+    blocking = {"left_tail_uncovered", "right_tail_uncovered", "sparse", "forward_unknown"}
+    return bool(
+        row["eligible"]
+        and row["credit"] >= DEFAULT_CONFIG.min_edge_credit
+        and row["credit_natural"] >= DEFAULT_CONFIG.min_natural_fraction * row["credit"]
+        and row["prob_profit"] >= DEFAULT_CONFIG.entry_min_pop
+        and row["edge_natural"] > 0
+        and not row["extrapolated"]
+        and not blocking & set(str(row["flags"]).split(","))
+    )
+
+
+def _tie_key(row: pd.Series) -> tuple[float, ...]:
+    """The live tie-break of one row, smallest first."""
+    rr = float(row["reward_to_risk"])
+    return (
+        -float(row["annualised_roc"]),
+        float(math.isnan(rr)),
+        0.0 if math.isnan(rr) else -rr,
+        -float(row["prob_profit"]),
+        -float(row["short_strike"]),
+        float(row["long_strike"]),
+    )
 
 
 def _slow_select(frame: pd.DataFrame, regime: pd.DataFrame, rule: Rule) -> list[str]:
@@ -272,7 +327,7 @@ def _slow_select(frame: pd.DataFrame, regime: pd.DataFrame, rule: Rule) -> list[
     for _, session in frame.groupby("trade_date", sort=True):
         candidates = []
         for i, (_, row) in enumerate(session.iterrows()):
-            if pd.isna(row["rank_entry"]):
+            if not _guarded(row):
                 continue
             if rule.dte_band and not rule.dte_band[0] <= row["dte_days"] < rule.dte_band[1]:
                 continue
@@ -293,7 +348,7 @@ def _slow_select(frame: pd.DataFrame, regime: pd.DataFrame, rule: Rule) -> list[
                 continue
             score = float(rank_score(session.iloc[[i]], rule.rank_by)[0])
             score = -math.inf if math.isnan(score) else score
-            candidates.append((-score, int(row["rank_entry"]), row))
+            candidates.append((-score, _tie_key(row), row))
         candidates.sort(key=lambda c: (c[0], c[1]))
         seen: set[tuple[str, pd.Timestamp]] = set()
         picked = 0
@@ -337,15 +392,13 @@ def _random_trades(seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
                 kelly_fraction=float(rng.choice([0.0, rng.uniform(0, 1)])),
                 annualised_roc=float(rng.choice([0.4, rng.normal(0.3, 0.5)])),
                 reward_to_risk=float(rng.choice([math.nan, rng.normal()])),
-                rank_entry=None if rng.uniform() < 0.15 else int(rng.integers(1, 10_000)),
+                eligible=bool(rng.uniform() >= 0.15),
+                flags=str(rng.choice(["", "", "", "sparse", "clipped"])),
+                short_strike=float(rng.choice([90.0, 92.0, 95.0])),
+                rank_entry=None,
             )
         )
     frame = _frame(rows)
-    # rank_entry is unique within a session in the live scores.
-    frame["rank_entry"] = frame["rank_entry"].where(
-        frame["rank_entry"].isna(), frame.index.to_series() + 1
-    )
-    frame["rank_entry"] = frame["rank_entry"].astype("Int64")
     regime_rows = []
     for underlying in ("SPY", "AAPL"):
         for day in days[:2]:
@@ -380,11 +433,11 @@ def test_the_baseline_rule_selects_the_live_entry_top10() -> None:
             lognormal_quotes(
                 "SPY", day, day + timedelta(days=d), 100.0, 0.25, rate, np.arange(80.0, 121.0)
             )
-            for d in (14, 28, 42)
+            for d in (14, 28, 49, 63)
         ]
         + [
             lognormal_quotes(
-                "AAPL", day, day + timedelta(days=28), 190.0, 0.3, rate, np.arange(160.0, 221.0, 2)
+                "AAPL", day, day + timedelta(days=56), 190.0, 0.3, rate, np.arange(160.0, 221.0, 2)
             )
         ],
         ignore_index=True,
@@ -544,7 +597,7 @@ def test_evaluate_on_a_hand_trade_set() -> None:
         ]
     )
     metrics = evaluate(
-        prepare(frame, _regime()), BASELINE_RULE, dev_years=YEARS_DEV, holdout_years=YEARS_HOLDOUT
+        prepare(frame, _regime()), PREVIOUS_RULE, dev_years=YEARS_DEV, holdout_years=YEARS_HOLDOUT
     )
     dev, hold = metrics["dev"], metrics["holdout"]
     assert set(dev) == set(LAB_METRICS)
@@ -577,17 +630,17 @@ def test_a_trades_year_decides_its_period_and_periods_must_not_overlap() -> None
         ]
     )
     prepared = prepare(frame, _regime())
-    metrics = evaluate(prepared, BASELINE_RULE, dev_years=YEARS_DEV, holdout_years=YEARS_HOLDOUT)
+    metrics = evaluate(prepared, PREVIOUS_RULE, dev_years=YEARS_DEV, holdout_years=YEARS_HOLDOUT)
     assert metrics["dev"]["n_trades"] == 1
     assert metrics["dev"]["mean_realised_return"] == pytest.approx(0.25)
     assert metrics["holdout"]["n_trades"] == 1
     assert metrics["holdout"]["mean_realised_return"] == pytest.approx(-0.25)
-    empty = evaluate(prepared, BASELINE_RULE, dev_years=[2019], holdout_years=[2030])
+    empty = evaluate(prepared, PREVIOUS_RULE, dev_years=[2019], holdout_years=[2030])
     assert empty["dev"]["n_trades"] == 0
     assert math.isnan(empty["dev"]["sharpe_per_trade"])
     assert math.isnan(empty["holdout"]["mean_realised_return_ci_low"])
     with pytest.raises(ValueError, match="overlap"):
-        evaluate(prepared, BASELINE_RULE, dev_years=[2024], holdout_years=[2024, 2025])
+        evaluate(prepared, PREVIOUS_RULE, dev_years=[2024], holdout_years=[2024, 2025])
 
 
 # --- choosing rules --------------------------------------------------------------------------

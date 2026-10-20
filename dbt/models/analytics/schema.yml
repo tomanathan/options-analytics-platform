@@ -428,9 +428,13 @@ models:
         data_tests:
           - unique
       - name: rank_entry
-        description: Position in the Top to enter ranking, 1 for the best, among guarded spreads with a calibrated probability of profit at or above the entry minimum, a positive natural edge, no extrapolation and no tail, sparse or unknown-forward flag, ordered by annualised return on max loss then reward to risk; null otherwise.
+        description: Position in the Top to enter ranking, 1 for the best, among guarded spreads (calibrated probability of profit at or above the entry minimum, a positive natural edge, no extrapolation and no tail, sparse or unknown-forward flag) with 45 to 69 days to expiry and a short strike from 95% to below 100% of the close, ordered by score_entry, ties by annualised return on max loss then reward to risk; null otherwise.
         data_tests:
           - unique
+      - name: score_entry
+        description: The entry ranking's score per year as a decimal, the annualised two-outcome return on max loss at the natural credit with the calibrated probability of profit shrunk halfway toward pop_implied; computed for every row, rank_entry orders the candidates by it.
+        data_tests:
+          - not_null
       - name: map_id
         description: Identifier of the calibration map used, production.
       - name: cash_apy

@@ -169,6 +169,7 @@ OUTPUT_SCHEMAS: Final[dict[str, dict[str, str]]] = {
         "rank_edge": "NULLABLE_BIGINT",
         "rank_rr": "NULLABLE_BIGINT",
         "rank_entry": "NULLABLE_BIGINT",
+        "score_entry": "DOUBLE",
         "map_id": "VARCHAR",
         "cash_apy": "DOUBLE",
         "risk_free_apy": "DOUBLE",

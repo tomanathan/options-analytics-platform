@@ -9,6 +9,7 @@ from oap.analytics.config import (
     DTE_BUCKETS,
     MONEYNESS_GRID,
     PRODUCTION_MAP_ID,
+    RANK_BYS,
     AnalyticsConfig,
     dte_bucket,
     fold_map_id,
@@ -69,6 +70,13 @@ def test_defaults() -> None:
         {"min_natural_fraction": -0.1},
         {"entry_min_pop": 1.1},
         {"entry_min_pop": -0.1},
+        {"entry_dte_band": (45, 45)},
+        {"entry_dte_band": (70, 45)},
+        {"entry_dte_band": (-1, 45)},
+        {"entry_moneyness_band": (0.0, 1.0)},
+        {"entry_moneyness_band": (1.0, 0.95)},
+        {"entry_moneyness_band": (0.95, 0.95)},
+        {"entry_rank": "mid"},
     ],
 )
 def test_invalid_config_raises(change: dict[str, Any]) -> None:
@@ -81,3 +89,18 @@ def test_edge_and_entry_guard_defaults() -> None:
     assert config.min_edge_credit == 0.25
     assert config.min_natural_fraction == 0.5
     assert config.entry_min_pop == 0.65
+
+
+def test_entry_rule_defaults_are_the_rule_lab_pick() -> None:
+    config = AnalyticsConfig()
+    assert config.entry_dte_band == (45, 70)
+    assert config.entry_moneyness_band == (0.95, 1.00)
+    assert config.entry_rank == "pop_shrunk_return"
+    assert config.entry_rank in RANK_BYS
+    assert len(set(RANK_BYS)) == 5
+
+
+def test_every_ranking_is_a_valid_entry_rank() -> None:
+    for rank_by in RANK_BYS:
+        assert AnalyticsConfig(entry_rank=rank_by).entry_rank == rank_by
+    assert AnalyticsConfig(entry_dte_band=(0, 1)).entry_dte_band == (0, 1)

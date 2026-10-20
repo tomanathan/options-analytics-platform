@@ -308,6 +308,11 @@ class SpreadRow(ApiModel):
     rank_entry: int | None = Field(
         description="1 is best in the Top to enter ranking (see entry_rule); null otherwise."
     )
+    score_entry: float | None = Field(
+        description="The entry ranking's score: annualised return on max loss at the natural "
+        "credit with the calibrated POP shrunk halfway toward pop_implied, a decimal per year; "
+        "rank_entry orders by it; null when not finite."
+    )
     extrapolated: bool = Field(description="True when the long strike is outside the CDF knots.")
     flags: list[str] = Field(description="Quality flags of the raw CDF.")
 
@@ -324,6 +329,9 @@ class SpreadsResponse(ApiModel):
     expirations: list[date] = Field(description="Expirations in the table, ascending.")
     sort: SpreadSort = Field(description="The order of rows.")
     entry_rule: str = Field(description="The rule behind rank_entry, in one sentence.")
+    entry_evidence: str = Field(
+        description="How the entry rule tested on the rule lab's hold-out, in one sentence."
+    )
     rows: list[SpreadRow] = Field(description="Rows ordered by sort.")
 
 

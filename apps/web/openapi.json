@@ -1858,6 +1858,18 @@
             "title": "Risk Free Apy",
             "type": "number"
           },
+          "score_entry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The entry ranking's score: annualised return on max loss at the natural credit with the calibrated POP shrunk halfway toward pop_implied, a decimal per year; rank_entry orders by it; null when not finite.",
+            "title": "Score Entry"
+          },
           "short_moneyness": {
             "description": "Short strike divided by the close.",
             "title": "Short Moneyness",
@@ -1933,6 +1945,7 @@
           "rank_edge",
           "rank_rr",
           "rank_entry",
+          "score_entry",
           "extrapolated",
           "flags",
           "trade_date",
@@ -2181,6 +2194,18 @@
             "description": "Expected payoff divided by payoff_std, per trade and not annualised; null when payoff_std is 0.",
             "title": "Reward To Risk"
           },
+          "score_entry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The entry ranking's score: annualised return on max loss at the natural credit with the calibrated POP shrunk halfway toward pop_implied, a decimal per year; rank_entry orders by it; null when not finite.",
+            "title": "Score Entry"
+          },
           "short_moneyness": {
             "description": "Short strike divided by the close.",
             "title": "Short Moneyness",
@@ -2240,6 +2265,7 @@
           "rank_edge",
           "rank_rr",
           "rank_entry",
+          "score_entry",
           "extrapolated",
           "flags"
         ],
@@ -2261,6 +2287,11 @@
             ],
             "description": "Session the scores were computed for.",
             "title": "As Of"
+          },
+          "entry_evidence": {
+            "description": "How the entry rule tested on the rule lab's hold-out, in one sentence.",
+            "title": "Entry Evidence",
+            "type": "string"
           },
           "entry_rule": {
             "description": "The rule behind rank_entry, in one sentence.",
@@ -2341,6 +2372,7 @@
           "expirations",
           "sort",
           "entry_rule",
+          "entry_evidence",
           "rows"
         ],
         "title": "SpreadsResponse",

@@ -8,28 +8,17 @@ regime features. A ``Rule`` is a selection over those rows: gates, a ranking, an
 one-spread-per-underlying-and-expiry diversification, then the top ``N`` per session.
 
 Guards. A rule only ever chooses among spreads that pass every guard of the live entry
-ranking (eligible, calibrated POP at least ``entry_min_pop``, credit at least
-``min_edge_credit``, natural credit at least ``min_natural_fraction`` of the mid with a
-positive natural edge, inside the quoted strikes, no tail, sparse or unknown-forward flag).
-``score_session`` sets ``rank_entry`` on exactly those spreads, so the guard is
-``rank_entry`` being non-null, and ``rank_entry`` breaks every tie of a ranking. The baseline
-rule (``Rule()``) therefore selects exactly the live ``entry_top10`` trades.
+ranking (``oap.analytics.scoring.entry_guard``: eligible, calibrated POP at least
+``entry_min_pop``, credit at least ``min_edge_credit``, natural credit at least
+``min_natural_fraction`` of the mid with a positive natural edge, inside the quoted strikes, no
+tail, sparse or unknown-forward flag), and every tie of a ranking is broken by
+``entry_tiebreak``, the live tie-break. Both are computed from the scored columns, not from
+``rank_entry``, so a rule's candidates do not depend on the live rule's bands. The baseline
+rule (``BASELINE_RULE``) is the live rule of ``DEFAULT_CONFIG`` and selects exactly the live
+``entry_top10`` trades; ``PREVIOUS_RULE`` is the live rule before 2026-10-20.
 
-Rankings (higher is better; nan ranks last), with natural credit ``c_n``, width ``W``,
-natural max loss ``L_n = W - c_n``, natural odds ``b = c_n / L_n``, calibrated POP ``p`` and
-holding period ``years``; annualising is ``(1 + r) ** (1 / years) - 1`` as in the engine:
-
-* ``return_mid``: ``annualised_roc`` (mid credit, interest included), the live ranking;
-* ``return_natural``: ``r = edge_natural / L_n`` annualised, the calibrated expected return
-  at the price one can fill, without interest;
-* ``reward_to_risk``: expected payoff over its standard deviation, per trade;
-* ``kelly_growth``: ``p * log(1 + b * f) + (1 - p) * log(1 - f)`` with ``f`` the score's
-  ``kelly_fraction`` clipped to ``[0, KELLY_CAP]``: the expected log growth per trade of a
-  two-outcome bet at natural odds. It is at most 0 whenever ``p * b < 1 - p``;
-* ``pop_shrunk_return``: ``r = q * b - (1 - q)`` annualised, the two-outcome natural return
-  with the POP shrunk halfway toward the market's ``pop_implied``:
-  ``q = (1 - POP_SHRINK) * p + POP_SHRINK * pop_implied``. It discounts the calibration
-  where it disagrees most with the price, which is where the winner's curse bites.
+Rankings are those of ``oap.analytics.ranking`` (``rank_score``), shared with the live entry
+ranking, so a rule ranked here is ranked by the same function in the product.
 
 Regime features use end-of-day data of the trade date, the same time as the fill:
 ``ret_20`` and ``ret_5`` are log returns of the underlying over the last 20 and 5 sessions
@@ -55,7 +44,7 @@ one dollar per session split across its trades.
 import itertools
 import math
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final, Literal
 
 import numpy as np
@@ -63,27 +52,18 @@ import numpy.typing as npt
 import pandas as pd
 
 from oap.analytics.backtest import cluster_bootstrap_ci
-from oap.analytics.config import DEFAULT_CONFIG, AnalyticsConfig
+from oap.analytics.config import DEFAULT_CONFIG, RANK_BYS, AnalyticsConfig, RankBy
+from oap.analytics.ranking import RANK_WORDS, BoolArray, band_mask, floats, rank_score
 from oap.analytics.sample import require_columns
+from oap.analytics.scoring import entry_guard, entry_tiebreak
 from oap.analytics.strategy import SETTLED_COLUMNS
 from oap.engine._types import FloatArray
 
-RankBy = Literal[
-    "return_mid", "return_natural", "reward_to_risk", "kelly_growth", "pop_shrunk_return"
-]
 Regime = Literal["none", "trend_up", "calm", "trend_up_calm", "high_iv_rank"]
 DteBand = tuple[int, int]
 MoneynessBand = tuple[float, float]
 IntArray = npt.NDArray[np.int64]
-BoolArray = npt.NDArray[np.bool_]
 
-RANK_BYS: Final[tuple[RankBy, ...]] = (
-    "return_mid",
-    "return_natural",
-    "reward_to_risk",
-    "kelly_growth",
-    "pop_shrunk_return",
-)
 DTE_BANDS: Final[tuple[DteBand | None, ...]] = (None, (7, 21), (21, 45), (45, 70))
 """Days-to-expiry bands of the grid, ``lo <= dte_days < hi`` in calendar days."""
 MONEYNESS_BANDS: Final[tuple[MoneynessBand | None, ...]] = (
@@ -96,11 +76,6 @@ MONEYNESS_BANDS: Final[tuple[MoneynessBand | None, ...]] = (
 REGIMES: Final[tuple[Regime, ...]] = ("none", "trend_up", "calm", "trend_up_calm", "high_iv_rank")
 EDGE_MARGINS: Final[tuple[float, ...]] = (0.0, 0.10)
 """Required natural credit over fair credit, minus 1, as decimals."""
-
-KELLY_CAP: Final = 0.5
-"""Largest Kelly fraction used by ``kelly_growth``, a decimal share of capital."""
-POP_SHRINK: Final = 0.5
-"""Weight of ``pop_implied`` in the shrunk POP of ``pop_shrunk_return``."""
 
 RET_LONG: Final = 20
 RET_SHORT: Final = 5
@@ -161,15 +136,6 @@ _REGIME_CODES: Final[dict[str, str]] = {
     "calm": "calm",
     "trend_up_calm": "upcalm",
     "high_iv_rank": "ivr",
-}
-_RANK_WORDS: Final[dict[str, str]] = {
-    "return_mid": "annualised return on max loss at the mid credit (the live ranking)",
-    "return_natural": "annualised calibrated return on max loss at the natural credit",
-    "reward_to_risk": "reward to risk (expected payoff over its standard deviation)",
-    "kelly_growth": "expected log growth of a capped Kelly bet at natural odds",
-    "pop_shrunk_return": (
-        "annualised natural return with the POP shrunk halfway toward the market-implied POP"
-    ),
 }
 _REGIME_WORDS: Final[dict[str, str]] = {
     "none": "",
@@ -254,8 +220,30 @@ class Rule:
         )
 
 
-BASELINE_RULE: Final = Rule()
-"""The live "Top 10 to enter" rule."""
+def live_rule(config: AnalyticsConfig = DEFAULT_CONFIG, top_n: int = 10) -> Rule:
+    """Return the lab rule that the live entry ranking of a configuration applies.
+
+    Args:
+        config: Analytics parameters (``entry_rank``, ``entry_dte_band``,
+            ``entry_moneyness_band``).
+        top_n: Spreads per session.
+
+    Returns:
+        The rule: the configured ranking and bands, every spread, any regime, no edge margin.
+    """
+    return Rule(
+        rank_by=config.entry_rank,
+        dte_band=config.entry_dte_band,
+        moneyness_band=config.entry_moneyness_band,
+        top_n=top_n,
+    )
+
+
+BASELINE_RULE: Final = live_rule()
+"""The live "Top 10 to enter" rule (``ENTRY_RULE`` of ``oap.analytics.scoring``)."""
+
+PREVIOUS_RULE: Final = Rule()
+"""The live "Top 10 to enter" rule before 2026-10-20 (``PREVIOUS_ENTRY_RULE``)."""
 
 
 def describe_rule(rule: Rule) -> str:
@@ -267,7 +255,7 @@ def describe_rule(rule: Rule) -> str:
     Returns:
         One sentence.
     """
-    parts = [f"Rank by {_RANK_WORDS[rule.rank_by]}"]
+    parts = [f"Rank by {RANK_WORDS[rule.rank_by]}"]
     if rule.dte_band is not None:
         parts.append(f"{rule.dte_band[0]} to {rule.dte_band[1] - 1} days to expiry")
     if rule.moneyness_band is not None:
@@ -286,16 +274,18 @@ def describe_rule(rule: Rule) -> str:
 
 
 def rule_grid(top_n: int = 10) -> tuple[Rule, ...]:
-    """Return the full factorial grid of rules, the baseline first.
+    """Return the full factorial grid of rules, the baseline first and the previous rule second.
 
     Args:
         top_n: Spreads per session of every rule.
 
     Returns:
         ``len(RANK_BYS) * len(DTE_BANDS) * len(MONEYNESS_BANDS) * 2 * len(REGIMES) *
-        len(EDGE_MARGINS)`` rules (1,600), the last field varying fastest.
+        len(EDGE_MARGINS)`` rules (1,600): ``BASELINE_RULE`` and ``PREVIOUS_RULE`` with
+        ``top_n`` first, so a truncated grid still holds both, then the others in factorial
+        order, the last field varying fastest.
     """
-    return tuple(
+    grid = [
         Rule(
             rank_by=rank_by,
             dte_band=dte,
@@ -308,82 +298,9 @@ def rule_grid(top_n: int = 10) -> tuple[Rule, ...]:
         for rank_by, dte, money, one, regime, margin in itertools.product(
             RANK_BYS, DTE_BANDS, MONEYNESS_BANDS, (False, True), REGIMES, EDGE_MARGINS
         )
-    )
-
-
-# --- rankings --------------------------------------------------------------------------------
-
-
-def _floats(frame: pd.DataFrame, column: str) -> FloatArray:
-    """Return a column as a float64 array."""
-    return np.asarray(frame[column].to_numpy(dtype=np.float64), dtype=np.float64)
-
-
-def annualise(returns: FloatArray, years: FloatArray) -> FloatArray:
-    """Compound holding-period returns to one year, as the engine does.
-
-    Args:
-        returns: Returns over the holding period, decimals.
-        years: Holding periods in years, positive.
-
-    Returns:
-        ``(1 + r) ** (1 / years) - 1``; -1 where ``r <= -1``; infinity on overflow.
-    """
-    with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
-        grown = np.expm1(np.log1p(np.maximum(returns, -1.0)) / years)
-    return np.asarray(np.where(returns <= -1.0, -1.0, grown), dtype=np.float64)
-
-
-def natural_odds(frame: pd.DataFrame) -> FloatArray:
-    """Return ``credit_natural / (width - credit_natural)``, the odds at the natural fill."""
-    natural = _floats(frame, "credit_natural")
-    return np.asarray(natural / (_floats(frame, "width") - natural), dtype=np.float64)
-
-
-def kelly_growth(prob: FloatArray, odds: FloatArray, kelly: FloatArray) -> FloatArray:
-    """Return the expected log growth of a two-outcome bet at a capped Kelly fraction.
-
-    Args:
-        prob: Probability of profit, decimals in [0, 1].
-        odds: Win over loss per dollar risked (natural credit over natural max loss).
-        kelly: Kelly fraction of the score, clipped to ``[0, KELLY_CAP]``.
-
-    Returns:
-        ``p * log(1 + b * f) + (1 - p) * log(1 - f)`` per trade, in log dollars per dollar.
-    """
-    f = np.clip(kelly, 0.0, KELLY_CAP)
-    return np.asarray(prob * np.log1p(odds * f) + (1.0 - prob) * np.log1p(-f), dtype=np.float64)
-
-
-def shrunk_pop(prob: FloatArray, pop_implied: FloatArray) -> FloatArray:
-    """Return the calibrated POP shrunk toward the market-implied POP by ``POP_SHRINK``."""
-    return np.asarray((1.0 - POP_SHRINK) * prob + POP_SHRINK * pop_implied, dtype=np.float64)
-
-
-def rank_score(frame: pd.DataFrame, rank_by: RankBy) -> FloatArray:
-    """Return the ranking score of every row; higher ranks first.
-
-    Args:
-        frame: Scored spreads with ``SPREAD_COLUMNS``.
-        rank_by: The ranking; see the module docstring.
-
-    Returns:
-        One float per row; nan where the score is undefined.
-    """
-    if rank_by == "return_mid":
-        return _floats(frame, "annualised_roc")
-    if rank_by == "reward_to_risk":
-        return _floats(frame, "reward_to_risk")
-    odds = natural_odds(frame)
-    prob = _floats(frame, "prob_profit")
-    years = _floats(frame, "years")
-    if rank_by == "kelly_growth":
-        return kelly_growth(prob, odds, _floats(frame, "kelly_fraction"))
-    if rank_by == "return_natural":
-        loss = _floats(frame, "width") - _floats(frame, "credit_natural")
-        return annualise(_floats(frame, "edge_natural") / loss, years)
-    q = shrunk_pop(prob, _floats(frame, "pop_implied"))
-    return annualise(q * odds - (1.0 - q), years)
+    ]
+    first = [replace(BASELINE_RULE, top_n=top_n), replace(PREVIOUS_RULE, top_n=top_n)]
+    return (*first, *(rule for rule in grid if rule not in first))
 
 
 # --- regime features -------------------------------------------------------------------------
@@ -550,15 +467,21 @@ class PreparedTrades:
 
     def column(self, name: str) -> FloatArray:
         """Return a column as float64."""
-        return _floats(self.frame, name)
+        return floats(self.frame, name)
 
 
-def prepare(trades: pd.DataFrame, regime: pd.DataFrame) -> PreparedTrades:
+def prepare(
+    trades: pd.DataFrame, regime: pd.DataFrame, config: AnalyticsConfig = DEFAULT_CONFIG
+) -> PreparedTrades:
     """Keep the guarded trades, attach the regime features and sort once per ranking.
+
+    The guard is ``entry_guard`` and ties are broken by ``entry_tiebreak``, both computed
+    from the scored columns, so the selection does not depend on the live ``rank_entry``.
 
     Args:
         trades: Settled trades with ``SETTLED_COLUMNS`` (the scored-spread cache).
         regime: Rows with ``REGIME_COLUMNS``.
+        config: The entry guard's thresholds.
 
     Returns:
         The prepared trades.
@@ -568,7 +491,7 @@ def prepare(trades: pd.DataFrame, regime: pd.DataFrame) -> PreparedTrades:
     """
     require_columns(trades, SETTLED_COLUMNS, "trades")
     require_columns(regime, REGIME_COLUMNS, "regime")
-    guarded = trades.loc[trades["rank_entry"].notna()].copy()
+    guarded = trades.loc[entry_guard(trades, config)].copy()
     guarded["trade_date"] = pd.to_datetime(guarded["trade_date"]).astype("datetime64[ns]")
     features = regime[list(REGIME_COLUMNS)].copy()
     features["trade_date"] = pd.to_datetime(features["trade_date"]).astype("datetime64[ns]")
@@ -584,7 +507,7 @@ def prepare(trades: pd.DataFrame, regime: pd.DataFrame) -> PreparedTrades:
         + frame["expiration"].astype(str)
     )
     group = np.unique(group_key.to_numpy(dtype=str), return_inverse=True)[1].astype(np.int64)
-    tie = frame["rank_entry"].astype("float64").to_numpy(dtype=np.float64)
+    tie = entry_tiebreak(frame)
     orders: dict[str, IntArray] = {}
     for rank_by in RANK_BYS:
         score = rank_score(frame, rank_by)
@@ -597,12 +520,8 @@ def _gate(prepared: PreparedTrades, rule: Rule) -> BoolArray:
     """Return the rows that pass the rule's DTE, moneyness, regime and edge gates."""
     frame = prepared.frame
     mask = np.ones(len(frame), dtype=np.bool_)
-    if rule.dte_band is not None:
-        dte = prepared.column("dte_days")
-        mask &= (dte >= rule.dte_band[0]) & (dte < rule.dte_band[1])
-    if rule.moneyness_band is not None:
-        money = prepared.column("short_moneyness")
-        mask &= (money >= rule.moneyness_band[0]) & (money < rule.moneyness_band[1])
+    mask &= band_mask(prepared.column("dte_days"), rule.dte_band)
+    mask &= band_mask(prepared.column("short_moneyness"), rule.moneyness_band)
     if rule.regime in ("trend_up", "trend_up_calm"):
         mask &= prepared.column("ret_20") > 0
     if rule.regime in ("calm", "trend_up_calm"):

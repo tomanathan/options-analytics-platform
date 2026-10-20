@@ -24,11 +24,14 @@ const HEADERS: { label: string; num: boolean }[] = [
   { label: 'Ann. R/max loss', num: true },
   { label: 'Edge %', num: true },
   { label: 'Reward/risk', num: true },
+  { label: 'Entry score', num: true },
 ];
 
 /**
- * The ten best spreads under the API's entry rule, printed as the API states it. The request is
- * fixed (`sort=entry`, eligible only, ten rows), so the page filters never change this list.
+ * The ten best spreads under the API's entry rule, printed as the API states it, with the
+ * evidence for the rule under it. The request is fixed (`sort=entry`, eligible only, ten rows),
+ * so the page filters never change this list. "Entry score" is the number the rule ranks by
+ * (`score_entry`, an annualised return on max loss at the natural credit).
  */
 export function EntryCard({ selectedKey, onSelect }: EntryCardProps) {
   const entry = useEntrySpreads();
@@ -51,6 +54,11 @@ export function EntryCard({ selectedKey, onSelect }: EntryCardProps) {
       {data && (
         <p className="entry__rule" data-testid="entry-rule">
           {data.entry_rule}
+        </p>
+      )}
+      {data && (
+        <p className="entry__evidence" data-testid="entry-evidence">
+          {data.entry_evidence}
         </p>
       )}
       <p className="entry__caveat">A ranking of historical calibration, not trade advice.</p>
@@ -98,6 +106,7 @@ export function EntryCard({ selectedKey, onSelect }: EntryCardProps) {
                     <td className="is-num">{annualisedRoc(row.annualised_roc)}</td>
                     <td className="is-num">{pct(row.edge_pct)}</td>
                     <td className="is-num">{ratio(row.reward_to_risk)}</td>
+                    <td className="is-num">{annualisedRoc(row.score_entry)}</td>
                   </tr>
                 );
               })}

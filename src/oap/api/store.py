@@ -24,7 +24,7 @@ import pandas as pd
 
 from oap.analytics.backtest import maps_from_frame
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID
-from oap.analytics.scoring import ENTRY_RULE
+from oap.analytics.scoring import ENTRY_EVIDENCE, ENTRY_RULE
 from oap.api import db
 from oap.api.db import GoldReader, Query, Signature, db_signature
 from oap.api.errors import DatabaseBusy, DatabaseMissing, GoldMissing, NotFound
@@ -636,6 +636,7 @@ class GoldStore:
                 expirations=data.expirations,
                 sort=filters.sort,
                 entry_rule=ENTRY_RULE,
+                entry_evidence=ENTRY_EVIDENCE,
                 rows=spread_rows(matched, filters.limit),
             )
 

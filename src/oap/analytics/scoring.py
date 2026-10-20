@@ -21,11 +21,15 @@ calibrated probability of profit minus it: the probability-space twin of ``edge_
 when the market pays more than the calibrated probability justifies. ``pop_gap_raw`` is the
 same under the risk-neutral CDF and is the control: it is near 0 except for partial-loss and
 interest effects. ``rank_entry`` is the "Top to enter" ranking and follows one rule, printed by the
-API and the report from ``ENTRY_RULE``: a spread passes every guard (eligible, calibrated POP
-at least ``entry_min_pop``, credit at least ``min_edge_credit``, natural credit at least
-``min_natural_fraction`` of the mid with a positive natural edge, inside the quoted strikes,
-none of the tail, sparse or unknown-forward flags) and is ranked by annualised return on max
-loss, then reward to risk. It ranks a historical calibration; it is not trade advice.
+API and the report from ``ENTRY_RULE``: a spread passes every guard (``entry_guard``: eligible,
+calibrated POP at least ``entry_min_pop``, credit at least ``min_edge_credit``, natural credit at
+least ``min_natural_fraction`` of the mid with a positive natural edge, inside the quoted
+strikes, none of the tail, sparse or unknown-forward flags), lies in ``entry_dte_band`` and
+``entry_moneyness_band``, and is ranked by ``score_entry``, the ``entry_rank`` ranking of
+``oap.analytics.ranking`` (the shrunk-POP natural return by default), ties broken by
+``entry_tiebreak``. That is the rule lab's rule ``ps-d45_70-m95_100-all-any-e0-n10``;
+``ENTRY_EVIDENCE`` states how it tested. It ranks a historical calibration; it is not trade
+advice.
 
 Units: prices, strikes, credits and losses are in dollars per share; ``years`` is in
 years (calendar days / 365); rates are decimal APYs; probabilities are decimals in [0, 1];
@@ -36,13 +40,15 @@ Collateral equals the maximum loss for a cash-secured spread, so the engine's
 loss.
 """
 
-import math
+from datetime import date
 from typing import Final, cast
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID, AnalyticsConfig
+from oap.analytics.ranking import RANK_WORDS, BoolArray, band_mask, floats, rank_score
 from oap.analytics.sample import (
     QUOTE_COLUMNS,
     SNAPSHOT_KEY,
@@ -51,6 +57,7 @@ from oap.analytics.sample import (
     require_columns,
     usable_mask,
 )
+from oap.engine._types import FloatArray
 from oap.engine.calibration import CalibrationMap, apply_calibration
 from oap.engine.conventions import dte_years
 from oap.engine.implied_distribution import QualityFlag, RiskNeutralCdf, usable_quotes
@@ -108,20 +115,65 @@ SPREAD_COLUMNS: Final[tuple[str, ...]] = (
     "rank_edge",
     "rank_rr",
     "rank_entry",
+    "score_entry",
     "map_id",
     "cash_apy",
     "risk_free_apy",
 )
 
-ENTRY_RULE: Final = (
-    "Passes every guard (eligible, "
-    f"calibrated POP \u2265 {DEFAULT_CONFIG.entry_min_pop:.0%}, "
-    f"credit \u2265 ${DEFAULT_CONFIG.min_edge_credit:.2f}, "
-    f"natural credit \u2265 {DEFAULT_CONFIG.min_natural_fraction:.0%} of mid "
-    "with positive natural edge, inside quoted strikes, no tail flags), "
-    "ranked by annualised return on max loss, then reward/risk."
-)
+IntArray = npt.NDArray[np.int64]
+
+
+def _guard_words(config: AnalyticsConfig) -> str:
+    """Return the guard clause shared by the current and the previous entry rule."""
+    return (
+        "Passes every guard (eligible, "
+        f"calibrated POP \u2265 {config.entry_min_pop:.0%}, "
+        f"credit \u2265 ${config.min_edge_credit:.2f}, "
+        f"natural credit \u2265 {config.min_natural_fraction:.0%} of mid "
+        "with positive natural edge, inside quoted strikes, no tail flags)"
+    )
+
+
+def describe_entry_rule(config: AnalyticsConfig = DEFAULT_CONFIG) -> str:
+    """State the entry rule of a configuration in one sentence.
+
+    Args:
+        config: Analytics parameters; the guards, bands and ranking come from it.
+
+    Returns:
+        The sentence, with thresholds in percent, dollars per share and calendar days.
+    """
+    dte_lo, dte_hi = config.entry_dte_band
+    money_lo, money_hi = config.entry_moneyness_band
+    return (
+        f"{_guard_words(config)}, {dte_lo} to {dte_hi - 1} days to expiry, "
+        f"short strike {money_lo:.0%} to below {money_hi:.0%} of the close, "
+        f"ranked by {RANK_WORDS[config.entry_rank]}, "
+        "then annualised return on max loss and reward/risk."
+    )
+
+
+ENTRY_RULE: Final = describe_entry_rule(DEFAULT_CONFIG)
 """One sentence stating the entry ranking, with the thresholds of ``DEFAULT_CONFIG``."""
+
+ENTRY_RULE_SINCE: Final = date(2026, 10, 20)
+"""First day the product ranks "Top to enter" by ``ENTRY_RULE``."""
+
+PREVIOUS_ENTRY_RULE: Final = (
+    f"{_guard_words(DEFAULT_CONFIG)}, ranked by annualised return on max loss, then reward/risk."
+)
+"""The entry rule until the day before ``ENTRY_RULE_SINCE`` (rule lab id
+``rm-dany-many-all-any-e0-n10``)."""
+
+ENTRY_EVIDENCE: Final = (
+    "On the rule lab's 2025-2026 hold-out, measured on 2026-10-19, this rule made 4,053 trades "
+    "that won 73.0% of the time against 74.9% predicted, with a mean return on max loss of "
+    "+7.53% per trade (95% interval -7.29% to +21.10%, so not shown to be above zero), +3.02% "
+    "in total on capital at risk, a Sharpe per trade of 0.129 and 18.8% of trades at the "
+    "maximum loss (docs/rule-lab.md)."
+)
+"""One sentence with the hold-out evidence for ``ENTRY_RULE`` and where it comes from."""
 
 _ENTRY_BLOCKING_FLAGS: Final = frozenset(
     {
@@ -374,26 +426,107 @@ def score_session(
     return _with_ranks(rows, scores, config)
 
 
-def _entry_key(score: SpreadScore) -> tuple[float, float, float, float, float, float]:
-    """Return the sort key of the entry ranking, smallest first.
+def entry_guard(frame: pd.DataFrame, config: AnalyticsConfig = DEFAULT_CONFIG) -> BoolArray:
+    """Return the spreads that pass every guard of the entry ranking.
+
+    A spread passes when it is eligible, its mid credit is at least ``min_edge_credit``
+    (dollars per share), its natural credit is at least ``min_natural_fraction`` of the mid,
+    its calibrated probability of profit is at least ``entry_min_pop``, its natural edge
+    (dollars per share) is positive, its long strike is inside the CDF knots and its raw CDF
+    has none of the tail, sparse or unknown-forward flags. The rule lab chooses only among
+    these spreads, so the live rule and every lab rule share one guard.
 
     Args:
-        score: Calibrated score.
+        frame: Scored spreads with ``SPREAD_COLUMNS``.
+        config: Analytics parameters.
 
     Returns:
-        Negated annualised return, a nan flag and negated reward to risk (nan last),
-        negated probability of profit, negated short strike in dollars and long strike in
-        dollars.
+        One boolean per row.
     """
-    rr = score.reward_to_risk
-    return (
-        -score.annualised_return,
-        float(math.isnan(rr)),
-        0.0 if math.isnan(rr) else -rr,
-        -score.prob_profit,
-        -score.spread.short_strike,
-        score.spread.long_strike,
+    blocked = {flag.value for flag in _ENTRY_BLOCKING_FLAGS}
+    flagged = np.fromiter(
+        (
+            isinstance(text, str) and not blocked.isdisjoint(text.split(","))
+            for text in frame["flags"].tolist()
+        ),
+        dtype=np.bool_,
+        count=len(frame),
     )
+    credit = floats(frame, "credit")
+    with np.errstate(invalid="ignore"):
+        passes = (
+            frame["eligible"].to_numpy(dtype=np.bool_, na_value=False)
+            & (credit >= config.min_edge_credit)
+            & (floats(frame, "credit_natural") >= config.min_natural_fraction * credit)
+            & (floats(frame, "prob_profit") >= config.entry_min_pop)
+            & (floats(frame, "edge_natural") > 0)
+            & ~frame["extrapolated"].to_numpy(dtype=np.bool_, na_value=True)
+            & ~flagged
+        )
+    return np.asarray(passes, dtype=np.bool_)
+
+
+def entry_candidates(frame: pd.DataFrame, config: AnalyticsConfig = DEFAULT_CONFIG) -> BoolArray:
+    """Return the spreads the entry ranking orders: the entry guard and both bands.
+
+    Args:
+        frame: Scored spreads with ``SPREAD_COLUMNS``.
+        config: Analytics parameters: ``entry_dte_band`` in calendar days and
+            ``entry_moneyness_band`` as short strike over close, each ``lo <= x < hi``.
+
+    Returns:
+        One boolean per row.
+    """
+    return (
+        entry_guard(frame, config)
+        & band_mask(floats(frame, "dte_days"), config.entry_dte_band)
+        & band_mask(floats(frame, "short_moneyness"), config.entry_moneyness_band)
+    )
+
+
+def entry_tiebreak(frame: pd.DataFrame) -> IntArray:
+    """Return each row's position in the tie-break order of the entry ranking, best first.
+
+    The order is annualised return on max loss descending, then reward to risk descending
+    (nan last), calibrated probability of profit descending, short strike (dollars)
+    descending and long strike (dollars) ascending; a nan return sorts last. Within one
+    session it is the order the entry ranking used before ``ENTRY_RULE_SINCE``.
+
+    Args:
+        frame: Scored spreads with ``SPREAD_COLUMNS``.
+
+    Returns:
+        ``0..n-1``, one distinct position per row.
+    """
+    rr = floats(frame, "reward_to_risk")
+    keys = (
+        floats(frame, "long_strike"),
+        -floats(frame, "short_strike"),
+        -floats(frame, "prob_profit"),
+        np.where(np.isnan(rr), 0.0, -rr),
+        np.isnan(rr).astype(np.float64),
+        -floats(frame, "annualised_roc"),
+    )
+    order = np.lexsort(keys)
+    position = np.empty(len(frame), dtype=np.int64)
+    position[order] = np.arange(len(frame), dtype=np.int64)
+    return position
+
+
+def entry_order(score: FloatArray, tiebreak: IntArray, rows: IntArray) -> IntArray:
+    """Order rows by an entry score, best first, nan last, ties by ``tiebreak``.
+
+    Args:
+        score: Ranking score per row of the frame (higher is better), as ``rank_score``
+            returns it.
+        tiebreak: ``entry_tiebreak`` of the frame.
+        rows: Row positions to order.
+
+    Returns:
+        ``rows`` in rank order.
+    """
+    chosen = np.where(np.isnan(score[rows]), -np.inf, score[rows])
+    return np.asarray(rows[np.lexsort((tiebreak[rows], -chosen))], dtype=np.int64)
 
 
 def _assign(ranks: list[int | None], ordered: list[int]) -> None:
@@ -416,10 +549,10 @@ def _with_ranks(
     the alternative ranks is the eligible rows with ``credit >= min_edge_credit`` and
     ``credit_natural >= min_natural_fraction * credit``; ``rank_edge`` and ``rank_rr`` are
     1..k over it in ``rank_spreads(by="edge")`` and ``rank_spreads(by="reward_to_risk")``
-    order. ``rank_entry`` is 1..k over the candidates that also have a calibrated
-    probability of profit of at least ``entry_min_pop``, a positive natural edge (dollars per
-    share) and none of the CDF's tail, sparse or unknown-forward flags, in ``_entry_key``
-    order. Every rank is null outside its set.
+    order. ``score_entry`` is the ``entry_rank`` ranking of every row, and ``rank_entry`` is
+    1..k over ``entry_candidates`` (the entry guard and both bands) by ``score_entry``
+    descending (nan last), ties broken by ``entry_tiebreak``. Every rank is null outside its
+    set.
 
     Args:
         rows: Row dictionaries, each with a boolean ``eligible``.
@@ -437,7 +570,6 @@ def _with_ranks(
     _assign(columns["rank"], [position[id(s)] for s in rank_spreads(scores[i] for i in eligible)])
     credit = [cast(float, row["credit"]) for row in rows]
     natural = [cast(float, row["credit_natural"]) for row in rows]
-    natural_edge = [cast(float, row["edge_natural"]) for row in rows]
     guarded = [
         i
         for i in eligible
@@ -453,16 +585,11 @@ def _with_ranks(
             columns[name],
             [position[id(s)] for s in rank_spreads((scores[i] for i in guarded), by=by)],
         )
-    entry = [
-        i
-        for i in guarded
-        if scores[i].prob_profit >= config.entry_min_pop
-        and natural_edge[i] > 0
-        and not scores[i].extrapolated
-        and not scores[i].flags & _ENTRY_BLOCKING_FLAGS
-    ]
-    _assign(columns["rank_entry"], sorted(entry, key=lambda i: _entry_key(scores[i])))
     frame = pd.DataFrame(rows)
+    score = rank_score(frame, config.entry_rank)
+    candidates = np.flatnonzero(entry_candidates(frame, config)).astype(np.int64)
+    _assign(columns["rank_entry"], entry_order(score, entry_tiebreak(frame), candidates).tolist())
     for name, ranks in columns.items():
         frame[name] = pd.array(ranks, dtype="Int64")
+    frame["score_entry"] = score
     return frame[list(SPREAD_COLUMNS)]

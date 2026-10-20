@@ -8,7 +8,7 @@ settlement close, and the realised results are compared with what the scores pre
 
 Three strategies are selected from the same scores:
 
-* ``entry_top<N>``: the ``N`` best by ``rank_entry``, the recommendation (``ENTRY_RULE``);
+* ``entry_top<N>``: the ``N`` best by ``rank_entry``, the live entry ranking (``ENTRY_RULE``);
 * ``return_top<N>``: the ``N`` best by ``rank``, raw annualised return without the entry
   guards, which shows what the guards add;
 * ``eligible_all``: every eligible spread, equal weight; the no-selection baseline. It is not
@@ -120,7 +120,7 @@ Basis = Literal["trade", "session"]
 
 
 def strategy_names(top_n: int) -> tuple[str, str, str]:
-    """Return the strategy names for a top-``N`` selection, recommendation first.
+    """Return the strategy names for a top-``N`` selection, the live entry ranking first.
 
     Args:
         top_n: Number of spreads selected per session; at least 1.
@@ -171,7 +171,7 @@ def select_session_entries(
         top_n: Rows with ``rank_column <= top_n``, best first; None returns every eligible
             spread in scoring order.
         map_id: Identifier of ``cmap``, recorded on every row.
-        rank_column: ``rank_entry`` (the recommendation) or ``rank`` (raw return order).
+        rank_column: ``rank_entry`` (the live entry ranking) or ``rank`` (raw return order).
 
     Returns:
         Rows with ``SPREAD_COLUMNS``.

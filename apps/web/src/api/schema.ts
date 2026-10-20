@@ -1370,6 +1370,11 @@ export interface components {
              */
             risk_free_apy: number;
             /**
+             * Score Entry
+             * @description The entry ranking's score: annualised return on max loss at the natural credit with the calibrated POP shrunk halfway toward pop_implied, a decimal per year; rank_entry orders by it; null when not finite.
+             */
+            score_entry: number | null;
+            /**
              * Short Moneyness
              * @description Short strike divided by the close.
              */
@@ -1576,6 +1581,11 @@ export interface components {
              */
             reward_to_risk: number | null;
             /**
+             * Score Entry
+             * @description The entry ranking's score: annualised return on max loss at the natural credit with the calibrated POP shrunk halfway toward pop_implied, a decimal per year; rank_entry orders by it; null when not finite.
+             */
+            score_entry: number | null;
+            /**
              * Short Moneyness
              * @description Short strike divided by the close.
              */
@@ -1608,6 +1618,11 @@ export interface components {
              * @description Session the scores were computed for.
              */
             as_of: string | null;
+            /**
+             * Entry Evidence
+             * @description How the entry rule tested on the rule lab's hold-out, in one sentence.
+             */
+            entry_evidence: string;
             /**
              * Entry Rule
              * @description The rule behind rank_entry, in one sentence.

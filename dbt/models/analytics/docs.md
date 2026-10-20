@@ -69,7 +69,10 @@ map. Prices are dollars per share, rates are annual decimals, time is in years.
 per trade. `pop_implied` is `max_loss / width`, the probability of profit the price implies, and
 `pop_gap` is the calibrated probability of profit minus it, the same information as `edge_pct` in
 probability units (`pop_gap_raw` is the control). `rank_edge`, `rank_rr` and `rank_entry` order a
-guarded subset of the eligible spreads. The honest reading: edge is the market mid credit against
+guarded subset of the eligible spreads; `rank_entry` keeps 45 to 69 days to expiry and a short
+strike from 95% to below 100% of the close and orders them by `score_entry`, the annualised natural
+return with the probability of profit shrunk halfway toward `pop_implied` (the rule lab's rule
+`ps-d45_70-m95_100-all-any-e0-n10`, see docs/rule-lab.md). The honest reading: edge is the market mid credit against
 the expected payout under one pooled calibration map, so it is the historical variance risk
 premium applied to this chain plus whatever the mid holds above the natural price. It is not
 contract-specific mispricing, it is correlated across the strikes and expiries of one underlying,
