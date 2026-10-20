@@ -171,7 +171,10 @@ ENTRY_EVIDENCE: Final = (
     "that won 73.0% of the time against 74.9% predicted, with a mean return on max loss of "
     "+7.53% per trade (95% interval -7.29% to +21.10%, so not shown to be above zero), +3.02% "
     "in total on capital at risk, a Sharpe per trade of 0.129 and 18.8% of trades at the "
-    "maximum loss (docs/rule-lab.md)."
+    "maximum loss (docs/rule-lab.md), and over the full 2021-2026 out-of-sample backtest "
+    "+10.3% per trade (0.9% to 19.0%) but -3.05% in total on capital at risk, because a few "
+    "wide spreads with large maximum losses dominate the dollar total, so the per-trade figure "
+    "holds only with equal risk per trade (docs/backtest-entry-rule.md)."
 )
 """One sentence with the hold-out evidence for ``ENTRY_RULE`` and where it comes from."""
 
