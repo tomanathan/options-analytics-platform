@@ -96,6 +96,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/structures/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Getoutcomemap
+         * @description Return, for every underlying of a session and every preset outcome, the verdict numbers.
+         *
+         *     Args:
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
+         *         session: Trade date, or ``latest`` for the latest session of the table.
+         *         target_dte: Calendar days to expiration the expiration is picked for.
+         *         fill: natural or mid fills.
+         *         map_choice: Which calibration map to apply.
+         *         min_pop_given: Smallest P(profit | outcome), a decimal, for a structure to qualify.
+         *
+         *     Returns:
+         *         One row per underlying with the session, one cell per preset.
+         */
+        get: operations["getOutcomeMap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/structures/{symbol}/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Getstructures
+         * @description Score every structure of one expiration against an outcome.
+         *
+         *     Args:
+         *         symbol: Ticker symbol.
+         *         session: Trade date.
+         *         store: The data store.
+         *         response: The response, for the stale-data header.
+         *         expiration: Expiration; the one with a distribution nearest 35 days when None.
+         *         preset: A preset outcome; takes precedence over ``lo``, ``hi`` and ``outside``.
+         *         lo: Lower bound as a fraction of the close; open when None.
+         *         hi: Upper bound as a fraction of the close; open when None.
+         *         outside: True for the complement of ``[lo, hi)``.
+         *         fill: natural or mid fills.
+         *         map_choice: Which calibration map to apply.
+         *         min_pop_given: Smallest P(profit | outcome), a decimal, for a structure to qualify.
+         *         limit: Most ranking rows.
+         *
+         *     Returns:
+         *         The best structure per kind, the ranking, the dominance strip and the verdict.
+         */
+        get: operations["getStructures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/underlyings": {
         parameters: {
             query?: never;
@@ -493,6 +563,28 @@ export interface components {
             symbol: string;
         };
         /**
+         * DominanceSegment
+         * @description A run of terminal prices over which one kind has the highest return on max loss.
+         */
+        DominanceSegment: {
+            /**
+             * From
+             * @description First grid price of the run in dollars ($/sh).
+             */
+            from: number;
+            /**
+             * Kind
+             * @description The kind with the highest pnl / max loss there.
+             * @enum {string}
+             */
+            kind: "long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor";
+            /**
+             * To
+             * @description First grid price of the next run in dollars ($/sh); the last grid price for the last run.
+             */
+            to: number;
+        };
+        /**
          * ErrorBody
          * @description The body of every error response.
          */
@@ -501,7 +593,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "database_busy" | "database_missing" | "gold_missing" | "not_found" | "invalid";
+            code: "database_busy" | "database_missing" | "gold_missing" | "not_found" | "invalid" | "view_required" | "view_invalid" | "no_distribution" | "no_implied_vol";
             /** Detail */
             detail: string;
         };
@@ -674,6 +766,109 @@ export interface components {
             target_strikes: number[];
         };
         /**
+         * KindBest
+         * @description The best structure of one kind, with its payoff curve on the response grid.
+         */
+        KindBest: {
+            /**
+             * Annualised Return
+             * @description expected_return compounded to one year, a decimal; null when not finite.
+             */
+            annualised_return: number | null;
+            /**
+             * Breakevens
+             * @description Prices at expiry in dollars ($/sh) where profit and loss crosses zero, ascending.
+             */
+            breakevens: number[];
+            /**
+             * Curve
+             * @description Profit and loss divided by max loss (return on max loss) at each grid price, a decimal.
+             */
+            curve: number[];
+            /**
+             * Direction
+             * @description The outcome the kind is built for.
+             * @enum {string}
+             */
+            direction: "up" | "down" | "move" | "range";
+            /**
+             * Expected Return
+             * @description Expected profit and loss divided by max loss (return on max loss) over the holding period, a decimal; no interest on the capital at risk.
+             */
+            expected_return: number;
+            /**
+             * Kind
+             * @description The structure kind.
+             * @enum {string}
+             */
+            kind: "long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor";
+            /**
+             * Legs
+             * @description Legs as signed quantity, right and strike in dollars, such as '-1 P 250 / +1 P 245'.
+             */
+            legs: string;
+            /**
+             * Max Gain
+             * @description Largest gain at expiry in dollars per share ($/sh); null when unbounded.
+             */
+            max_gain: number | null;
+            /**
+             * Max Loss
+             * @description Largest loss at expiry in dollars per share ($/sh), positive; the capital at risk.
+             */
+            max_loss: number;
+            /**
+             * Net Premium
+             * @description Net premium in dollars per share ($/sh) at the fill: positive is a debit paid, negative a credit received.
+             */
+            net_premium: number;
+            /**
+             * Pnl Std
+             * @description Standard deviation of profit and loss at expiry in dollars per share ($/sh).
+             */
+            pnl_std: number;
+            /**
+             * Prob Profit
+             * @description Calibrated probability that profit and loss at expiry is positive, a decimal.
+             */
+            prob_profit: number;
+            /**
+             * Prob Profit Given View
+             * @description Calibrated probability of a profit given the outcome, a decimal; null when the outcome has probability 0.
+             */
+            prob_profit_given_view: number | null;
+            /**
+             * Return If Right
+             * @description Expected profit and loss given the outcome, divided by max loss (return on max loss), a decimal; null when the outcome has probability 0.
+             */
+            return_if_right: number | null;
+            /**
+             * Return If Wrong
+             * @description Expected profit and loss given the price lands outside the outcome, divided by max loss, a decimal; null when the outcome has probability 1.
+             */
+            return_if_wrong: number | null;
+            /**
+             * Reward To Risk
+             * @description Expected profit and loss divided by its standard deviation, per trade and not annualised; null when the standard deviation is 0.
+             */
+            reward_to_risk: number | null;
+            /**
+             * Strikes
+             * @description Distinct strikes in dollars ($/sh), ascending.
+             */
+            strikes: number[];
+            /**
+             * Tail Share
+             * @description Share of the expected profit and loss that comes from beyond the outer knots (the completed tails), a decimal in [0, 1].
+             */
+            tail_share: number;
+            /**
+             * Worst In View
+             * @description Lowest profit and loss over the prices of the outcome, divided by max loss, a decimal of at least -1; null when not finite.
+             */
+            worst_in_view: number | null;
+        };
+        /**
          * MetricValue
          * @description One out-of-sample calibration metric.
          */
@@ -702,6 +897,152 @@ export interface components {
             variant: "raw" | "calibrated" | "delta";
         };
         /**
+         * OutcomeCell
+         * @description The verdict numbers of one underlying for one preset outcome.
+         */
+        OutcomeCell: {
+            /**
+             * Advantage
+             * @description spread_return_if_right minus single_return_if_right, a decimal; null when a side is missing.
+             */
+            advantage: number | null;
+            /**
+             * Best Kind
+             * @description Kind with the highest return_if_right; null when none qualifies.
+             */
+            best_kind: ("long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor") | null;
+            /**
+             * Best Legs
+             * @description Legs of the best structure, as in legs.
+             */
+            best_legs: string | null;
+            /**
+             * Best Return If Right
+             * @description return_if_right of best_kind (return on max loss), a decimal.
+             */
+            best_return_if_right: number | null;
+            /**
+             * Hi
+             * @description Upper bound of the outcome in dollars ($/sh); null when open.
+             */
+            hi: number | null;
+            /**
+             * Lo
+             * @description Lower bound of the outcome in dollars ($/sh); null when open.
+             */
+            lo: number | null;
+            /**
+             * Preset
+             * @description The preset id.
+             * @enum {string}
+             */
+            preset: "up" | "up_moderate" | "flat" | "down_moderate" | "down" | "big_move";
+            /**
+             * Prob
+             * @description Calibrated probability of the outcome, a decimal.
+             */
+            prob: number;
+            /**
+             * Prob Market
+             * @description Raw (market-implied) probability of the outcome, a decimal.
+             */
+            prob_market: number;
+            /**
+             * Single Kind
+             * @description Best qualifying single kind.
+             */
+            single_kind: ("long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor") | null;
+            /**
+             * Single Return If Right
+             * @description return_if_right of single_kind (return on max loss), a decimal.
+             */
+            single_return_if_right: number | null;
+            /**
+             * Spread Kind
+             * @description Best qualifying spread kind.
+             */
+            spread_kind: ("long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor") | null;
+            /**
+             * Spread Return If Right
+             * @description return_if_right of spread_kind (return on max loss), a decimal.
+             */
+            spread_return_if_right: number | null;
+        };
+        /**
+         * OutcomeMapResponse
+         * @description For every underlying of a session, which structure serves each preset outcome best.
+         */
+        OutcomeMapResponse: {
+            /**
+             * Fill
+             * @description The fill the premiums assume.
+             * @enum {string}
+             */
+            fill: "natural" | "mid";
+            /**
+             * Map Id
+             * @description The calibration map that was applied.
+             */
+            map_id: string;
+            /**
+             * Presets
+             * @description The preset outcomes, in column order.
+             */
+            presets: components["schemas"]["PresetInfo"][];
+            /**
+             * Rows
+             * @description One row per underlying with the session, by symbol.
+             */
+            rows: components["schemas"]["OutcomeRow"][];
+            /**
+             * Session
+             * Format: date
+             * @description Trade date.
+             */
+            session: string;
+            /**
+             * Target Dte
+             * @description Requested calendar days to expiration.
+             */
+            target_dte: number;
+        };
+        /**
+         * OutcomeRow
+         * @description One underlying across the preset outcomes.
+         */
+        OutcomeRow: {
+            /**
+             * Cells
+             * @description One cell per preset, in preset order.
+             */
+            cells: components["schemas"]["OutcomeCell"][];
+            /**
+             * Dte Days
+             * @description Calendar days from the session to expiration.
+             */
+            dte_days: number | null;
+            /**
+             * Expiration
+             * @description The expiration with a distribution nearest the target DTE; null without one.
+             */
+            expiration: string | null;
+            /**
+             * Symbol
+             * @description Ticker symbol, such as SPY.
+             */
+            symbol: string;
+            /**
+             * Unavailable Reason
+             * @description Why there are no cells: no_distribution: <detail> or no_implied_vol: <detail>; null when there are cells.
+             */
+            unavailable_reason: string | null;
+            /**
+             * Underlying Close
+             * @description Underlying close in dollars ($/sh).
+             */
+            underlying_close: number | null;
+        };
+        /**
          * PayoffPoint
          * @description The payoff of a spread at one expiry price.
          */
@@ -716,6 +1057,23 @@ export interface components {
              * @description Underlying price at expiry in dollars ($/sh).
              */
             price: number;
+        };
+        /**
+         * PresetInfo
+         * @description A preset outcome.
+         */
+        PresetInfo: {
+            /**
+             * Id
+             * @description The preset id.
+             * @enum {string}
+             */
+            id: "up" | "up_moderate" | "flat" | "down_moderate" | "down" | "big_move";
+            /**
+             * Label
+             * @description Human-readable label, with its quantiles.
+             */
+            label: string;
         };
         /**
          * RawCalibrated
@@ -1299,6 +1657,240 @@ export interface components {
             underlyings: string[];
         };
         /**
+         * StructureRow
+         * @description One scored structure; profit and loss is per share at expiry, undiscounted.
+         */
+        StructureRow: {
+            /**
+             * Annualised Return
+             * @description expected_return compounded to one year, a decimal; null when not finite.
+             */
+            annualised_return: number | null;
+            /**
+             * Breakevens
+             * @description Prices at expiry in dollars ($/sh) where profit and loss crosses zero, ascending.
+             */
+            breakevens: number[];
+            /**
+             * Direction
+             * @description The outcome the kind is built for.
+             * @enum {string}
+             */
+            direction: "up" | "down" | "move" | "range";
+            /**
+             * Expected Return
+             * @description Expected profit and loss divided by max loss (return on max loss) over the holding period, a decimal; no interest on the capital at risk.
+             */
+            expected_return: number;
+            /**
+             * Kind
+             * @description The structure kind.
+             * @enum {string}
+             */
+            kind: "long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor";
+            /**
+             * Legs
+             * @description Legs as signed quantity, right and strike in dollars, such as '-1 P 250 / +1 P 245'.
+             */
+            legs: string;
+            /**
+             * Max Gain
+             * @description Largest gain at expiry in dollars per share ($/sh); null when unbounded.
+             */
+            max_gain: number | null;
+            /**
+             * Max Loss
+             * @description Largest loss at expiry in dollars per share ($/sh), positive; the capital at risk.
+             */
+            max_loss: number;
+            /**
+             * Net Premium
+             * @description Net premium in dollars per share ($/sh) at the fill: positive is a debit paid, negative a credit received.
+             */
+            net_premium: number;
+            /**
+             * Pnl Std
+             * @description Standard deviation of profit and loss at expiry in dollars per share ($/sh).
+             */
+            pnl_std: number;
+            /**
+             * Prob Profit
+             * @description Calibrated probability that profit and loss at expiry is positive, a decimal.
+             */
+            prob_profit: number;
+            /**
+             * Prob Profit Given View
+             * @description Calibrated probability of a profit given the outcome, a decimal; null when the outcome has probability 0.
+             */
+            prob_profit_given_view: number | null;
+            /**
+             * Return If Right
+             * @description Expected profit and loss given the outcome, divided by max loss (return on max loss), a decimal; null when the outcome has probability 0.
+             */
+            return_if_right: number | null;
+            /**
+             * Return If Wrong
+             * @description Expected profit and loss given the price lands outside the outcome, divided by max loss, a decimal; null when the outcome has probability 1.
+             */
+            return_if_wrong: number | null;
+            /**
+             * Reward To Risk
+             * @description Expected profit and loss divided by its standard deviation, per trade and not annualised; null when the standard deviation is 0.
+             */
+            reward_to_risk: number | null;
+            /**
+             * Strikes
+             * @description Distinct strikes in dollars ($/sh), ascending.
+             */
+            strikes: number[];
+            /**
+             * Tail Share
+             * @description Share of the expected profit and loss that comes from beyond the outer knots (the completed tails), a decimal in [0, 1].
+             */
+            tail_share: number;
+            /**
+             * Worst In View
+             * @description Lowest profit and loss over the prices of the outcome, divided by max loss, a decimal of at least -1; null when not finite.
+             */
+            worst_in_view: number | null;
+        };
+        /**
+         * StructuresResponse
+         * @description Every structure kind scored against one outcome for one expiration.
+         */
+        StructuresResponse: {
+            /**
+             * Density
+             * @description Calibrated, tail-completed probability density at each grid price (1/$).
+             */
+            density: number[];
+            /**
+             * Dominance
+             * @description Over the grid, which of the kinds above has the highest pnl / max loss.
+             */
+            dominance: components["schemas"]["DominanceSegment"][];
+            /**
+             * Dte Days
+             * @description Calendar days from the session to expiration.
+             */
+            dte_days: number;
+            /**
+             * Expiration
+             * Format: date
+             * @description Expiration of every structure.
+             */
+            expiration: string;
+            /**
+             * Fill
+             * @description The fill the premiums assume.
+             * @enum {string}
+             */
+            fill: "natural" | "mid";
+            /**
+             * Forward
+             * @description Forward price in dollars ($/sh); null if unknown.
+             */
+            forward: number | null;
+            /**
+             * Grid
+             * @description Terminal prices in dollars ($/sh): 161 evenly spaced points from the 0.5% to the 99.5% quantile of the calibrated, tail-completed distribution.
+             */
+            grid: number[];
+            /**
+             * Kinds
+             * @description The best qualifying structure of each kind, in the order of the kind list.
+             */
+            kinds: components["schemas"]["KindBest"][];
+            /**
+             * Look Ahead
+             * @description True when the map was fitted on outcomes that settle after this session.
+             */
+            look_ahead: boolean;
+            /**
+             * Map Id
+             * @description The calibration map that was applied.
+             */
+            map_id: string;
+            /**
+             * Map Is Identity
+             * @description True when the map leaves probabilities unchanged.
+             */
+            map_is_identity: boolean;
+            /**
+             * N Qualifying
+             * @description Structures with prob_profit_given_view at or above min_pop_given and a finite return_if_right.
+             */
+            n_qualifying: number;
+            /**
+             * N Structures
+             * @description Structures enumerated and scored.
+             */
+            n_structures: number;
+            /**
+             * Ranking
+             * @description The qualifying structures of every kind, highest return_if_right first, at most limit rows.
+             */
+            ranking: components["schemas"]["StructureRow"][];
+            /**
+             * Session
+             * Format: date
+             * @description Trade date.
+             */
+            session: string;
+            /**
+             * Symbol
+             * @description Ticker symbol, such as SPY.
+             */
+            symbol: string;
+            /** @description The tails that complete the distribution. */
+            tails: components["schemas"]["TailInfo"];
+            /**
+             * Underlying Close
+             * @description Underlying close in dollars ($/sh).
+             */
+            underlying_close: number;
+            /** @description Which kind serves the outcome best, and why. */
+            verdict: components["schemas"]["Verdict"];
+            /** @description The outcome, resolved to prices and probabilities. */
+            view: components["schemas"]["ViewInfo"];
+            /**
+             * Years
+             * @description Time to expiration in years (ACT/365).
+             */
+            years: number;
+        };
+        /**
+         * TailInfo
+         * @description The lognormal tails that complete the distribution outside the outer knots.
+         */
+        TailInfo: {
+            /**
+             * Location
+             * @description Centre of the lognormal tails in dollars ($/sh): the forward, or the calibrated median when the forward is unknown.
+             */
+            location: number;
+            /**
+             * Mass Hi
+             * @description Calibrated probability above the highest knot, a decimal in [0, 1].
+             */
+            mass_hi: number;
+            /**
+             * Mass Lo
+             * @description Calibrated probability below the lowest knot, a decimal in [0, 1].
+             */
+            mass_lo: number;
+            /**
+             * Sigma Hi
+             * @description Volatility of the upper tail, a decimal (0.20 = 20%).
+             */
+            sigma_hi: number;
+            /**
+             * Sigma Lo
+             * @description Volatility of the lower tail, a decimal (0.20 = 20%).
+             */
+            sigma_lo: number;
+        };
+        /**
          * Underlying
          * @description An underlying with the sessions available for it.
          */
@@ -1344,6 +1936,93 @@ export interface components {
             latest_session: string;
             /** Underlyings */
             underlyings: components["schemas"]["Underlying"][];
+        };
+        /**
+         * Verdict
+         * @description Which kind serves the outcome best, and the best spread against the best single.
+         */
+        Verdict: {
+            /**
+             * Advantage
+             * @description spread_return_if_right minus single_return_if_right, a decimal; positive when the spread serves the outcome better; null when a side is missing.
+             */
+            advantage: number | null;
+            /**
+             * Best Kind
+             * @description Kind with the highest return_if_right; null when no kind qualifies.
+             */
+            best_kind: ("long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor") | null;
+            /**
+             * Reason
+             * @description One descriptive sentence that explains the comparison.
+             */
+            reason: string;
+            /**
+             * Single Kind
+             * @description Best qualifying outright long premium (long call, long put; the straddle and strangle too when the outcome is a move); null when none qualifies.
+             */
+            single_kind: ("long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor") | null;
+            /**
+             * Single Return If Right
+             * @description return_if_right of single_kind (return on max loss), a decimal; null without one.
+             */
+            single_return_if_right: number | null;
+            /**
+             * Spread Kind
+             * @description Best qualifying spread (the four verticals and the iron condor); null when none qualifies.
+             */
+            spread_kind: ("long_call" | "long_put" | "bull_call_spread" | "bear_put_spread" | "bull_put_spread" | "bear_call_spread" | "long_straddle" | "long_strangle" | "iron_condor") | null;
+            /**
+             * Spread Return If Right
+             * @description return_if_right of spread_kind (return on max loss), a decimal; null without one.
+             */
+            spread_return_if_right: number | null;
+        };
+        /**
+         * ViewInfo
+         * @description The outcome the structures are measured against, resolved to prices.
+         */
+        ViewInfo: {
+            /**
+             * Hi
+             * @description Upper bound of the range in dollars ($/sh), exclusive; null when open.
+             */
+            hi: number | null;
+            /**
+             * Hi Moneyness
+             * @description hi divided by the underlying close.
+             */
+            hi_moneyness: number | null;
+            /**
+             * Lo
+             * @description Lower bound of the range in dollars ($/sh), inclusive; null when open.
+             */
+            lo: number | null;
+            /**
+             * Lo Moneyness
+             * @description lo divided by the underlying close.
+             */
+            lo_moneyness: number | null;
+            /**
+             * Outside
+             * @description True when the outcome is the price landing outside [lo, hi) (a big move).
+             */
+            outside: boolean;
+            /**
+             * Preset
+             * @description The preset id; null for a custom range.
+             */
+            preset: ("up" | "up_moderate" | "flat" | "down_moderate" | "down" | "big_move") | null;
+            /**
+             * Prob
+             * @description Probability of the outcome under the calibrated, tail-completed distribution, a decimal in [0, 1].
+             */
+            prob: number;
+            /**
+             * Prob Market
+             * @description Probability of the outcome under the raw (market-implied) risk-neutral distribution with the same tails, a decimal in [0, 1].
+             */
+            prob_market: number;
         };
     };
     responses: never;
@@ -1491,6 +2170,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SpreadDetail"];
+                };
+            };
+            /** @description Unknown underlying, session or spread. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A path or query parameter is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The database is locked by a writer, missing, or lacks a gold table. */
+            503: {
+                headers: {
+                    /** @description Seconds to wait before retrying (database_busy only). */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getOutcomeMap: {
+        parameters: {
+            query?: {
+                /** @description Trade date, YYYY-MM-DD, or latest. */
+                session?: string | "latest";
+                /** @description Target calendar days to expiration. */
+                target_dte?: number;
+                /** @description natural (long legs at the ask, short at the bid) or mid. */
+                fill?: "natural" | "mid";
+                /** @description auto, production or walk_forward calibration map. */
+                map?: "auto" | "production" | "walk_forward";
+                /** @description Smallest P(profit | outcome), a decimal, for a structure to qualify. */
+                min_pop_given?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutcomeMapResponse"];
+                };
+            };
+            /** @description Unknown underlying, session or spread. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description A path or query parameter is invalid. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description The database is locked by a writer, missing, or lacks a gold table. */
+            503: {
+                headers: {
+                    /** @description Seconds to wait before retrying (database_busy only). */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getStructures: {
+        parameters: {
+            query?: {
+                /** @description Expiration; default the one with a distribution nearest 35 days. */
+                expiration?: string | null;
+                /** @description A preset outcome. */
+                preset?: ("up" | "up_moderate" | "flat" | "down_moderate" | "down" | "big_move") | null;
+                /** @description Lower bound of a custom outcome as a fraction of the close. */
+                lo?: number | null;
+                /** @description Upper bound of a custom outcome as a fraction of the close. */
+                hi?: number | null;
+                /** @description The outcome is the price landing outside [lo, hi). */
+                outside?: boolean;
+                /** @description natural (long legs at the ask, short at the bid) or mid. */
+                fill?: "natural" | "mid";
+                /** @description auto, production or walk_forward calibration map. */
+                map?: "auto" | "production" | "walk_forward";
+                /** @description Smallest P(profit | outcome), a decimal, for a structure to qualify. */
+                min_pop_given?: number;
+                /** @description Most ranking rows. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Ticker symbol, such as SPY. */
+                symbol: string;
+                /** @description Trade date, YYYY-MM-DD. */
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructuresResponse"];
                 };
             };
             /** @description Unknown underlying, session or spread. */
