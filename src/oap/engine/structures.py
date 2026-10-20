@@ -377,17 +377,21 @@ def _condors(
     return _Candidates(strikes, prices, (far, kp2 - kp1, kp2))
 
 
-def _valid(kind: StructureKind, cands: _Candidates) -> npt.NDArray[np.bool_]:
+def _valid(
+    kind: StructureKind, cands: _Candidates, min_risk_fraction: float
+) -> npt.NDArray[np.bool_]:
     """Flag the candidates that are structures: every leg filled and the premium sign right.
 
     A leg whose fill is 0 is skipped (the structure is dropped). Debit structures need
     ``net_premium > 0`` and credit structures ``net_premium < 0`` (a free lunch is a bad
-    quote); a credit structure also needs a credit below its width, so its max loss is
-    positive.
+    quote); a credit structure also needs a max loss of at least ``min_risk_fraction`` of its
+    width, so a credit that nearly equals the width (a wide or stale quote at the mid) does
+    not pass as an almost riskless structure.
 
     Args:
         kind: The structure kind.
         cands: The candidates.
+        min_risk_fraction: Smallest max loss of a credit structure as a fraction of its width.
 
     Returns:
         Boolean row mask.
@@ -399,7 +403,8 @@ def _valid(kind: StructureKind, cands: _Candidates) -> npt.NDArray[np.bool_]:
     if spec.premium == "debit":
         return np.asarray(filled & (net > 0), dtype=np.bool_)
     widths = cands.strikes[:, 1] - cands.strikes[:, 0]  # a vertical's width, a condor's wing
-    return np.asarray(filled & (net < 0) & (-net < widths), dtype=np.bool_)
+    max_loss = widths + net  # credit is -net
+    return np.asarray(filled & (net < 0) & (max_loss >= min_risk_fraction * widths), dtype=np.bool_)
 
 
 def _capped(cands: _Candidates, max_per_kind: int) -> _Candidates:
@@ -430,6 +435,7 @@ def enumerate_structures(
     max_width_fraction: float = 0.10,
     strangle_max_moneyness: float = 0.15,
     max_per_kind: int = 400,
+    min_risk_fraction: float = 0.05,
 ) -> list[Position]:
     """List the structures one expiration's usable quotes allow.
 
@@ -440,8 +446,10 @@ def enumerate_structures(
     strike below the close and a call strike above it, both within ``strangle_max_moneyness``
     of it; iron condors a bull put spread with its short strike below the close and a bear
     call spread with its short strike above it, of equal widths within the width cap. Debit
-    structures with ``net_premium <= 0`` and credit structures with ``net_premium >= 0`` (or a
-    credit at or above the width) are dropped. When a kind has more than ``max_per_kind``
+    structures with ``net_premium <= 0`` and credit structures with ``net_premium >= 0`` are
+    dropped, as is a credit structure whose max loss is below ``min_risk_fraction`` of its
+    width (a credit that nearly equals the width is a wide or stale quote, not a structure
+    with almost no risk). When a kind has more than ``max_per_kind``
     structures, those whose strikes are nearest the close are kept: the singles and
     straddles by strike distance, verticals by the strike nearest the close, strangles and
     condors by the farther of their two inner strikes.
@@ -457,13 +465,16 @@ def enumerate_structures(
         max_width_fraction: Widest vertical or condor wing as a fraction of the close.
         strangle_max_moneyness: Largest ``|K / close - 1|`` of a strangle leg, a decimal.
         max_per_kind: Most structures kept per kind, at least 1.
+        min_risk_fraction: Smallest max loss of a credit structure as a fraction of its
+            width, a decimal in [0, 1).
 
     Returns:
         Positions in kind order (``StructureKind``), each kind ordered by its cap key.
 
     Raises:
         EngineInputError: If ``close`` or ``years`` is not positive, ``knot_lo > knot_hi``,
-            ``fill`` is unknown, a fraction is not positive or ``max_per_kind < 1``.
+            ``fill`` is unknown, a fraction is not positive, ``max_per_kind < 1`` or
+            ``min_risk_fraction`` is outside [0, 1).
     """
     if require_finite_scalar(close, "close") <= 0:
         raise EngineInputError("close must be positive")
@@ -477,6 +488,8 @@ def enumerate_structures(
         raise EngineInputError("max_width_fraction and strangle_max_moneyness must be positive")
     if max_per_kind < 1:
         raise EngineInputError("max_per_kind must be at least 1")
+    if not (0.0 <= min_risk_fraction < 1.0):
+        raise EngineInputError("min_risk_fraction must lie in [0, 1)")
     c = calls.within(knot_lo, knot_hi)
     p = puts.within(knot_lo, knot_hi)
     max_width = max_width_fraction * close
@@ -489,7 +502,7 @@ def enumerate_structures(
     positions: list[Position] = []
     for kind in StructureKind:
         cands = candidates[kind]
-        kept = _capped(cands.keep(_valid(kind, cands)), max_per_kind)
+        kept = _capped(cands.keep(_valid(kind, cands, min_risk_fraction)), max_per_kind)
         for strikes, prices in zip(kept.strikes, kept.prices, strict=True):
             positions.append(build(kind, strikes.tolist(), prices.tolist(), years))
     return positions

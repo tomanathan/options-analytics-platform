@@ -1761,7 +1761,7 @@ export interface components {
         StructuresResponse: {
             /**
              * Density
-             * @description Calibrated, tail-completed probability density at each grid price (1/$).
+             * @description Calibrated, tail-completed probability density at each grid price (1/$): inside the quoted strikes the calibrated probability of the raw knot interval holding the price divided by its width (the landscape's density_calibrated), beyond them the lognormal tail density.
              */
             density: number[];
             /**
@@ -1793,7 +1793,7 @@ export interface components {
             forward: number | null;
             /**
              * Grid
-             * @description Terminal prices in dollars ($/sh): 161 evenly spaced points from the 0.5% to the 99.5% quantile of the calibrated, tail-completed distribution.
+             * @description Terminal prices in dollars ($/sh): 161 evenly spaced points from the 0.5% to the 99.5% quantile of the calibrated, tail-completed distribution, read at the raw knots as density is.
              */
             grid: number[];
             /**

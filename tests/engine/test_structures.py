@@ -91,9 +91,10 @@ def test_counts_per_kind_match_a_brute_force_count() -> None:
     pairs = [(a, b) for a, b in itertools.combinations(STRIKES, 2) if b - a <= 10.0]
     expected = {
         K.BULL_CALL_SPREAD: sum(1 for a, b in pairs if ca[a] - cb[b] > 0),
-        K.BEAR_CALL_SPREAD: sum(1 for a, b in pairs if 0 < cb[a] - ca[b] < b - a),
+        # Credit structures keep a max loss of at least 5% of the width (the default floor).
+        K.BEAR_CALL_SPREAD: sum(1 for a, b in pairs if 0 < cb[a] - ca[b] <= 0.95 * (b - a)),
         K.BEAR_PUT_SPREAD: sum(1 for a, b in pairs if pa[b] - pb[a] > 0),
-        K.BULL_PUT_SPREAD: sum(1 for a, b in pairs if 0 < pb[b] - pa[a] < b - a),
+        K.BULL_PUT_SPREAD: sum(1 for a, b in pairs if 0 < pb[b] - pa[a] <= 0.95 * (b - a)),
     }
     for kind, count in expected.items():
         assert len(groups[kind]) == count > 0, kind
@@ -106,7 +107,7 @@ def test_counts_per_kind_match_a_brute_force_count() -> None:
     condors = sum(
         1
         for (p1, p2), (c1, c2) in itertools.product(put_wings, call_wings)
-        if p2 - p1 == c2 - c1 and 0 < pb[p2] - pa[p1] + cb[c1] - ca[c2] < p2 - p1
+        if p2 - p1 == c2 - c1 and 0 < pb[p2] - pa[p1] + cb[c1] - ca[c2] <= 0.95 * (p2 - p1)
     )
     assert len(groups[K.IRON_CONDOR]) == condors > 0
 
@@ -153,6 +154,40 @@ def test_free_lunches_are_dropped() -> None:
     bear_puts = [p for p in positions if p.kind == K.BEAR_PUT_SPREAD]
     assert all(p.net_premium > 0 for p in bear_puts)
     assert not any(p.kinks == (100.0, 105.0) for p in bear_puts)
+
+
+def test_credit_structures_need_a_minimum_max_loss() -> None:
+    calls, puts = _chain()
+    # A 105 put bid of 4.97 against a 100 put ask of 0.02: the -105/+100 bull put spread would
+    # collect 4.95 on a 5.00 width, a max loss of 0.05 (1% of the width) from a wide quote.
+    bids, asks = puts.bids.copy(), puts.asks.copy()
+    bids[STRIKES == 105.0] = 4.97
+    asks[STRIKES == 105.0] = 4.99
+    bids[STRIKES == 100.0] = 0.01
+    asks[STRIKES == 100.0] = 0.02
+    wide = ChainSide(STRIKES.copy(), bids, asks)
+    kwargs: dict[str, object] = {
+        "close": CLOSE,
+        "years": YEARS,
+        "knot_lo": 70.0,
+        "knot_hi": 130.0,
+        "fill": "natural",
+    }
+    kept = [
+        p
+        for p in enumerate_structures(calls, wide, **kwargs)  # type: ignore[arg-type]
+        if p.kind == K.BULL_PUT_SPREAD and p.kinks == (100.0, 105.0)
+    ]
+    assert kept == []
+    unfiltered = [
+        p
+        for p in enumerate_structures(calls, wide, min_risk_fraction=0.0, **kwargs)  # type: ignore[arg-type]
+        if p.kind == K.BULL_PUT_SPREAD and p.kinks == (100.0, 105.0)
+    ]
+    assert len(unfiltered) == 1
+    assert math.isclose(unfiltered[0].max_loss, 0.05, abs_tol=1e-12)
+    with pytest.raises(EngineInputError):
+        enumerate_structures(calls, puts, min_risk_fraction=1.0, **kwargs)  # type: ignore[arg-type]
 
 
 def test_fills_by_side() -> None:
