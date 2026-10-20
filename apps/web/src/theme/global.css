@@ -852,8 +852,14 @@ main {
 }
 
 .chips--end {
+  flex-wrap: nowrap;
   justify-content: flex-end;
   align-items: center;
+}
+
+/* Keep table rows one line tall when a cell carries a chip. */
+.chips--end .chip {
+  height: 18px;
 }
 
 .outcome {
