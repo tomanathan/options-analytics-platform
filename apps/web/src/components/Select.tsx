@@ -3,6 +3,8 @@ import { useId } from 'react';
 export interface SelectOption {
   value: string;
   label: string;
+  /** Shown but not selectable, such as an expiration without a curve. */
+  disabled?: boolean;
 }
 
 interface SelectProps {
@@ -29,7 +31,7 @@ export function Select({ label, value, options, onChange, disabled }: SelectProp
         onChange={(event) => onChange(event.target.value)}
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}

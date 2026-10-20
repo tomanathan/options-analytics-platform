@@ -145,16 +145,18 @@ export const kindDash = (kind: StructureKind): string | undefined =>
 export interface PresetMeta {
   id: PresetId;
   label: string;
+  /** True when the view is the complement of the bounds (a big move either way). */
+  outside: boolean;
 }
 
 /** The six quantile presets of the design spec, in its order. */
 export const PRESETS: readonly PresetMeta[] = [
-  { id: 'up', label: 'Up, above the 75th percentile' },
-  { id: 'up_moderate', label: 'Up, moderately (55th to 85th)' },
-  { id: 'flat', label: 'Flat (25th to 75th)' },
-  { id: 'down_moderate', label: 'Down, moderately (15th to 45th)' },
-  { id: 'down', label: 'Down, below the 25th percentile' },
-  { id: 'big_move', label: 'Big move, outside the 10th to 90th' },
+  { id: 'up', outside: false, label: 'Up, above the 75th percentile' },
+  { id: 'up_moderate', outside: false, label: 'Up, moderately (55th to 85th)' },
+  { id: 'flat', outside: false, label: 'Flat (25th to 75th)' },
+  { id: 'down_moderate', outside: false, label: 'Down, moderately (15th to 45th)' },
+  { id: 'down', outside: false, label: 'Down, below the 25th percentile' },
+  { id: 'big_move', outside: true, label: 'Big move, outside the 10th to 90th' },
 ];
 
 export const PRESET_IDS: readonly PresetId[] = PRESETS.map((preset) => preset.id);

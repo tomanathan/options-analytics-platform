@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import type { MapChoice, SpreadSort } from '../api/types';
+import type { Fill, MapChoice, PresetId, SpreadSort } from '../api/types';
 import {
   CALIBRATION,
   makeChain,
@@ -11,6 +11,24 @@ import {
   makeSpreads,
   UNDERLYINGS,
 } from './fixtures';
+import { makeOutcomeMap, makeStructures } from './structureFixtures';
+
+const PRESETS: readonly PresetId[] = [
+  'up',
+  'up_moderate',
+  'flat',
+  'down_moderate',
+  'down',
+  'big_move',
+];
+
+function presetOf(value: string | null): PresetId | null {
+  return PRESETS.find((preset) => preset === value) ?? null;
+}
+
+function fillOf(value: string | null): Fill {
+  return value === 'mid' ? 'mid' : 'natural';
+}
 
 /** Every request URL the handlers have seen, cleared after each test. */
 export const requestLog: string[] = [];
@@ -88,6 +106,52 @@ export const handlers = [
   http.get('/api/calibration/summary', ({ request }) => {
     requestLog.push(request.url);
     return HttpResponse.json(CALIBRATION);
+  }),
+  http.get('/api/structures/map', ({ request }) => {
+    requestLog.push(request.url);
+    const q = new URL(request.url).searchParams;
+    return HttpResponse.json(
+      makeOutcomeMap({
+        session: q.get('session') ?? 'latest',
+        targetDte: Number(q.get('target_dte') ?? 35),
+        fill: fillOf(q.get('fill')),
+        map: mapOf(new URL(request.url)),
+      }),
+    );
+  }),
+  http.get('/api/structures/:symbol/:session', ({ request, params }) => {
+    requestLog.push(request.url);
+    const q = new URL(request.url).searchParams;
+    const bound = (key: string) => (q.has(key) ? Number(q.get(key)) : null);
+    const preset = presetOf(q.get('preset'));
+    const lo = bound('lo');
+    const hi = bound('hi');
+    if (preset === null && lo === null && hi === null) {
+      return HttpResponse.json(
+        { detail: 'Give a preset or at least one bound.', code: 'view_required' },
+        { status: 422 },
+      );
+    }
+    if (preset === null && lo !== null && hi !== null && lo >= hi) {
+      return HttpResponse.json(
+        { detail: 'The lower bound must be below the upper bound.', code: 'view_invalid' },
+        { status: 422 },
+      );
+    }
+    return HttpResponse.json(
+      makeStructures({
+        symbol: String(params.symbol),
+        session: String(params.session),
+        expiration: q.get('expiration'),
+        preset,
+        lo,
+        hi,
+        outside: q.get('outside') === 'true',
+        fill: fillOf(q.get('fill')),
+        map: mapOf(new URL(request.url)),
+        minPopGiven: Number(q.get('min_pop_given') ?? 0.5),
+      }),
+    );
   }),
 ];
 
