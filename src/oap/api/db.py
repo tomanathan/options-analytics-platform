@@ -43,6 +43,16 @@ QUOTES_SQL: Final = (
     "from gold.fct_option_quote where underlying = ? "
     "order by trade_date, expiration, strike, option_right"
 )
+SESSION_QUOTES_SQL: Final = (
+    "select underlying, trade_date, expiration, cast(strike as double) as strike, "
+    "option_right, cast(bid as double) as bid, cast(ask as double) as ask, "
+    "cast(mid as double) as mid, cast(source_iv as double) as source_iv, "
+    "cast(source_delta as double) as source_delta, cast(moneyness as double) as moneyness, "
+    "cast(underlying_close as double) as underlying_close, dte_days "
+    "from gold.fct_option_quote where trade_date = ? "
+    "order by underlying, trade_date, expiration, strike, option_right"
+)
+"""Every underlying's quotes of one session, with the columns and order of ``QUOTES_SQL``."""
 OUTCOMES_SQL: Final = (
     "select expiration, settlement_date, cast(settlement_close as double) as settlement_close "
     "from gold.fct_expiration_outcome where underlying = ?"

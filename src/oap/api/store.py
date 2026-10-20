@@ -43,13 +43,16 @@ from oap.api.models import (
     CalibrationSummary,
     ChainResponse,
     DistributionResponse,
+    Fill,
     HealthResponse,
     HeatmapResponse,
     MapChoice,
     MetricValue,
+    OutcomeMapResponse,
     SessionsResponse,
     SpreadDetail,
     SpreadsResponse,
+    StructuresResponse,
     Underlying,
     UnderlyingsResponse,
 )
@@ -62,10 +65,25 @@ from oap.api.spreads import (
     spread_detail,
     spread_rows,
 )
+from oap.api.structures import (
+    StructureBook,
+    StructuresQuery,
+    build_book,
+    choose_expiration,
+    outcome_map,
+    resolve_view,
+    structures_response,
+)
 from oap.engine.calibration import CalibrationMap
 
 OVERALL: Final = "overall"
 """``segment_type`` of the metrics that cover the whole out-of-sample sample."""
+
+BOOK_CACHE: Final = 32
+"""Scored-structure books (one per symbol, session, expiration, map and fill) kept in memory."""
+
+OUTCOME_MAP_CACHE: Final = 4
+"""Outcome maps (one per session, target DTE, map, fill and threshold) kept in memory."""
 
 VARIANTS: Final[Mapping[str, Literal["raw", "calibrated", "delta"]]] = {
     "raw": "raw",
@@ -211,6 +229,10 @@ class GoldStore:
         self._sessions = _Lru[tuple[Signature, str, date, str], SessionBundle](
             settings.session_cache
         )
+        self._books = _Lru[tuple[Signature, str, date, date, str, Fill], StructureBook](BOOK_CACHE)
+        self._outcome_maps = _Lru[
+            tuple[Signature, date, int, str, Fill, float], OutcomeMapResponse
+        ](OUTCOME_MAP_CACHE)
         self._last_good: Signature | None = None
         self._last_good_at: datetime | None = None
 
@@ -258,6 +280,8 @@ class GoldStore:
             del self._tables[old]
         self._quotes.drop_if(lambda key: key[0] != sig)
         self._sessions.drop_if(lambda key: key[0] != sig)
+        self._books.drop_if(lambda key: key[0] != sig)
+        self._outcome_maps.drop_if(lambda key: key[0] != sig)
 
     def _read(self, allow: bool, queries: list[Query]) -> list[pd.DataFrame]:
         """Read from the database when allowed.
@@ -451,6 +475,47 @@ class GoldStore:
         self._sessions.put(key, bundle)
         return bundle
 
+    def _book(
+        self,
+        sig: Signature,
+        bundle: SessionBundle,
+        expiration: date,
+        dte_days: int,
+        chosen: ChosenMap,
+        fill: Fill,
+        allow: bool,
+    ) -> StructureBook:
+        """Return the enumerated structures of one expiration, building them once.
+
+        Args:
+            sig: The file signature.
+            bundle: The session bundle whose curves the book completes.
+            expiration: Expiration date; it has curves in ``bundle``.
+            dte_days: Calendar days to expiration.
+            chosen: The calibration map of ``bundle``.
+            fill: natural or mid fills.
+            allow: Whether the database may be read.
+
+        Returns:
+            The book.
+
+        Raises:
+            Unprocessable: ``no_implied_vol`` when the expiration has no positive IV.
+        """
+        key = (sig, bundle.symbol, bundle.session, expiration, chosen.map_id, fill)
+        cached = self._books.get(key)
+        if cached is not None:
+            return cached
+        rows = self._quotes_bundle(sig, bundle.symbol, allow).session_quotes(bundle.session)
+        if rows is None:
+            raise NotFound(f"{bundle.symbol} has no session {bundle.session}")
+        chain = rows.loc[rows["expiration"] == pd.Timestamp(expiration)]
+        book = build_book(
+            bundle.symbol, bundle.session, dte_days, chain, bundle.curves[expiration], fill
+        )
+        self._books.put(key, book)
+        return book
+
     def _chosen(self, sig: Signature, session: date, choice: MapChoice, allow: bool) -> ChosenMap:
         """Pick the calibration map for a session.
 
@@ -606,6 +671,78 @@ class GoldStore:
             if curves is None:
                 raise NotFound(f"no distribution for the expiration of {spread_key}")
             return spread_detail(row, curves)
+
+        return self._serve(fetch)
+
+    def structures(
+        self, symbol: str, session: date, choice: MapChoice, query: StructuresQuery
+    ) -> Served[StructuresResponse]:
+        """Score every structure of one expiration against an outcome.
+
+        Args:
+            symbol: Ticker symbol.
+            session: Trade date.
+            choice: The calibration map selection.
+            query: Expiration, outcome, fill, threshold and row limit.
+
+        Returns:
+            The structures response.
+
+        Raises:
+            NotFound: If the underlying, session or expiration is unknown.
+            Unprocessable: ``view_required``, ``view_invalid``, ``no_distribution`` or
+                ``no_implied_vol``.
+        """
+
+        def fetch(sig: Signature, allow: bool) -> StructuresResponse:
+            chosen = self._chosen(sig, session, choice, allow)
+            bundle = self._bundle(sig, symbol, session, chosen, allow)
+            expiration, dte_days = choose_expiration(bundle.distribution, query.expiration)
+            book = self._book(sig, bundle, expiration, dte_days, chosen, query.fill, allow)
+            view, preset = resolve_view(query, book.dist, book.curves.close)
+            return structures_response(book, view, preset, query, chosen)
+
+        return self._serve(fetch)
+
+    def outcome_map(
+        self,
+        session: date | None,
+        target_dte: int,
+        fill: Fill,
+        choice: MapChoice,
+        min_pop_given: float,
+    ) -> Served[OutcomeMapResponse]:
+        """Return the verdict numbers of every underlying of a session for every preset.
+
+        Args:
+            session: Trade date; the latest session of the table when None.
+            target_dte: Target calendar days to expiration.
+            fill: natural or mid fills.
+            choice: The calibration map selection.
+            min_pop_given: Smallest P(profit | outcome), a decimal, for a structure to qualify.
+
+        Returns:
+            The outcome map.
+
+        Raises:
+            NotFound: If no underlying has quotes on the session.
+        """
+
+        def fetch(sig: Signature, allow: bool) -> OutcomeMapResponse:
+            day = session if session is not None else self._underlyings_data(sig, allow).latest
+            chosen = self._chosen(sig, day, choice, allow)
+            key = (sig, day, target_dte, chosen.map_id, fill, min_pop_given)
+            cached = self._outcome_maps.get(key)
+            if cached is not None:
+                return cached
+            quotes = self._read(allow, [(db.SESSION_QUOTES_SQL, (day,))])[0]
+            if quotes.empty:
+                raise NotFound(f"no underlying has quotes on {day}")
+            response = outcome_map(
+                day, quotes, chosen, target_dte=target_dte, fill=fill, min_pop_given=min_pop_given
+            )
+            self._outcome_maps.put(key, response)
+            return response
 
         return self._serve(fetch)
 

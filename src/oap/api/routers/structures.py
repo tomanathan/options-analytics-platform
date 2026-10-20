@@ -3,9 +3,9 @@
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response
+from fastapi import APIRouter, Path, Query, Response
 
-from oap.api.deps import StoreDep
+from oap.api.deps import StoreDep, respond
 from oap.api.models import (
     Fill,
     MapChoice,
@@ -14,6 +14,7 @@ from oap.api.models import (
     StructuresResponse,
 )
 from oap.api.routers import ERROR_RESPONSES, SYMBOL_PATTERN
+from oap.api.structures import StructuresQuery
 
 router = APIRouter(prefix="/api/structures", tags=["structures"], responses=ERROR_RESPONSES)
 
@@ -34,8 +35,6 @@ MinPopGiven = Annotated[
         description="Smallest P(profit | outcome), a decimal, for a structure to qualify.",
     ),
 ]
-
-NOT_READY = "Structure scoring is served from the next commit of feat/structures-api."
 
 
 @router.get("/map", name="getOutcomeMap", response_model=OutcomeMapResponse)
@@ -66,7 +65,8 @@ def get_outcome_map(
     Returns:
         One row per underlying with the session, one cell per preset.
     """
-    raise HTTPException(status_code=501, detail=NOT_READY)
+    day = None if session == "latest" else session
+    return respond(store.outcome_map(day, target_dte, fill, map_choice, min_pop_given), response)
 
 
 @router.get("/{symbol}/{session}", name="getStructures", response_model=StructuresResponse)
@@ -116,4 +116,14 @@ def get_structures(
     Returns:
         The best structure per kind, the ranking, the dominance strip and the verdict.
     """
-    raise HTTPException(status_code=501, detail=NOT_READY)
+    query = StructuresQuery(
+        expiration=expiration,
+        preset=preset,
+        lo=lo,
+        hi=hi,
+        outside=outside,
+        fill=fill,
+        min_pop_given=min_pop_given,
+        limit=limit,
+    )
+    return respond(store.structures(symbol, session, map_choice, query), response)
