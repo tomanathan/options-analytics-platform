@@ -5,11 +5,13 @@ import {
   DASH,
   expiryLabel,
   longDate,
+  multiple,
   num,
   pct,
   pctTick,
   ratio,
   shortDate,
+  signedMultiple,
   signedPct,
   signedPoints,
   strike,
@@ -88,5 +90,18 @@ describe('format', () => {
     expect(annualisedRoc(3.4)).toBe('340%');
     expect(annualisedRoc(null)).toBe(DASH);
     expect(annualisedRoc(4.5e13)).toBe('>10,000%');
+  });
+
+  it('formats a return on risk as a multiple', () => {
+    expect(multiple(1.74)).toBe('1.74×');
+    expect(multiple(-0.5)).toBe('-0.50×');
+    expect(multiple(null)).toBe(DASH);
+  });
+
+  it('signs a difference of multiples and drops the sign of a zero', () => {
+    expect(signedMultiple(0.53)).toBe('+0.53×');
+    expect(signedMultiple(-0.8)).toBe('-0.80×');
+    expect(signedMultiple(-0.001)).toBe('0.00×');
+    expect(signedMultiple(Number.NaN)).toBe(DASH);
   });
 });

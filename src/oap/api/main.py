@@ -16,7 +16,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from oap import __version__
 from oap.api.errors import install_error_handlers
 from oap.api.models import ErrorBody, HealthResponse
-from oap.api.routers import landscape, meta, spreads
+from oap.api.routers import landscape, meta, spreads, structures
 from oap.api.settings import ApiSettings
 from oap.api.static import SPAStaticFiles
 from oap.api.store import GoldStore
@@ -65,7 +65,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app = FastAPI(
         title="oap explorer API",
         version=__version__,
-        description="Read-only API over the gold tables: distributions, heatmaps and spreads.",
+        description="Read-only API over the gold tables: distributions, heatmaps, spreads and "
+        "structures.",
         generate_unique_id_function=_operation_id,
     )
     app.state.settings = cfg
@@ -81,7 +82,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             expose_headers=["Retry-After", "X-OAP-Data-Stale"],
         )
     install_error_handlers(app, retry_after_s=cfg.retry_after_s)
-    for module in (meta, landscape, spreads):
+    for module in (meta, landscape, spreads, structures):
         app.include_router(module.router)
 
     @app.get("/healthz", name="healthz", response_model=HealthResponse, tags=["meta"])

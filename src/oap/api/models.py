@@ -15,9 +15,37 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-ErrorCode = Literal["database_busy", "database_missing", "gold_missing", "not_found", "invalid"]
+ErrorCode = Literal[
+    "database_busy",
+    "database_missing",
+    "gold_missing",
+    "not_found",
+    "invalid",
+    "view_required",
+    "view_invalid",
+    "no_distribution",
+    "no_implied_vol",
+]
 SpreadSort = Literal["return", "edge", "reward_to_risk", "kelly", "pop", "pop_gap", "entry"]
 MapChoice = Literal["auto", "production", "walk_forward"]
+StructureKind = Literal[
+    "long_call",
+    "long_put",
+    "bull_call_spread",
+    "bear_put_spread",
+    "bull_put_spread",
+    "bear_call_spread",
+    "long_straddle",
+    "long_strangle",
+    "iron_condor",
+]
+"""Structure kinds in the order of the spec table; the values of the engine's StructureKind."""
+Direction = Literal["up", "down", "move", "range"]
+"""The outcome a structure kind is built for."""
+Fill = Literal["natural", "mid"]
+"""natural: long legs at the ask and short legs at the bid; mid: every leg at the mid."""
+PresetId = Literal["up", "up_moderate", "flat", "down_moderate", "down", "big_move"]
+"""Quantile-based outcome presets, the ids of ``oap.analytics.views.PRESETS``."""
 
 
 class ApiModel(BaseModel):
@@ -388,3 +416,272 @@ class ErrorBody(ApiModel):
 
     detail: str
     code: ErrorCode
+
+
+class TailInfo(ApiModel):
+    """The lognormal tails that complete the distribution outside the outer knots."""
+
+    sigma_lo: float = Field(description="Volatility of the lower tail, a decimal (0.20 = 20%).")
+    sigma_hi: float = Field(description="Volatility of the upper tail, a decimal (0.20 = 20%).")
+    mass_lo: float = Field(
+        description="Calibrated probability below the lowest knot, a decimal in [0, 1]."
+    )
+    mass_hi: float = Field(
+        description="Calibrated probability above the highest knot, a decimal in [0, 1]."
+    )
+    location: float = Field(
+        description="Centre of the lognormal tails in dollars ($/sh): the forward, or the "
+        "calibrated median when the forward is unknown."
+    )
+
+
+class ViewInfo(ApiModel):
+    """The outcome the structures are measured against, resolved to prices."""
+
+    preset: PresetId | None = Field(description="The preset id; null for a custom range.")
+    lo: float | None = Field(
+        description="Lower bound of the range in dollars ($/sh), inclusive; null when open."
+    )
+    hi: float | None = Field(
+        description="Upper bound of the range in dollars ($/sh), exclusive; null when open."
+    )
+    outside: bool = Field(
+        description="True when the outcome is the price landing outside [lo, hi) (a big move)."
+    )
+    lo_moneyness: float | None = Field(description="lo divided by the underlying close.")
+    hi_moneyness: float | None = Field(description="hi divided by the underlying close.")
+    prob: float = Field(
+        description="Probability of the outcome under the calibrated, tail-completed "
+        "distribution, a decimal in [0, 1]."
+    )
+    prob_market: float = Field(
+        description="Probability of the outcome under the raw (market-implied) risk-neutral "
+        "distribution with the same tails, a decimal in [0, 1]."
+    )
+
+
+class StructureRow(ApiModel):
+    """One scored structure; profit and loss is per share at expiry, undiscounted."""
+
+    kind: StructureKind = Field(description="The structure kind.")
+    direction: Direction = Field(description="The outcome the kind is built for.")
+    legs: str = Field(
+        description="Legs as signed quantity, right and strike in dollars, such as "
+        "'-1 P 250 / +1 P 245'."
+    )
+    strikes: list[float] = Field(description="Distinct strikes in dollars ($/sh), ascending.")
+    net_premium: float = Field(
+        description="Net premium in dollars per share ($/sh) at the fill: positive is a debit "
+        "paid, negative a credit received."
+    )
+    max_loss: float = Field(
+        description="Largest loss at expiry in dollars per share ($/sh), positive; the capital "
+        "at risk."
+    )
+    max_gain: float | None = Field(
+        description="Largest gain at expiry in dollars per share ($/sh); null when unbounded."
+    )
+    breakevens: list[float] = Field(
+        description="Prices at expiry in dollars ($/sh) where profit and loss crosses zero, "
+        "ascending."
+    )
+    prob_profit: float = Field(
+        description="Calibrated probability that profit and loss at expiry is positive, a decimal."
+    )
+    expected_return: float = Field(
+        description="Expected profit and loss divided by max loss (return on max loss) over the "
+        "holding period, a decimal; no interest on the capital at risk."
+    )
+    annualised_return: float | None = Field(
+        description="expected_return compounded to one year, a decimal; null when not finite."
+    )
+    reward_to_risk: float | None = Field(
+        description="Expected profit and loss divided by its standard deviation, per trade and "
+        "not annualised; null when the standard deviation is 0."
+    )
+    prob_profit_given_view: float | None = Field(
+        description="Calibrated probability of a profit given the outcome, a decimal; null when "
+        "the outcome has probability 0."
+    )
+    return_if_right: float | None = Field(
+        description="Expected profit and loss given the outcome, divided by max loss (return on "
+        "max loss), a decimal; null when the outcome has probability 0."
+    )
+    return_if_wrong: float | None = Field(
+        description="Expected profit and loss given the price lands outside the outcome, divided "
+        "by max loss, a decimal; null when the outcome has probability 1."
+    )
+    worst_in_view: float | None = Field(
+        description="Lowest profit and loss over the prices of the outcome, divided by max loss, "
+        "a decimal of at least -1; null when not finite."
+    )
+    pnl_std: float = Field(
+        description="Standard deviation of profit and loss at expiry in dollars per share ($/sh)."
+    )
+    tail_share: float = Field(
+        description="Share of the expected profit and loss that comes from beyond the outer "
+        "knots (the completed tails), a decimal in [0, 1]."
+    )
+
+
+class KindBest(StructureRow):
+    """The best structure of one kind, with its payoff curve on the response grid."""
+
+    curve: list[float] = Field(
+        description="Profit and loss divided by max loss (return on max loss) at each grid "
+        "price, a decimal."
+    )
+
+
+class DominanceSegment(ApiModel):
+    """A run of terminal prices over which one kind has the highest return on max loss."""
+
+    from_: float = Field(alias="from", description="First grid price of the run in dollars ($/sh).")
+    to: float = Field(
+        description="First grid price of the next run in dollars ($/sh); the last grid price "
+        "for the last run."
+    )
+    kind: StructureKind = Field(description="The kind with the highest pnl / max loss there.")
+
+
+class Verdict(ApiModel):
+    """Which kind serves the outcome best, and the best spread against the best single."""
+
+    best_kind: StructureKind | None = Field(
+        description="Kind with the highest return_if_right; null when no kind qualifies."
+    )
+    spread_kind: StructureKind | None = Field(
+        description="Best qualifying spread (the four verticals and the iron condor); null when "
+        "none qualifies."
+    )
+    single_kind: StructureKind | None = Field(
+        description="Best qualifying outright long premium (long call, long put; the straddle "
+        "and strangle too when the outcome is a move); null when none qualifies."
+    )
+    spread_return_if_right: float | None = Field(
+        description="return_if_right of spread_kind (return on max loss), a decimal; null "
+        "without one."
+    )
+    single_return_if_right: float | None = Field(
+        description="return_if_right of single_kind (return on max loss), a decimal; null "
+        "without one."
+    )
+    advantage: float | None = Field(
+        description="spread_return_if_right minus single_return_if_right, a decimal; positive "
+        "when the spread serves the outcome better; null when a side is missing."
+    )
+    reason: str = Field(description="One descriptive sentence that explains the comparison.")
+
+
+class StructuresResponse(ApiModel):
+    """Every structure kind scored against one outcome for one expiration."""
+
+    symbol: str = Field(description="Ticker symbol, such as SPY.")
+    session: date = Field(description="Trade date.")
+    expiration: date = Field(description="Expiration of every structure.")
+    dte_days: int = Field(description="Calendar days from the session to expiration.")
+    years: float = Field(description="Time to expiration in years (ACT/365).")
+    underlying_close: float = Field(description="Underlying close in dollars ($/sh).")
+    forward: float | None = Field(description="Forward price in dollars ($/sh); null if unknown.")
+    fill: Fill = Field(description="The fill the premiums assume.")
+    map_id: str = Field(description="The calibration map that was applied.")
+    map_is_identity: bool = Field(description="True when the map leaves probabilities unchanged.")
+    look_ahead: bool = Field(
+        description="True when the map was fitted on outcomes that settle after this session."
+    )
+    tails: TailInfo = Field(description="The tails that complete the distribution.")
+    view: ViewInfo = Field(description="The outcome, resolved to prices and probabilities.")
+    grid: list[float] = Field(
+        description="Terminal prices in dollars ($/sh): 161 evenly spaced points from the 0.5% "
+        "to the 99.5% quantile of the calibrated, tail-completed distribution."
+    )
+    density: list[float] = Field(
+        description="Calibrated, tail-completed probability density at each grid price (1/$)."
+    )
+    kinds: list[KindBest] = Field(
+        description="The best qualifying structure of each kind, in the order of the kind list."
+    )
+    ranking: list[StructureRow] = Field(
+        description="The qualifying structures of every kind, highest return_if_right first, "
+        "at most limit rows."
+    )
+    dominance: list[DominanceSegment] = Field(
+        description="Over the grid, which of the kinds above has the highest pnl / max loss."
+    )
+    verdict: Verdict = Field(description="Which kind serves the outcome best, and why.")
+    n_structures: int = Field(description="Structures enumerated and scored.")
+    n_qualifying: int = Field(
+        description="Structures with prob_profit_given_view at or above min_pop_given and a "
+        "finite return_if_right."
+    )
+
+
+class PresetInfo(ApiModel):
+    """A preset outcome."""
+
+    id: PresetId = Field(description="The preset id.")
+    label: str = Field(description="Human-readable label, with its quantiles.")
+
+
+class OutcomeCell(ApiModel):
+    """The verdict numbers of one underlying for one preset outcome."""
+
+    preset: PresetId = Field(description="The preset id.")
+    lo: float | None = Field(
+        description="Lower bound of the outcome in dollars ($/sh); null when open."
+    )
+    hi: float | None = Field(
+        description="Upper bound of the outcome in dollars ($/sh); null when open."
+    )
+    prob: float = Field(description="Calibrated probability of the outcome, a decimal.")
+    prob_market: float = Field(
+        description="Raw (market-implied) probability of the outcome, a decimal."
+    )
+    best_kind: StructureKind | None = Field(
+        description="Kind with the highest return_if_right; null when none qualifies."
+    )
+    best_return_if_right: float | None = Field(
+        description="return_if_right of best_kind (return on max loss), a decimal."
+    )
+    best_legs: str | None = Field(description="Legs of the best structure, as in legs.")
+    spread_kind: StructureKind | None = Field(description="Best qualifying spread kind.")
+    spread_return_if_right: float | None = Field(
+        description="return_if_right of spread_kind (return on max loss), a decimal."
+    )
+    single_kind: StructureKind | None = Field(description="Best qualifying single kind.")
+    single_return_if_right: float | None = Field(
+        description="return_if_right of single_kind (return on max loss), a decimal."
+    )
+    advantage: float | None = Field(
+        description="spread_return_if_right minus single_return_if_right, a decimal; null when "
+        "a side is missing."
+    )
+
+
+class OutcomeRow(ApiModel):
+    """One underlying across the preset outcomes."""
+
+    symbol: str = Field(description="Ticker symbol, such as SPY.")
+    expiration: date | None = Field(
+        description="The expiration with a distribution nearest the target DTE; null without one."
+    )
+    dte_days: int | None = Field(description="Calendar days from the session to expiration.")
+    underlying_close: float | None = Field(description="Underlying close in dollars ($/sh).")
+    cells: list[OutcomeCell] = Field(description="One cell per preset, in preset order.")
+    unavailable_reason: str | None = Field(
+        description="Why there are no cells: no_distribution: <detail> or no_implied_vol: "
+        "<detail>; null when there are cells."
+    )
+
+
+class OutcomeMapResponse(ApiModel):
+    """For every underlying of a session, which structure serves each preset outcome best."""
+
+    session: date = Field(description="Trade date.")
+    target_dte: int = Field(description="Requested calendar days to expiration.")
+    fill: Fill = Field(description="The fill the premiums assume.")
+    map_id: str = Field(description="The calibration map that was applied.")
+    presets: list[PresetInfo] = Field(description="The preset outcomes, in column order.")
+    rows: list[OutcomeRow] = Field(
+        description="One row per underlying with the session, by symbol."
+    )

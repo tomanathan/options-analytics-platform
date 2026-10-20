@@ -114,3 +114,16 @@ def test_a_fastapi_response_serialises_non_finite_floats_as_null() -> None:
     assert body["knots"] == [1.0, None]
     assert body["moneyness"] == [None, 1.0]
     assert body["density"] == [None]
+
+
+def test_structure_literals_match_the_engine_and_analytics() -> None:
+    from typing import get_args
+
+    from oap.analytics import views
+    from oap.api import models
+    from oap.engine import positions, structures
+
+    assert get_args(models.StructureKind) == tuple(k.value for k in positions.StructureKind)
+    assert get_args(models.Direction) == get_args(positions.Direction)
+    assert get_args(models.Fill) == get_args(structures.Fill)
+    assert get_args(models.PresetId) == get_args(views.PresetId)

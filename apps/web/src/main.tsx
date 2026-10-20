@@ -11,6 +11,8 @@ import './theme/global.css';
 
 const LandscapePage = lazy(() => import('./routes/LandscapePage'));
 const SpreadsPage = lazy(() => import('./routes/SpreadsPage'));
+const StructuresPage = lazy(() => import('./routes/StructuresPage'));
+const OutcomesPage = lazy(() => import('./routes/OutcomesPage'));
 
 const queryClient = createQueryClient();
 const loading = <EmptyState title="Loading…" />;
@@ -38,6 +40,22 @@ createRoot(container).render(
               element={
                 <Suspense fallback={loading}>
                   <SpreadsPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="structures"
+              element={
+                <Suspense fallback={loading}>
+                  <StructuresPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="outcomes"
+              element={
+                <Suspense fallback={loading}>
+                  <OutcomesPage />
                 </Suspense>
               }
             />

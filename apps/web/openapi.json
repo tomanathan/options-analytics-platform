@@ -405,6 +405,44 @@
         "title": "DistributionResponse",
         "type": "object"
       },
+      "DominanceSegment": {
+        "description": "A run of terminal prices over which one kind has the highest return on max loss.",
+        "properties": {
+          "from": {
+            "description": "First grid price of the run in dollars ($/sh).",
+            "title": "From",
+            "type": "number"
+          },
+          "kind": {
+            "description": "The kind with the highest pnl / max loss there.",
+            "enum": [
+              "long_call",
+              "long_put",
+              "bull_call_spread",
+              "bear_put_spread",
+              "bull_put_spread",
+              "bear_call_spread",
+              "long_straddle",
+              "long_strangle",
+              "iron_condor"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "to": {
+            "description": "First grid price of the next run in dollars ($/sh); the last grid price for the last run.",
+            "title": "To",
+            "type": "number"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "kind"
+        ],
+        "title": "DominanceSegment",
+        "type": "object"
+      },
       "ErrorBody": {
         "description": "The body of every error response.",
         "properties": {
@@ -414,7 +452,11 @@
               "database_missing",
               "gold_missing",
               "not_found",
-              "invalid"
+              "invalid",
+              "view_required",
+              "view_invalid",
+              "no_distribution",
+              "no_implied_vol"
             ],
             "title": "Code",
             "type": "string"
@@ -761,6 +803,204 @@
         "title": "HeatmapRow",
         "type": "object"
       },
+      "KindBest": {
+        "description": "The best structure of one kind, with its payoff curve on the response grid.",
+        "properties": {
+          "annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "expected_return compounded to one year, a decimal; null when not finite.",
+            "title": "Annualised Return"
+          },
+          "breakevens": {
+            "description": "Prices at expiry in dollars ($/sh) where profit and loss crosses zero, ascending.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Breakevens",
+            "type": "array"
+          },
+          "curve": {
+            "description": "Profit and loss divided by max loss (return on max loss) at each grid price, a decimal.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Curve",
+            "type": "array"
+          },
+          "direction": {
+            "description": "The outcome the kind is built for.",
+            "enum": [
+              "up",
+              "down",
+              "move",
+              "range"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "expected_return": {
+            "description": "Expected profit and loss divided by max loss (return on max loss) over the holding period, a decimal; no interest on the capital at risk.",
+            "title": "Expected Return",
+            "type": "number"
+          },
+          "kind": {
+            "description": "The structure kind.",
+            "enum": [
+              "long_call",
+              "long_put",
+              "bull_call_spread",
+              "bear_put_spread",
+              "bull_put_spread",
+              "bear_call_spread",
+              "long_straddle",
+              "long_strangle",
+              "iron_condor"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "description": "Legs as signed quantity, right and strike in dollars, such as '-1 P 250 / +1 P 245'.",
+            "title": "Legs",
+            "type": "string"
+          },
+          "max_gain": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Largest gain at expiry in dollars per share ($/sh); null when unbounded.",
+            "title": "Max Gain"
+          },
+          "max_loss": {
+            "description": "Largest loss at expiry in dollars per share ($/sh), positive; the capital at risk.",
+            "title": "Max Loss",
+            "type": "number"
+          },
+          "net_premium": {
+            "description": "Net premium in dollars per share ($/sh) at the fill: positive is a debit paid, negative a credit received.",
+            "title": "Net Premium",
+            "type": "number"
+          },
+          "pnl_std": {
+            "description": "Standard deviation of profit and loss at expiry in dollars per share ($/sh).",
+            "title": "Pnl Std",
+            "type": "number"
+          },
+          "prob_profit": {
+            "description": "Calibrated probability that profit and loss at expiry is positive, a decimal.",
+            "title": "Prob Profit",
+            "type": "number"
+          },
+          "prob_profit_given_view": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calibrated probability of a profit given the outcome, a decimal; null when the outcome has probability 0.",
+            "title": "Prob Profit Given View"
+          },
+          "return_if_right": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected profit and loss given the outcome, divided by max loss (return on max loss), a decimal; null when the outcome has probability 0.",
+            "title": "Return If Right"
+          },
+          "return_if_wrong": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected profit and loss given the price lands outside the outcome, divided by max loss, a decimal; null when the outcome has probability 1.",
+            "title": "Return If Wrong"
+          },
+          "reward_to_risk": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected profit and loss divided by its standard deviation, per trade and not annualised; null when the standard deviation is 0.",
+            "title": "Reward To Risk"
+          },
+          "strikes": {
+            "description": "Distinct strikes in dollars ($/sh), ascending.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Strikes",
+            "type": "array"
+          },
+          "tail_share": {
+            "description": "Share of the expected profit and loss that comes from beyond the outer knots (the completed tails), a decimal in [0, 1].",
+            "title": "Tail Share",
+            "type": "number"
+          },
+          "worst_in_view": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lowest profit and loss over the prices of the outcome, divided by max loss, a decimal of at least -1; null when not finite.",
+            "title": "Worst In View"
+          }
+        },
+        "required": [
+          "kind",
+          "direction",
+          "legs",
+          "strikes",
+          "net_premium",
+          "max_loss",
+          "max_gain",
+          "breakevens",
+          "prob_profit",
+          "expected_return",
+          "annualised_return",
+          "reward_to_risk",
+          "prob_profit_given_view",
+          "return_if_right",
+          "return_if_wrong",
+          "worst_in_view",
+          "pnl_std",
+          "tail_share",
+          "curve"
+        ],
+        "title": "KindBest",
+        "type": "object"
+      },
       "MetricValue": {
         "description": "One out-of-sample calibration metric.",
         "properties": {
@@ -824,6 +1064,337 @@
         "title": "MetricValue",
         "type": "object"
       },
+      "OutcomeCell": {
+        "description": "The verdict numbers of one underlying for one preset outcome.",
+        "properties": {
+          "advantage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "spread_return_if_right minus single_return_if_right, a decimal; null when a side is missing.",
+            "title": "Advantage"
+          },
+          "best_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "long_call",
+                  "long_put",
+                  "bull_call_spread",
+                  "bear_put_spread",
+                  "bull_put_spread",
+                  "bear_call_spread",
+                  "long_straddle",
+                  "long_strangle",
+                  "iron_condor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Kind with the highest return_if_right; null when none qualifies.",
+            "title": "Best Kind"
+          },
+          "best_legs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Legs of the best structure, as in legs.",
+            "title": "Best Legs"
+          },
+          "best_return_if_right": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "return_if_right of best_kind (return on max loss), a decimal.",
+            "title": "Best Return If Right"
+          },
+          "hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Upper bound of the outcome in dollars ($/sh); null when open.",
+            "title": "Hi"
+          },
+          "lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lower bound of the outcome in dollars ($/sh); null when open.",
+            "title": "Lo"
+          },
+          "preset": {
+            "description": "The preset id.",
+            "enum": [
+              "up",
+              "up_moderate",
+              "flat",
+              "down_moderate",
+              "down",
+              "big_move"
+            ],
+            "title": "Preset",
+            "type": "string"
+          },
+          "prob": {
+            "description": "Calibrated probability of the outcome, a decimal.",
+            "title": "Prob",
+            "type": "number"
+          },
+          "prob_market": {
+            "description": "Raw (market-implied) probability of the outcome, a decimal.",
+            "title": "Prob Market",
+            "type": "number"
+          },
+          "single_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "long_call",
+                  "long_put",
+                  "bull_call_spread",
+                  "bear_put_spread",
+                  "bull_put_spread",
+                  "bear_call_spread",
+                  "long_straddle",
+                  "long_strangle",
+                  "iron_condor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Best qualifying single kind.",
+            "title": "Single Kind"
+          },
+          "single_return_if_right": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "return_if_right of single_kind (return on max loss), a decimal.",
+            "title": "Single Return If Right"
+          },
+          "spread_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "long_call",
+                  "long_put",
+                  "bull_call_spread",
+                  "bear_put_spread",
+                  "bull_put_spread",
+                  "bear_call_spread",
+                  "long_straddle",
+                  "long_strangle",
+                  "iron_condor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Best qualifying spread kind.",
+            "title": "Spread Kind"
+          },
+          "spread_return_if_right": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "return_if_right of spread_kind (return on max loss), a decimal.",
+            "title": "Spread Return If Right"
+          }
+        },
+        "required": [
+          "preset",
+          "lo",
+          "hi",
+          "prob",
+          "prob_market",
+          "best_kind",
+          "best_return_if_right",
+          "best_legs",
+          "spread_kind",
+          "spread_return_if_right",
+          "single_kind",
+          "single_return_if_right",
+          "advantage"
+        ],
+        "title": "OutcomeCell",
+        "type": "object"
+      },
+      "OutcomeMapResponse": {
+        "description": "For every underlying of a session, which structure serves each preset outcome best.",
+        "properties": {
+          "fill": {
+            "description": "The fill the premiums assume.",
+            "enum": [
+              "natural",
+              "mid"
+            ],
+            "title": "Fill",
+            "type": "string"
+          },
+          "map_id": {
+            "description": "The calibration map that was applied.",
+            "title": "Map Id",
+            "type": "string"
+          },
+          "presets": {
+            "description": "The preset outcomes, in column order.",
+            "items": {
+              "$ref": "#/components/schemas/PresetInfo"
+            },
+            "title": "Presets",
+            "type": "array"
+          },
+          "rows": {
+            "description": "One row per underlying with the session, by symbol.",
+            "items": {
+              "$ref": "#/components/schemas/OutcomeRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "session": {
+            "description": "Trade date.",
+            "format": "date",
+            "title": "Session",
+            "type": "string"
+          },
+          "target_dte": {
+            "description": "Requested calendar days to expiration.",
+            "title": "Target Dte",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session",
+          "target_dte",
+          "fill",
+          "map_id",
+          "presets",
+          "rows"
+        ],
+        "title": "OutcomeMapResponse",
+        "type": "object"
+      },
+      "OutcomeRow": {
+        "description": "One underlying across the preset outcomes.",
+        "properties": {
+          "cells": {
+            "description": "One cell per preset, in preset order.",
+            "items": {
+              "$ref": "#/components/schemas/OutcomeCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "dte_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calendar days from the session to expiration.",
+            "title": "Dte Days"
+          },
+          "expiration": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The expiration with a distribution nearest the target DTE; null without one.",
+            "title": "Expiration"
+          },
+          "symbol": {
+            "description": "Ticker symbol, such as SPY.",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why there are no cells: no_distribution: <detail> or no_implied_vol: <detail>; null when there are cells.",
+            "title": "Unavailable Reason"
+          },
+          "underlying_close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Underlying close in dollars ($/sh).",
+            "title": "Underlying Close"
+          }
+        },
+        "required": [
+          "symbol",
+          "expiration",
+          "dte_days",
+          "underlying_close",
+          "cells",
+          "unavailable_reason"
+        ],
+        "title": "OutcomeRow",
+        "type": "object"
+      },
       "PayoffPoint": {
         "description": "The payoff of a spread at one expiry price.",
         "properties": {
@@ -843,6 +1414,35 @@
           "payoff"
         ],
         "title": "PayoffPoint",
+        "type": "object"
+      },
+      "PresetInfo": {
+        "description": "A preset outcome.",
+        "properties": {
+          "id": {
+            "description": "The preset id.",
+            "enum": [
+              "up",
+              "up_moderate",
+              "flat",
+              "down_moderate",
+              "down",
+              "big_move"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "description": "Human-readable label, with its quantiles.",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "PresetInfo",
         "type": "object"
       },
       "RawCalibrated": {
@@ -1746,6 +2346,394 @@
         "title": "SpreadsResponse",
         "type": "object"
       },
+      "StructureRow": {
+        "description": "One scored structure; profit and loss is per share at expiry, undiscounted.",
+        "properties": {
+          "annualised_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "expected_return compounded to one year, a decimal; null when not finite.",
+            "title": "Annualised Return"
+          },
+          "breakevens": {
+            "description": "Prices at expiry in dollars ($/sh) where profit and loss crosses zero, ascending.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Breakevens",
+            "type": "array"
+          },
+          "direction": {
+            "description": "The outcome the kind is built for.",
+            "enum": [
+              "up",
+              "down",
+              "move",
+              "range"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "expected_return": {
+            "description": "Expected profit and loss divided by max loss (return on max loss) over the holding period, a decimal; no interest on the capital at risk.",
+            "title": "Expected Return",
+            "type": "number"
+          },
+          "kind": {
+            "description": "The structure kind.",
+            "enum": [
+              "long_call",
+              "long_put",
+              "bull_call_spread",
+              "bear_put_spread",
+              "bull_put_spread",
+              "bear_call_spread",
+              "long_straddle",
+              "long_strangle",
+              "iron_condor"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "description": "Legs as signed quantity, right and strike in dollars, such as '-1 P 250 / +1 P 245'.",
+            "title": "Legs",
+            "type": "string"
+          },
+          "max_gain": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Largest gain at expiry in dollars per share ($/sh); null when unbounded.",
+            "title": "Max Gain"
+          },
+          "max_loss": {
+            "description": "Largest loss at expiry in dollars per share ($/sh), positive; the capital at risk.",
+            "title": "Max Loss",
+            "type": "number"
+          },
+          "net_premium": {
+            "description": "Net premium in dollars per share ($/sh) at the fill: positive is a debit paid, negative a credit received.",
+            "title": "Net Premium",
+            "type": "number"
+          },
+          "pnl_std": {
+            "description": "Standard deviation of profit and loss at expiry in dollars per share ($/sh).",
+            "title": "Pnl Std",
+            "type": "number"
+          },
+          "prob_profit": {
+            "description": "Calibrated probability that profit and loss at expiry is positive, a decimal.",
+            "title": "Prob Profit",
+            "type": "number"
+          },
+          "prob_profit_given_view": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calibrated probability of a profit given the outcome, a decimal; null when the outcome has probability 0.",
+            "title": "Prob Profit Given View"
+          },
+          "return_if_right": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected profit and loss given the outcome, divided by max loss (return on max loss), a decimal; null when the outcome has probability 0.",
+            "title": "Return If Right"
+          },
+          "return_if_wrong": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected profit and loss given the price lands outside the outcome, divided by max loss, a decimal; null when the outcome has probability 1.",
+            "title": "Return If Wrong"
+          },
+          "reward_to_risk": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Expected profit and loss divided by its standard deviation, per trade and not annualised; null when the standard deviation is 0.",
+            "title": "Reward To Risk"
+          },
+          "strikes": {
+            "description": "Distinct strikes in dollars ($/sh), ascending.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Strikes",
+            "type": "array"
+          },
+          "tail_share": {
+            "description": "Share of the expected profit and loss that comes from beyond the outer knots (the completed tails), a decimal in [0, 1].",
+            "title": "Tail Share",
+            "type": "number"
+          },
+          "worst_in_view": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lowest profit and loss over the prices of the outcome, divided by max loss, a decimal of at least -1; null when not finite.",
+            "title": "Worst In View"
+          }
+        },
+        "required": [
+          "kind",
+          "direction",
+          "legs",
+          "strikes",
+          "net_premium",
+          "max_loss",
+          "max_gain",
+          "breakevens",
+          "prob_profit",
+          "expected_return",
+          "annualised_return",
+          "reward_to_risk",
+          "prob_profit_given_view",
+          "return_if_right",
+          "return_if_wrong",
+          "worst_in_view",
+          "pnl_std",
+          "tail_share"
+        ],
+        "title": "StructureRow",
+        "type": "object"
+      },
+      "StructuresResponse": {
+        "description": "Every structure kind scored against one outcome for one expiration.",
+        "properties": {
+          "density": {
+            "description": "Calibrated, tail-completed probability density at each grid price (1/$).",
+            "items": {
+              "type": "number"
+            },
+            "title": "Density",
+            "type": "array"
+          },
+          "dominance": {
+            "description": "Over the grid, which of the kinds above has the highest pnl / max loss.",
+            "items": {
+              "$ref": "#/components/schemas/DominanceSegment"
+            },
+            "title": "Dominance",
+            "type": "array"
+          },
+          "dte_days": {
+            "description": "Calendar days from the session to expiration.",
+            "title": "Dte Days",
+            "type": "integer"
+          },
+          "expiration": {
+            "description": "Expiration of every structure.",
+            "format": "date",
+            "title": "Expiration",
+            "type": "string"
+          },
+          "fill": {
+            "description": "The fill the premiums assume.",
+            "enum": [
+              "natural",
+              "mid"
+            ],
+            "title": "Fill",
+            "type": "string"
+          },
+          "forward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Forward price in dollars ($/sh); null if unknown.",
+            "title": "Forward"
+          },
+          "grid": {
+            "description": "Terminal prices in dollars ($/sh): 161 evenly spaced points from the 0.5% to the 99.5% quantile of the calibrated, tail-completed distribution.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Grid",
+            "type": "array"
+          },
+          "kinds": {
+            "description": "The best qualifying structure of each kind, in the order of the kind list.",
+            "items": {
+              "$ref": "#/components/schemas/KindBest"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "look_ahead": {
+            "description": "True when the map was fitted on outcomes that settle after this session.",
+            "title": "Look Ahead",
+            "type": "boolean"
+          },
+          "map_id": {
+            "description": "The calibration map that was applied.",
+            "title": "Map Id",
+            "type": "string"
+          },
+          "map_is_identity": {
+            "description": "True when the map leaves probabilities unchanged.",
+            "title": "Map Is Identity",
+            "type": "boolean"
+          },
+          "n_qualifying": {
+            "description": "Structures with prob_profit_given_view at or above min_pop_given and a finite return_if_right.",
+            "title": "N Qualifying",
+            "type": "integer"
+          },
+          "n_structures": {
+            "description": "Structures enumerated and scored.",
+            "title": "N Structures",
+            "type": "integer"
+          },
+          "ranking": {
+            "description": "The qualifying structures of every kind, highest return_if_right first, at most limit rows.",
+            "items": {
+              "$ref": "#/components/schemas/StructureRow"
+            },
+            "title": "Ranking",
+            "type": "array"
+          },
+          "session": {
+            "description": "Trade date.",
+            "format": "date",
+            "title": "Session",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Ticker symbol, such as SPY.",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "tails": {
+            "$ref": "#/components/schemas/TailInfo",
+            "description": "The tails that complete the distribution."
+          },
+          "underlying_close": {
+            "description": "Underlying close in dollars ($/sh).",
+            "title": "Underlying Close",
+            "type": "number"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict",
+            "description": "Which kind serves the outcome best, and why."
+          },
+          "view": {
+            "$ref": "#/components/schemas/ViewInfo",
+            "description": "The outcome, resolved to prices and probabilities."
+          },
+          "years": {
+            "description": "Time to expiration in years (ACT/365).",
+            "title": "Years",
+            "type": "number"
+          }
+        },
+        "required": [
+          "symbol",
+          "session",
+          "expiration",
+          "dte_days",
+          "years",
+          "underlying_close",
+          "forward",
+          "fill",
+          "map_id",
+          "map_is_identity",
+          "look_ahead",
+          "tails",
+          "view",
+          "grid",
+          "density",
+          "kinds",
+          "ranking",
+          "dominance",
+          "verdict",
+          "n_structures",
+          "n_qualifying"
+        ],
+        "title": "StructuresResponse",
+        "type": "object"
+      },
+      "TailInfo": {
+        "description": "The lognormal tails that complete the distribution outside the outer knots.",
+        "properties": {
+          "location": {
+            "description": "Centre of the lognormal tails in dollars ($/sh): the forward, or the calibrated median when the forward is unknown.",
+            "title": "Location",
+            "type": "number"
+          },
+          "mass_hi": {
+            "description": "Calibrated probability above the highest knot, a decimal in [0, 1].",
+            "title": "Mass Hi",
+            "type": "number"
+          },
+          "mass_lo": {
+            "description": "Calibrated probability below the lowest knot, a decimal in [0, 1].",
+            "title": "Mass Lo",
+            "type": "number"
+          },
+          "sigma_hi": {
+            "description": "Volatility of the upper tail, a decimal (0.20 = 20%).",
+            "title": "Sigma Hi",
+            "type": "number"
+          },
+          "sigma_lo": {
+            "description": "Volatility of the lower tail, a decimal (0.20 = 20%).",
+            "title": "Sigma Lo",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sigma_lo",
+          "sigma_hi",
+          "mass_lo",
+          "mass_hi",
+          "location"
+        ],
+        "title": "TailInfo",
+        "type": "object"
+      },
       "Underlying": {
         "description": "An underlying with the sessions available for it.",
         "properties": {
@@ -1810,11 +2798,237 @@
         ],
         "title": "UnderlyingsResponse",
         "type": "object"
+      },
+      "Verdict": {
+        "description": "Which kind serves the outcome best, and the best spread against the best single.",
+        "properties": {
+          "advantage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "spread_return_if_right minus single_return_if_right, a decimal; positive when the spread serves the outcome better; null when a side is missing.",
+            "title": "Advantage"
+          },
+          "best_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "long_call",
+                  "long_put",
+                  "bull_call_spread",
+                  "bear_put_spread",
+                  "bull_put_spread",
+                  "bear_call_spread",
+                  "long_straddle",
+                  "long_strangle",
+                  "iron_condor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Kind with the highest return_if_right; null when no kind qualifies.",
+            "title": "Best Kind"
+          },
+          "reason": {
+            "description": "One descriptive sentence that explains the comparison.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "single_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "long_call",
+                  "long_put",
+                  "bull_call_spread",
+                  "bear_put_spread",
+                  "bull_put_spread",
+                  "bear_call_spread",
+                  "long_straddle",
+                  "long_strangle",
+                  "iron_condor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Best qualifying outright long premium (long call, long put; the straddle and strangle too when the outcome is a move); null when none qualifies.",
+            "title": "Single Kind"
+          },
+          "single_return_if_right": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "return_if_right of single_kind (return on max loss), a decimal; null without one.",
+            "title": "Single Return If Right"
+          },
+          "spread_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "long_call",
+                  "long_put",
+                  "bull_call_spread",
+                  "bear_put_spread",
+                  "bull_put_spread",
+                  "bear_call_spread",
+                  "long_straddle",
+                  "long_strangle",
+                  "iron_condor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Best qualifying spread (the four verticals and the iron condor); null when none qualifies.",
+            "title": "Spread Kind"
+          },
+          "spread_return_if_right": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "return_if_right of spread_kind (return on max loss), a decimal; null without one.",
+            "title": "Spread Return If Right"
+          }
+        },
+        "required": [
+          "best_kind",
+          "spread_kind",
+          "single_kind",
+          "spread_return_if_right",
+          "single_return_if_right",
+          "advantage",
+          "reason"
+        ],
+        "title": "Verdict",
+        "type": "object"
+      },
+      "ViewInfo": {
+        "description": "The outcome the structures are measured against, resolved to prices.",
+        "properties": {
+          "hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Upper bound of the range in dollars ($/sh), exclusive; null when open.",
+            "title": "Hi"
+          },
+          "hi_moneyness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "hi divided by the underlying close.",
+            "title": "Hi Moneyness"
+          },
+          "lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lower bound of the range in dollars ($/sh), inclusive; null when open.",
+            "title": "Lo"
+          },
+          "lo_moneyness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "lo divided by the underlying close.",
+            "title": "Lo Moneyness"
+          },
+          "outside": {
+            "description": "True when the outcome is the price landing outside [lo, hi) (a big move).",
+            "title": "Outside",
+            "type": "boolean"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "up",
+                  "up_moderate",
+                  "flat",
+                  "down_moderate",
+                  "down",
+                  "big_move"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The preset id; null for a custom range.",
+            "title": "Preset"
+          },
+          "prob": {
+            "description": "Probability of the outcome under the calibrated, tail-completed distribution, a decimal in [0, 1].",
+            "title": "Prob",
+            "type": "number"
+          },
+          "prob_market": {
+            "description": "Probability of the outcome under the raw (market-implied) risk-neutral distribution with the same tails, a decimal in [0, 1].",
+            "title": "Prob Market",
+            "type": "number"
+          }
+        },
+        "required": [
+          "preset",
+          "lo",
+          "hi",
+          "outside",
+          "lo_moneyness",
+          "hi_moneyness",
+          "prob",
+          "prob_market"
+        ],
+        "title": "ViewInfo",
+        "type": "object"
       }
     }
   },
   "info": {
-    "description": "Read-only API over the gold tables: distributions, heatmaps and spreads.",
+    "description": "Read-only API over the gold tables: distributions, heatmaps, spreads and structures.",
     "title": "oap explorer API",
     "version": "0.1.0"
   },
@@ -1853,7 +3067,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {
@@ -2087,7 +3301,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {
@@ -2158,7 +3372,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {
@@ -2182,6 +3396,392 @@
         "summary": "Getspread",
         "tags": [
           "spreads"
+        ]
+      }
+    },
+    "/api/structures/map": {
+      "get": {
+        "description": "Return, for every underlying of a session and every preset outcome, the verdict numbers.\n\nArgs:\n    store: The data store.\n    response: The response, for the stale-data header.\n    session: Trade date, or ``latest`` for the latest session of the table.\n    target_dte: Calendar days to expiration the expiration is picked for.\n    fill: natural or mid fills.\n    map_choice: Which calibration map to apply.\n    min_pop_given: Smallest P(profit | outcome), a decimal, for a structure to qualify.\n\nReturns:\n    One row per underlying with the session, one cell per preset.",
+        "operationId": "getOutcomeMap",
+        "parameters": [
+          {
+            "description": "Trade date, YYYY-MM-DD, or latest.",
+            "in": "query",
+            "name": "session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "const": "latest",
+                  "type": "string"
+                }
+              ],
+              "default": "latest",
+              "description": "Trade date, YYYY-MM-DD, or latest.",
+              "title": "Session"
+            }
+          },
+          {
+            "description": "Target calendar days to expiration.",
+            "in": "query",
+            "name": "target_dte",
+            "required": false,
+            "schema": {
+              "default": 35,
+              "description": "Target calendar days to expiration.",
+              "maximum": 120,
+              "minimum": 7,
+              "title": "Target Dte",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "natural (long legs at the ask, short at the bid) or mid.",
+            "in": "query",
+            "name": "fill",
+            "required": false,
+            "schema": {
+              "default": "natural",
+              "description": "natural (long legs at the ask, short at the bid) or mid.",
+              "enum": [
+                "natural",
+                "mid"
+              ],
+              "title": "Fill",
+              "type": "string"
+            }
+          },
+          {
+            "description": "auto, production or walk_forward calibration map.",
+            "in": "query",
+            "name": "map",
+            "required": false,
+            "schema": {
+              "default": "auto",
+              "description": "auto, production or walk_forward calibration map.",
+              "enum": [
+                "auto",
+                "production",
+                "walk_forward"
+              ],
+              "title": "Map",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Smallest P(profit | outcome), a decimal, for a structure to qualify.",
+            "in": "query",
+            "name": "min_pop_given",
+            "required": false,
+            "schema": {
+              "default": 0.5,
+              "description": "Smallest P(profit | outcome), a decimal, for a structure to qualify.",
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Min Pop Given",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutcomeMapResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Getoutcomemap",
+        "tags": [
+          "structures"
+        ]
+      }
+    },
+    "/api/structures/{symbol}/{session}": {
+      "get": {
+        "description": "Score every structure of one expiration against an outcome.\n\nArgs:\n    symbol: Ticker symbol.\n    session: Trade date.\n    store: The data store.\n    response: The response, for the stale-data header.\n    expiration: Expiration; the one with a distribution nearest 35 days when None.\n    preset: A preset outcome; takes precedence over ``lo``, ``hi`` and ``outside``.\n    lo: Lower bound as a fraction of the close; open when None.\n    hi: Upper bound as a fraction of the close; open when None.\n    outside: True for the complement of ``[lo, hi)``.\n    fill: natural or mid fills.\n    map_choice: Which calibration map to apply.\n    min_pop_given: Smallest P(profit | outcome), a decimal, for a structure to qualify.\n    limit: Most ranking rows.\n\nReturns:\n    The best structure per kind, the ranking, the dominance strip and the verdict.",
+        "operationId": "getStructures",
+        "parameters": [
+          {
+            "description": "Ticker symbol, such as SPY.",
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "description": "Ticker symbol, such as SPY.",
+              "pattern": "^[A-Z][A-Z.]{0,9}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Trade date, YYYY-MM-DD.",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "Trade date, YYYY-MM-DD.",
+              "format": "date",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expiration; default the one with a distribution nearest 35 days.",
+            "in": "query",
+            "name": "expiration",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Expiration; default the one with a distribution nearest 35 days.",
+              "title": "Expiration"
+            }
+          },
+          {
+            "description": "A preset outcome.",
+            "in": "query",
+            "name": "preset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "up",
+                    "up_moderate",
+                    "flat",
+                    "down_moderate",
+                    "down",
+                    "big_move"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A preset outcome.",
+              "title": "Preset"
+            }
+          },
+          {
+            "description": "Lower bound of a custom outcome as a fraction of the close.",
+            "in": "query",
+            "name": "lo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lower bound of a custom outcome as a fraction of the close.",
+              "title": "Lo"
+            }
+          },
+          {
+            "description": "Upper bound of a custom outcome as a fraction of the close.",
+            "in": "query",
+            "name": "hi",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Upper bound of a custom outcome as a fraction of the close.",
+              "title": "Hi"
+            }
+          },
+          {
+            "description": "The outcome is the price landing outside [lo, hi).",
+            "in": "query",
+            "name": "outside",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "The outcome is the price landing outside [lo, hi).",
+              "title": "Outside",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "natural (long legs at the ask, short at the bid) or mid.",
+            "in": "query",
+            "name": "fill",
+            "required": false,
+            "schema": {
+              "default": "natural",
+              "description": "natural (long legs at the ask, short at the bid) or mid.",
+              "enum": [
+                "natural",
+                "mid"
+              ],
+              "title": "Fill",
+              "type": "string"
+            }
+          },
+          {
+            "description": "auto, production or walk_forward calibration map.",
+            "in": "query",
+            "name": "map",
+            "required": false,
+            "schema": {
+              "default": "auto",
+              "description": "auto, production or walk_forward calibration map.",
+              "enum": [
+                "auto",
+                "production",
+                "walk_forward"
+              ],
+              "title": "Map",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Smallest P(profit | outcome), a decimal, for a structure to qualify.",
+            "in": "query",
+            "name": "min_pop_given",
+            "required": false,
+            "schema": {
+              "default": 0.5,
+              "description": "Smallest P(profit | outcome), a decimal, for a structure to qualify.",
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Min Pop Given",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Most ranking rows.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "description": "Most ranking rows.",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StructuresResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unknown underlying, session or spread."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The database is locked by a writer, missing, or lacks a gold table.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying (database_busy only).",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Getstructures",
+        "tags": [
+          "structures"
         ]
       }
     },
@@ -2218,7 +3818,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {
@@ -2292,7 +3892,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {
@@ -2378,7 +3978,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {
@@ -2481,7 +4081,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {
@@ -2584,7 +4184,7 @@
                 }
               }
             },
-            "description": "A path or query parameter is invalid."
+            "description": "A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md)."
           },
           "503": {
             "content": {

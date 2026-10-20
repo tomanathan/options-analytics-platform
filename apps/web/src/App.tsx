@@ -16,6 +16,12 @@ export default function App() {
           <NavLink to="/spreads" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Spreads
           </NavLink>
+          <NavLink to="/structures" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Structures
+          </NavLink>
+          <NavLink to="/outcomes" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+            Outcome map
+          </NavLink>
         </nav>
         <div className="topbar__right">
           {/* The spreads page shows the full out-of-sample line itself. */}

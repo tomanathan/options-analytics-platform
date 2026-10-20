@@ -32,6 +32,33 @@
   --warning: #fab219;
   --serious: #ec835a;
   --critical: #d03b3b;
+  /* Structure kinds (lib/structures.ts mirrors these). Singles warm, verticals cool, straddle and
+     strangle violet, condor neutral; credit structures are also dashed. Nine lines cannot all
+     pass an all-pairs check, so the kinds that compete for one direction were validated as
+     groups with the dataviz palette validator (validate_palette.js --mode dark --pairs all,
+     surface #1a1a19):
+       up    long_call / bull_call / bull_put    CVD dE 19.3, normal 20.7: pass
+       down  long_put / bear_put / bear_call     CVD dE 6.5 (protan, red vs aqua), normal 19.7:
+                                                 warn band, legal with the dash and glyph
+       move  straddle / strangle                 CVD dE 16.0, normal 19.7: pass
+     The two credit verticals are the light steps of their debit partner's hue (lightness band
+     and chroma flags are expected for them), and the condor is a deliberate grey. Across groups
+     the lines are told apart by slope direction, the dash, the legend, the tooltip and the
+     table, never by colour alone. */
+  --kind-long-call: #c98500;
+  --kind-long-put: #e66767;
+  --kind-bull-call-spread: #3987e5;
+  --kind-bull-put-spread: #9ec5f4;
+  --kind-bear-put-spread: #199e70;
+  --kind-bear-call-spread: #7fd8b4;
+  --kind-long-straddle: #9085e9;
+  --kind-long-strangle: #d55181;
+  --kind-iron-condor: #b0aea5;
+  /* Diverging advantage scale for the outcome map: cool where spreads return more if right,
+     warm where singles do, grey near zero. Both poles hold 4.69:1 against --ink-1 text. */
+  --div-cool: #256abf;
+  --div-mid: #383835;
+  --div-warm: #b04a3c;
   --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --gutter: 16px;
   --radius: 8px;

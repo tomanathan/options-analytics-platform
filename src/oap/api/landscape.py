@@ -468,6 +468,34 @@ def _build_cdf(
     return cdf, None
 
 
+def expiry_curves(
+    chain: pd.DataFrame, session: date, expiration: date, chosen: ChosenMap
+) -> tuple[ExpiryCurves | None, str | None]:
+    """Build the raw and calibrated CDFs of one expiration, or say why there are none.
+
+    This is the landscape's construction, used by ``session_bundle`` and by the outcome map,
+    so every view of an expiration sees the same distributions.
+
+    Args:
+        chain: Quote rows of one expiration of one session (``dte_days``,
+            ``underlying_close`` in dollars, ``strike``, ``option_right``, ``bid``, ``ask``).
+        session: Trade date.
+        expiration: Expiration date.
+        chosen: The calibration map to apply.
+
+    Returns:
+        ``(curves, None)``, or ``(None, reason)`` with the reasons of ``_build_cdf``.
+    """
+    dte_days = int(chain["dte_days"].iloc[0])
+    closes = chain["underlying_close"].dropna()
+    close = finite_or_none(closes.iloc[0]) if not closes.empty else None
+    cdf, reason = _build_cdf(dte_days, close, chain, session, expiration)
+    if cdf is None or close is None:
+        return None, reason
+    cal = apply_calibration(cdf, chosen.cmap)
+    return ExpiryCurves(expiration, close, cdf.forward, cdf, cal, _curve(cdf, cal, close)), None
+
+
 def _within_knots(
     knots: npt.NDArray[np.float64], values: npt.NDArray[np.float64]
 ) -> npt.NDArray[np.bool_]:
@@ -559,12 +587,12 @@ def session_bundle(
         dte_days = int(chain["dte_days"].iloc[0])
         exp_closes = chain["underlying_close"].dropna()
         close = finite_or_none(exp_closes.iloc[0]) if not exp_closes.empty else None
-        cdf, reason = _build_cdf(dte_days, close, chain, session, expiration)
+        found, reason = expiry_curves(chain, session, expiration, chosen)
         outcome = settled.get(expiration)
         settlement_date = None if outcome is None else outcome[0]
         settlement_close = None if outcome is None else outcome[1]
         short_dated = dte_days < config.min_dte_days
-        if cdf is None or close is None:
+        if found is None or close is None:
             n_usable = int(usable_mask(chain["bid"], chain["ask"]).sum())
             distributions.append(
                 ExpiryDistribution(
@@ -586,16 +614,14 @@ def session_bundle(
                 )
             )
             continue
-        cal = apply_calibration(cdf, chosen.cmap)
+        cdf, cal, curve = found.cdf, found.cal, found.curve
         settle_at = (
             outcome[1]
             if outcome is not None and _within_knots(cdf.strikes, np.asarray([outcome[1]]))[0]
             else None
         )
-        curve = _curve(cdf, cal, close)
-        expiry_curves = ExpiryCurves(expiration, close, cdf.forward, cdf, cal, curve)
-        curves[expiration] = expiry_curves
-        rows.append(_heatmap_row(expiration, dte_days, expiry_curves))
+        curves[expiration] = found
+        rows.append(_heatmap_row(expiration, dte_days, found))
         distributions.append(
             ExpiryDistribution(
                 expiration=expiration,
