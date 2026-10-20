@@ -1,15 +1,25 @@
 import dataclasses
+import os
 import re
+import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 
 import duckdb
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from oap.analytics.config import DEFAULT_CONFIG
-from oap.analytics.scoring import ENTRY_RULE
+from oap.analytics.scoring import ENTRY_EVIDENCE, ENTRY_RULE
+from oap.analytics.views import PRESETS
+from oap.api.main import create_app
+from oap.api.settings import ApiSettings
 from scripts import make_report as report
+from tests.api.gold import LATEST, build_gold
+
+ADVICE_WORDS = re.compile(r"\b(buy|buying|sell|selling|recommend\w*|should)\b", re.IGNORECASE)
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 HEADINGS = [
@@ -19,6 +29,7 @@ HEADINGS = [
     "## Calibration: risk-neutral vs calibrated",
     "## Reliability",
     "## Top 10 to enter (2024-06-14)",
+    "## Which structure serves each outcome (2024-06-14)",
     "## Top put credit spreads (2024-06-14)",
     "## Top spreads by edge (2024-06-14)",
     "## How to read this",
@@ -129,20 +140,38 @@ def _scores_frame() -> pd.DataFrame:
                 "pop_gap": 0.05 - 0.002 * i,
                 "rank_edge": rank_edge,
                 "rank_entry": rank_entry,
+                "score_entry": 0.3 - 0.01 * i,
             }
         )
     return pd.DataFrame(rows).astype({"rank": "Int64", "rank_edge": "Int64", "rank_entry": "Int64"})
 
 
 def _write_gold(path: Path, *, with_oos: bool = True, omit: tuple[str, ...] = ()) -> None:
+    # Three puts per underlying and session: too few for a distribution, so every row of the
+    # outcome map is unavailable here (tests/api/gold.py has the full chains).
     quotes = pd.DataFrame(
         [
-            {"underlying": u, "trade_date": date(2024, 6, d), "occ_symbol": f"{u}{d}{k}"}
+            {
+                "underlying": u,
+                "trade_date": date(2024, 6, d),
+                "occ_symbol": f"{u}{d}{k}",
+                "expiration": date(2024, 7, 19),
+                "strike": 95.0 + 5.0 * k,
+                "option_right": "P",
+                "bid": 1.0 + k,
+                "ask": 1.2 + k,
+                "mid": 1.1 + k,
+                "source_iv": 0.3,
+                "source_delta": -0.3,
+                "moneyness": (95.0 + 5.0 * k) / 100.0,
+                "underlying_close": 100.0,
+                "dte_days": 35 if d == 14 else 36,
+            }
             for u in UNDERLYINGS
             for d in (13, 14)
             for k in range(3)
         ]
-    )
+    ).astype({"trade_date": "datetime64[ns]", "expiration": "datetime64[ns]"})
     snapshots = pd.DataFrame(
         [
             {
@@ -194,8 +223,14 @@ def _write_gold(path: Path, *, with_oos: bool = True, omit: tuple[str, ...] = ()
             {"map_id": "fold_2024", "fold": 2024, "n_samples": 0, "is_identity": True},
             {"map_id": "fold_2024", "fold": 2024, "n_samples": 0, "is_identity": True},
             {"map_id": "production", "fold": None, "n_samples": 900, "is_identity": False},
+            {"map_id": "production", "fold": None, "n_samples": 900, "is_identity": False},
         ]
     ).astype({"fold": "Int64"})
+    maps["knot_index"] = [0, 1, 0, 1]
+    maps["predicted"] = [0.0, 1.0, 0.0, 1.0]
+    maps["calibrated"] = [0.0, 1.0, 0.0, 1.0]
+    maps["train_cutoff"] = [date(2024, 1, 1), date(2024, 1, 1), None, None]
+    maps["train_max_expiration"] = [None, None, None, None]
     outcomes = pd.DataFrame(
         {"underlying": list(UNDERLYINGS), "expiration": [date(2024, 7, 19)] * 3}
     )
@@ -541,7 +576,8 @@ def test_the_entry_section_precedes_the_top_table_and_states_the_rule(
     assert text.index("## Top 10 to enter") < text.index("## Top put credit spreads")
     assert section.lstrip().split("\n")[0].startswith("(2024-06-14)")
     assert ENTRY_RULE in section
-    assert section.index(ENTRY_RULE) < section.index("| Rank")
+    assert ENTRY_EVIDENCE in section
+    assert section.index(ENTRY_RULE) < section.index(ENTRY_EVIDENCE) < section.index("| Rank")
     assert "not trade advice" in section
 
 
@@ -568,6 +604,7 @@ def test_the_entry_table_has_ten_rows_in_entry_rank_order(db: Path, tmp_path: Pa
         "25.0%",
         "20.0%",
         "0.30",
+        "30.0%",
     ]
 
 
@@ -594,6 +631,98 @@ def test_the_entry_table_says_so_when_nothing_passes(db: Path, tmp_path: Path) -
     assert ENTRY_RULE in section
     assert "No spread passes the entry guards on the latest session." in section
     assert not _table_rows(section)
+
+
+def test_the_outcome_section_follows_the_entry_section_and_lists_every_underlying(
+    db: Path, tmp_path: Path
+) -> None:
+    _run(db, tmp_path)
+    text = (tmp_path / "results.md").read_text()
+    section = _section(tmp_path, "## Which structure serves each outcome")
+
+    assert text.index("## Top 10 to enter") < text.index("## Which structure serves each outcome")
+    assert text.index("## Which structure") < text.index("## Top put credit spreads")
+    header = next(line for line in section.splitlines() if line.startswith("| Underlying"))
+    assert [c.strip() for c in header.strip("|").split("|")] == [
+        "Underlying",
+        "Expiry (DTE)",
+        *(p.label for p in PRESETS),
+    ]
+    rows = [line for line in section.splitlines() if re.match(r"\| [A-Z]+ \|", line)]
+    assert [r.split("|")[1].strip() for r in rows] == list(UNDERLYINGS)
+    # Three puts per chain give no distribution, so every cell is n/a and the reason is stated.
+    assert all(r.count("n/a") == len(PRESETS) for r in rows)
+    assert "Unavailable: AAPL (no_distribution" in section
+    assert "Fill: natural" in section
+    assert "target 35 days to expiry" in section
+    assert "not advice" in section
+
+
+def test_the_outcome_map_equals_the_api_on_the_synthetic_gold_fixture(tmp_path: Path) -> None:
+    gold = build_gold(tmp_path / "oap.duckdb")
+    con = duckdb.connect(str(gold.path), read_only=True)
+    try:
+        found = report.load_outcome_map(con)
+    finally:
+        con.close()
+    settings = ApiSettings(duckdb_path=gold.path, web_dist=tmp_path / "dist")
+    with TestClient(create_app(settings)) as client:
+        api = client.get("/api/structures/map").json()
+
+    assert found is not None
+    assert found.model_dump(mode="json") == api
+    assert found.session == LATEST
+    assert found.fill == "natural"
+    assert found.target_dte == 35
+    assert [row.symbol for row in found.rows] == ["SPY", "XLF"]
+    assert all(row.cells for row in found.rows)
+
+    data = report.ReportData(
+        as_of=LATEST,
+        coverage=pd.DataFrame(),
+        status_counts=pd.DataFrame(),
+        metrics=pd.DataFrame(),
+        bins=pd.DataFrame(),
+        maps=pd.DataFrame(),
+        scores=pd.DataFrame(),
+        flags=pd.DataFrame(),
+        snapshots_per_expiration=None,
+        outcomes=found,
+    )
+    section = report._outcome_section(data)
+    assert section.startswith(f"## Which structure serves each outcome ({LATEST.isoformat()})")
+    spy = next(line for line in section.splitlines() if line.startswith("| SPY |"))
+    cells = [c.strip() for c in spy.strip("|").split("|")]
+    assert cells[1] == f"{found.rows[0].expiration} ({found.rows[0].dte_days}d)"
+    for cell, model in zip(cells[2:], found.rows[0].cells, strict=True):
+        if model.best_kind is None:
+            assert cell == "none qualifies"
+            continue
+        assert cell.startswith(model.best_kind.replace("_", " "))
+        assert f"`{model.best_legs}`" in cell
+        assert model.best_return_if_right is not None
+        assert cell.endswith(f"{model.best_return_if_right * 100:+.1f}%")
+    assert "Unavailable" not in section
+    assert ADVICE_WORDS.search(section) is None
+
+
+def test_the_report_imports_without_fastapi() -> None:
+    # The Airflow report task runs make_report.py in the dbt virtualenv, which has no FastAPI.
+    code = (
+        "import sys; import scripts.make_report; "
+        "bad = sorted(m for m in sys.modules if m.split('.')[0] in ('fastapi', 'starlette')); "
+        "print(bad); sys.exit(1 if bad else 0)"
+    )
+    root = Path(__file__).resolve().parents[2]
+    done = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=root,
+        env={**os.environ, "PYTHONPATH": f"{root / 'src'}{os.pathsep}{root}"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
 
 
 def test_the_edge_section_lists_five_spreads_in_edge_order(db: Path, tmp_path: Path) -> None:

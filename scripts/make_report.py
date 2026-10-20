@@ -1,7 +1,10 @@
 """Write the results report (markdown and two figures) from the gold schema of the DuckDB file.
 
 The report reads the tables that ``dbt build`` leaves in the ``gold`` schema (the calibration
-backtest and the spread scores) through a read-only connection. It writes ``results.md``,
+backtest and the spread scores) through a read-only connection. The outcome map of the latest
+session is the computation of ``GET /api/structures/map`` (``oap.api.structures.outcome_map``
+over the session's quotes and the stored maps), at the natural fill and the API's default
+target DTE and qualification threshold. It writes ``results.md``,
 ``img/calibration.png`` and ``img/spread_scores.png`` below ``--out``; with ``--readme`` it also
 replaces the excerpt between ``<!-- results:start -->`` and ``<!-- results:end -->`` in that
 file.
@@ -31,7 +34,11 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from oap.analytics.config import DEFAULT_CONFIG, DTE_BUCKETS
-from oap.analytics.scoring import ENTRY_RULE
+from oap.analytics.scoring import ENTRY_EVIDENCE, ENTRY_RULE
+from oap.api import db as gold
+from oap.api.landscape import pick_map, stored_maps
+from oap.api.models import Fill, OutcomeCell, OutcomeMapResponse, OutcomeRow, PresetId
+from oap.api.structures import DEFAULT_MIN_POP_GIVEN, TARGET_DTE, outcome_map
 
 REQUIRED_TABLES: Final[tuple[str, ...]] = (
     "fct_option_quote",
@@ -102,6 +109,8 @@ class ReportData:
             the sample is empty.
         tail_breaches: ``(breaches, predictions)`` among the out-of-sample predictions whose
             raw probability is below ``TAIL_RAW_PROBABILITY``, or None when there are none.
+        outcomes: The outcome map of the latest quote session (``load_outcome_map``), or None
+            when there are no quotes.
     """
 
     as_of: date | None
@@ -114,6 +123,7 @@ class ReportData:
     flags: pd.DataFrame
     snapshots_per_expiration: float | None
     tail_breaches: tuple[int, int] | None = None
+    outcomes: OutcomeMapResponse | None = None
 
 
 # --- loading ---------------------------------------------------------------------------------
@@ -156,7 +166,7 @@ _SCORES_SQL = """
 select "rank", underlying, trade_date, expiration, dte_days, short_strike, long_strike, credit,
     credit_natural, prob_profit, prob_profit_raw, expected_roc, expected_roc_raw,
     annualised_roc, annualised_roc_raw, cash_apy, fair_credit, edge, edge_natural, edge_pct,
-    reward_to_risk, pop_implied, pop_gap, rank_edge, rank_entry
+    reward_to_risk, pop_implied, pop_gap, rank_edge, rank_entry, score_entry
 from gold.spread_scores
 where eligible
 order by "rank"
@@ -192,6 +202,41 @@ from (select distinct underlying, trade_date, expiration from gold.calibration_s
 """
 
 
+OUTCOME_FILL: Final[Fill] = "natural"
+"""Fill of the outcome map: long legs at the ask, short legs at the bid."""
+
+
+def load_outcome_map(con: duckdb.DuckDBPyConnection) -> OutcomeMapResponse | None:
+    """Compute the outcome map of the latest quote session, as ``GET /api/structures/map`` does.
+
+    The session is the latest ``trade_date`` of ``gold.fct_option_quote``; its quotes and the
+    stored calibration maps are read with the API's queries, the map is the API's ``auto``
+    choice (the production map for the latest session), and every underlying is scored at the
+    natural fill, ``TARGET_DTE`` days and ``DEFAULT_MIN_POP_GIVEN``.
+
+    Args:
+        con: An open connection to a DuckDB file that holds the ``gold`` schema.
+
+    Returns:
+        The outcome map, or None when the quote table is empty.
+    """
+    row = con.execute(gold.LATEST_SESSION_SQL).fetchone()
+    if row is None or row[0] is None:
+        return None
+    session = _as_date(row[0])
+    quotes = gold.to_ns(con.execute(gold.SESSION_QUOTES_SQL, [session]).df())
+    maps, meta = stored_maps(gold.to_ns(con.execute(gold.MAPS_SQL).df()))
+    chosen = pick_map("auto", session, session, maps, meta)
+    return outcome_map(
+        session,
+        quotes,
+        chosen,
+        target_dte=TARGET_DTE,
+        fill=OUTCOME_FILL,
+        min_pop_given=DEFAULT_MIN_POP_GIVEN,
+    )
+
+
 def load_report_data(con: duckdb.DuckDBPyConnection, *, top: int) -> ReportData:
     """Read the gold tables into the frames the report is rendered from.
 
@@ -222,6 +267,7 @@ def load_report_data(con: duckdb.DuckDBPyConnection, *, top: int) -> ReportData:
         flags=con.execute(_FLAGS_SQL).df(),
         snapshots_per_expiration=None if cluster is None else _num(cluster[0]),
         tail_breaches=None if tail is None or not tail[0] else (int(tail[1]), int(tail[0])),
+        outcomes=load_outcome_map(con),
     )
 
 
@@ -545,6 +591,7 @@ ENTRY_HEADERS: Final[tuple[str, ...]] = (
     "Annualised return on max loss",
     "Edge (% of mid)",
     "Reward/risk",
+    "Entry score (annualised)",
 )
 
 EDGE_TOP: Final = 5
@@ -590,6 +637,7 @@ def _entry_rows(scores: pd.DataFrame) -> list[list[str]]:
             _percent(r["annualised_roc"]),
             _percent(r["edge_pct"]),
             _fixed(r["reward_to_risk"], 2),
+            _percent(r["score_entry"]),
         ]
         for _, r in scores.iterrows()
     ]
@@ -598,16 +646,81 @@ def _entry_rows(scores: pd.DataFrame) -> list[list[str]]:
 def _entry_section(data: ReportData) -> str:
     """Render the Top 10 to enter table under the rule that selects and orders it."""
     as_of = "no session" if data.as_of is None else data.as_of.isoformat()
-    head = f"## Top {ENTRY_TOP} to enter ({as_of})\n\n{ENTRY_RULE}\n\n"
+    head = f"## Top {ENTRY_TOP} to enter ({as_of})\n\n{ENTRY_RULE}\n\n{ENTRY_EVIDENCE}\n\n"
     ranked = _ranked(data.scores, "rank_entry", ENTRY_TOP)
     if ranked.empty:
         return head + "No spread passes the entry guards on the latest session."
     body = _table(ENTRY_HEADERS, _entry_rows(ranked)) + "\n\n"
     body += (
         "This is a ranking of a historical calibration, not trade advice: it orders spreads by "
-        "what one pooled calibration map says happened on average, and that map is optimistic "
-        "(see the caveats). Credits are dollars per share; the edge is the mid credit minus the "
-        "calibrated fair credit, as a share of the mid credit; reward/risk is per trade."
+        "what one pooled calibration map says happened on average, pulled halfway toward the "
+        "probability the price implies, and that map is optimistic (see the caveats). Credits "
+        "are dollars per share; the edge is the mid credit minus the calibrated fair credit, as "
+        "a share of the mid credit; reward/risk is per trade; the entry score is the annualised "
+        "return on max loss at the natural credit with that shrunk probability of profit, the "
+        "number the rule ranks by."
+    )
+    return head + body
+
+
+def _kind(kind: str | None) -> str:
+    """Name a structure kind in words, such as ``bull put spread``."""
+    return "none qualifies" if kind is None else kind.replace("_", " ")
+
+
+def _outcome_cell(cell: OutcomeCell) -> str:
+    """Render one preset's best structure: kind, legs and return if right."""
+    if cell.best_kind is None:
+        return _kind(None)
+    legs = "" if cell.best_legs is None else f" `{cell.best_legs}`"
+    return f"{_kind(cell.best_kind)}{legs}, {_signed_percent(cell.best_return_if_right)}"
+
+
+def _signed_percent(value: float | None) -> str:
+    """Format a decimal as a signed percentage, or ``n/a`` when it is missing."""
+    return "n/a" if value is None else f"{value * 100:+.1f}%"
+
+
+def _outcome_row(row: OutcomeRow, presets: Sequence[PresetId]) -> list[str]:
+    """Render one underlying of the outcome map; an unavailable row has ``n/a`` cells."""
+    expiry = (
+        "none"
+        if row.expiration is None
+        else f"{row.expiration.isoformat()} ({_count(row.dte_days)}d)"
+    )
+    cells = {cell.preset: _outcome_cell(cell) for cell in row.cells}
+    return [row.symbol, expiry, *(cells.get(p, "n/a") for p in presets)]
+
+
+def _outcome_section(data: ReportData) -> str:
+    """Render, for every underlying, which structure serves each preset outcome best."""
+    found = data.outcomes
+    session = "no session" if found is None else found.session.isoformat()
+    head = f"## Which structure serves each outcome ({session})\n\n"
+    if found is None or not found.rows:
+        return head + "No underlying has quotes on the latest session."
+    presets = [p.id for p in found.presets]
+    headers = ["Underlying", "Expiry (DTE)", *(p.label for p in found.presets)]
+    rows = [_outcome_row(row, presets) for row in found.rows]
+    body = _table(headers, rows, left=tuple(range(len(headers)))) + "\n\n"
+    missing = [r for r in found.rows if r.unavailable_reason is not None]
+    if missing:
+        body += (
+            "Unavailable: "
+            + "; ".join(f"{r.symbol} ({r.unavailable_reason})" for r in missing)
+            + ".\n\n"
+        )
+    body += (
+        f"Fill: {found.fill} (long legs at the ask, short legs at the bid); target "
+        f"{found.target_dte} days to expiry, using each underlying's expiry with a distribution "
+        f"nearest to it; calibration map `{found.map_id}`. Each cell is the structure kind with "
+        "the highest return if right among those whose probability of profit given the outcome "
+        f"is at least {_percent(DEFAULT_MIN_POP_GIVEN, 0)}, its legs (signed quantity, right, "
+        "strike) and its return if right: the expected profit and loss on max loss when the "
+        "price at expiry lands in the outcome's range. The outcomes are quantile ranges of the "
+        "calibrated distribution. This is a measurement of how each structure pays under each "
+        "outcome, not advice; the same numbers are on the Structures tab "
+        "(`/api/structures/map`)."
     )
     return head + body
 
@@ -770,6 +883,7 @@ def render_markdown(data: ReportData, *, top: int) -> str:
         _calibration_section(data),
         _reliability_section(data),
         _entry_section(data),
+        _outcome_section(data),
         _spreads_section(data, top),
         _edge_section(data),
         _reading_section(data),
