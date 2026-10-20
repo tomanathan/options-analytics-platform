@@ -99,22 +99,42 @@ Brier change +0.0024 (95% cluster-bootstrap interval -0.0007 to +0.0064, resampl
 
 ## Top 10 to enter (2026-10-19)
 
-Passes every guard (eligible, calibrated POP ≥ 65%, credit ≥ $0.25, natural credit ≥ 50% of mid with positive natural edge, inside quoted strikes, no tail flags), ranked by annualised return on max loss, then reward/risk.
+Passes every guard (eligible, calibrated POP ≥ 65%, credit ≥ $0.25, natural credit ≥ 50% of mid with positive natural edge, inside quoted strikes, no tail flags), 45 to 69 days to expiry, short strike 95% to below 100% of the close, ranked by annualised natural return with the POP shrunk halfway toward the market-implied POP, then annualised return on max loss and reward/risk.
 
-| Rank | Underlying | Session | Expiration | DTE | Short/long | Natural credit | Mid credit | POP calibrated | Expected return on max loss | Annualised return on max loss | Edge (% of mid) | Reward/risk |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 342.5/335 | 2.03 | 2.29 | 74.3% | 9.10% | 1699.0% | 20.5% | 0.15 |
-| 2 | SPY | 2026-10-19 | 2026-10-30 | 11 | 766/759 | 2.13 | 2.17 | 74.3% | 8.76% | 1520.6% | 19.3% | 0.15 |
-| 3 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 342.5/332.5 | 2.49 | 2.85 | 75.0% | 8.50% | 1398.0% | 21.1% | 0.16 |
-| 4 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 340/335 | 1.23 | 1.41 | 75.0% | 8.26% | 1292.4% | 20.7% | 0.15 |
-| 5 | XLF | 2026-10-19 | 2026-11-13 | 25 | 55/53 | 0.40 | 0.65 | 75.0% | 19.72% | 1284.4% | 40.0% | 0.38 |
-| 6 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 340/332.5 | 1.69 | 1.97 | 76.4% | 7.78% | 1100.9% | 21.5% | 0.15 |
-| 7 | AMZN | 2026-10-19 | 2026-11-02 | 14 | 255/235 | 5.59 | 6.66 | 70.9% | 9.67% | 1010.8% | 19.1% | 0.16 |
-| 8 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 342.5/330 | 2.90 | 3.18 | 75.0% | 7.23% | 913.3% | 20.9% | 0.15 |
-| 9 | NVDA | 2026-10-19 | 2026-11-02 | 14 | 215/205 | 2.68 | 3.27 | 70.2% | 9.14% | 877.5% | 18.6% | 0.15 |
-| 10 | SPY | 2026-10-19 | 2026-10-30 | 11 | 766/751 | 3.74 | 3.77 | 75.0% | 6.83% | 796.6% | 20.0% | 0.14 |
+On the rule lab's 2025-2026 hold-out, measured on 2026-10-19, this rule made 4,053 trades that won 73.0% of the time against 74.9% predicted, with a mean return on max loss of +7.53% per trade (95% interval -7.29% to +21.10%, so not shown to be above zero), +3.02% in total on capital at risk, a Sharpe per trade of 0.129 and 18.8% of trades at the maximum loss (docs/rule-lab.md), and over the full 2021-2026 out-of-sample backtest +10.3% per trade (0.9% to 19.0%) but -3.05% in total on capital at risk, because a few wide spreads with large maximum losses dominate the dollar total, so the per-trade figure holds only with equal risk per trade (docs/backtest-entry-rule.md).
 
-This is a ranking of a historical calibration, not trade advice: it orders spreads by what one pooled calibration map says happened on average, and that map is optimistic (see the caveats). Credits are dollars per share; the edge is the mid credit minus the calibrated fair credit, as a share of the mid credit; reward/risk is per trade.
+| Rank | Underlying | Session | Expiration | DTE | Short/long | Natural credit | Mid credit | POP calibrated | Expected return on max loss | Annualised return on max loss | Edge (% of mid) | Reward/risk | Entry score (annualised) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | SPY | 2026-10-19 | 2026-12-18 | 60 | 766/759 | 2.19 | 2.24 | 74.3% | 9.69% | 75.5% | 19.3% | 0.14 | 23.6% |
+| 2 | NVDA | 2026-10-19 | 2026-12-18 | 60 | 213/200 | 4.60 | 4.75 | 70.0% | 10.72% | 85.8% | 17.6% | 0.15 | 21.8% |
+| 3 | NVDA | 2026-10-19 | 2026-12-18 | 60 | 215/200 | 5.50 | 5.65 | 68.5% | 10.77% | 86.4% | 16.9% | 0.15 | 21.8% |
+| 4 | NVDA | 2026-10-19 | 2026-12-18 | 60 | 215/195 | 6.85 | 6.97 | 70.0% | 10.03% | 78.8% | 17.6% | 0.15 | 18.2% |
+| 5 | SPY | 2026-10-19 | 2026-12-18 | 60 | 766/751 | 4.28 | 4.32 | 75.0% | 8.60% | 65.2% | 19.8% | 0.14 | 14.3% |
+| 6 | SPY | 2026-10-19 | 2026-12-18 | 60 | 759/743 | 3.72 | 3.77 | 80.0% | 7.08% | 51.6% | 21.1% | 0.13 | 12.6% |
+| 7 | NVDA | 2026-10-19 | 2026-12-18 | 60 | 213/195 | 5.95 | 6.08 | 70.2% | 9.92% | 77.8% | 18.3% | 0.15 | 12.1% |
+| 8 | AMZN | 2026-10-19 | 2026-12-18 | 60 | 255/235 | 6.85 | 7.22 | 70.0% | 10.62% | 84.8% | 17.7% | 0.15 | 11.7% |
+| 9 | SPY | 2026-10-19 | 2026-12-18 | 60 | 759/751 | 2.04 | 2.09 | 77.6% | 7.72% | 57.2% | 20.3% | 0.13 | 10.8% |
+| 10 | NVDA | 2026-10-19 | 2026-12-18 | 60 | 210/200 | 3.30 | 3.48 | 70.8% | 10.97% | 88.4% | 19.5% | 0.16 | 9.8% |
+
+This is a ranking of a historical calibration, not trade advice: it orders spreads by what one pooled calibration map says happened on average, pulled halfway toward the probability the price implies, and that map is optimistic (see the caveats). Credits are dollars per share; the edge is the mid credit minus the calibrated fair credit, as a share of the mid credit; reward/risk is per trade; the entry score is the annualised return on max loss at the natural credit with that shrunk probability of profit, the number the rule ranks by.
+
+## Which structure serves each outcome (2026-10-19)
+
+| Underlying | Expiry (DTE) | Up, above the 75th percentile | Up, moderately (55th to 85th) | Flat (25th to 75th) | Down, moderately (15th to 45th) | Down, below the 25th percentile | Big move, outside the 10th to 90th |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| AAPL | 2026-11-27 (39d) | long call `+1 C 370`, +367.0% | bull call spread `+1 C 355 / -1 C 370`, +113.2% | iron condor `-1 P 340 / +1 P 320 / -1 C 355 / +1 C 375`, +59.8% | iron condor `-1 P 340 / +1 P 320 / -1 C 345 / +1 C 365`, +101.4% | bear put spread `+1 P 335 / -1 P 310`, +190.5% | long strangle `+1 P 300 / +1 C 375`, +256.8% |
+| AMD | 2026-11-27 (39d) | long call `+1 C 620`, +364.6% | bull call spread `+1 C 560 / -1 C 590`, +131.2% | iron condor `-1 P 535 / +1 P 485 / -1 C 580 / +1 C 630`, +83.6% | iron condor `-1 P 485 / +1 P 455 / -1 C 540 / +1 C 570`, +127.2% | bear put spread `+1 P 505 / -1 P 455`, +195.0% | long strangle `+1 P 470 / +1 C 605`, +236.3% |
+| AMZN | 2026-11-27 (39d) | bull call spread `+1 C 285 / -1 C 310`, +332.0% | bull call spread `+1 C 260 / -1 C 275`, +121.7% | iron condor `-1 P 255 / +1 P 235 / -1 C 275 / +1 C 295`, +71.3% | iron condor `-1 P 235 / +1 P 225 / -1 C 265 / +1 C 275`, +65.3% | bear put spread `+1 P 250 / -1 P 225`, +185.6% | long strangle `+1 P 225 / +1 C 290`, +254.0% |
+| DIA | 2026-11-27 (39d) | long call `+1 C 540`, +379.4% | bull put spread `-1 P 534 / +1 P 524`, +123.3% | iron condor `-1 P 514 / +1 P 503 / -1 C 529 / +1 C 540`, +56.3% | iron condor `-1 P 503 / +1 P 498 / -1 C 519 / +1 C 524`, +105.2% | bear put spread `+1 P 514 / -1 P 498`, +192.9% | long strangle `+1 P 455 / +1 C 540`, +251.1% |
+| GOOGL | 2026-11-27 (39d) | bull call spread `+1 C 380 / -1 C 405`, +321.7% | bull call spread `+1 C 350 / -1 C 380`, +107.8% | iron condor `-1 P 340 / +1 P 315 / -1 C 360 / +1 C 385`, +61.6% | iron condor `-1 P 325 / +1 P 310 / -1 C 345 / +1 C 360`, +89.1% | bear put spread `+1 P 325 / -1 P 295`, +182.5% | long strangle `+1 P 310 / +1 C 380`, +249.8% |
+| META | 2026-11-27 (39d) | long call `+1 C 775`, +277.0% | bull call spread `+1 C 700 / -1 C 760`, +102.3% | iron condor `-1 P 700 / +1 P 635 / -1 C 710 / +1 C 775`, +62.5% | iron condor `-1 P 650 / +1 P 600 / -1 C 710 / +1 C 760`, +64.8% | bear put spread `+1 P 650 / -1 P 600`, +169.3% | long strangle `+1 P 600 / +1 C 775`, +174.9% |
+| MSFT | 2026-11-27 (39d) | long call `+1 C 575`, +335.5% | bull call spread `+1 C 540 / -1 C 575`, +110.5% | iron condor `-1 P 530 / +1 P 500 / -1 C 555 / +1 C 585`, +68.3% | iron condor `-1 P 500 / +1 P 480 / -1 C 535 / +1 C 555`, +86.0% | bear put spread `+1 P 525 / -1 P 480`, +167.9% | long strangle `+1 P 480 / +1 C 585`, +245.0% |
+| NVDA | 2026-11-27 (39d) | bull call spread `+1 C 240 / -1 C 260`, +361.0% | bull put spread `-1 P 235 / +1 P 220`, +130.3% | iron condor `-1 P 215 / +1 P 205 / -1 C 230 / +1 C 240`, +80.8% | iron condor `-1 P 200 / +1 P 190 / -1 C 220 / +1 C 230`, +102.1% | bear put spread `+1 P 205 / -1 P 195`, +199.6% | bull call spread `+1 C 250 / -1 C 270`, +422.7% |
+| SPY | 2026-11-30 (42d) | bull put spread `-1 P 860 / +1 P 789`, +540.9% | bull call spread `+1 C 782 / -1 C 789`, +145.9% | iron condor `-1 P 766 / +1 P 759 / -1 C 782 / +1 C 789`, +84.1% | iron condor `-1 P 759 / +1 P 751 / -1 C 774 / +1 C 782`, +181.0% | bear put spread `+1 P 766 / -1 P 751`, +212.8% | long call `+1 C 812`, +755.4% |
+| TSLA | 2026-11-27 (39d) | bull call spread `+1 C 405 / -1 C 440`, +374.4% | bull call spread `+1 C 370 / -1 C 385`, +138.5% | iron condor `-1 P 360 / +1 P 330 / -1 C 385 / +1 C 415`, +90.9% | iron condor `-1 P 330 / +1 P 315 / -1 C 370 / +1 C 385`, +110.0% | bear put spread `+1 P 340 / -1 P 320`, +202.1% | long strangle `+1 P 315 / +1 C 415`, +273.7% |
+| XLF | 2026-11-27 (39d) | long call `+1 C 56`, +227.6% | bull call spread `+1 C 55 / -1 C 56`, +56.2% | bull call spread `+1 C 55 / -1 C 56`, +34.9% | bear call spread `-1 C 56 / +1 C 58.5`, +4.6% | bear put spread `+1 P 55.5 / -1 P 54.5`, +107.8% | long call `+1 C 56`, +116.9% |
+
+Fill: natural (long legs at the ask, short legs at the bid); target 35 days to expiry, using each underlying's expiry with a distribution nearest to it; calibration map `production`. Each cell is the structure kind with the highest return if right among those whose probability of profit given the outcome is at least 50%, its legs (signed quantity, right, strike) and its return if right: the expected profit and loss on max loss when the price at expiry lands in the outcome's range. The outcomes are quantile ranges of the calibrated distribution. This is a measurement of how each structure pays under each outcome, not advice; the same numbers are on the Structures tab (`/api/structures/map`).
 
 ## Top put credit spreads (2026-10-19)
 
