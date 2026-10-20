@@ -27,7 +27,11 @@ import numpy as np
 import numpy.typing as npt
 
 from oap.engine._types import BoolArray, FloatArray, Right
-from oap.engine._validation import require_finite_scalar
+from oap.engine._validation import (
+    as_float_1d,
+    require_finite_scalar,
+    require_strictly_increasing,
+)
 from oap.engine.black_scholes import _norm_cdf, _norm_pdf
 from oap.engine.errors import EngineInputError
 from oap.engine.implied_distribution import RiskNeutralCdf
@@ -703,6 +707,46 @@ class TailCompletedCdf:
                     values[positive] = weight * _norm_pdf(_d2(xp, self.location, s)) / (xp * s)
                 out[mask] = values
         return out
+
+    def coarsened(self, knots: npt.ArrayLike) -> "TailCompletedCdf":
+        """Return the distribution with its base CDF re-knotted at coarser prices, for display.
+
+        A calibrated CDF composed with an isotonic (step) map has hundreds of knots: flat
+        runs and near-vertical jumps between knots a few millionths of a dollar apart. Its
+        point density (``density_array``) is therefore either about 0 or a spike, which no
+        chart can show. Evaluating the CDF at the raw CDF's knots and interpolating linearly
+        between them gives the landscape's calibrated curve (``density_calibrated``): the
+        same probability in every knot interval, spread evenly over it. The outer knots must
+        be this distribution's, so the tail masses, volatilities and location are unchanged.
+        Use it for the display grid and density only; expectations use the exact CDF.
+
+        Args:
+            knots: Prices in dollars, strictly increasing, whose first and last equal the
+                outer knots of ``base`` (to 1e-9 dollars).
+
+        Returns:
+            The coarsened distribution.
+
+        Raises:
+            EngineInputError: If the knots are not increasing or miss an outer knot.
+        """
+        k = as_float_1d(knots, "knots", min_len=2)
+        require_strictly_increasing(k, "knots")
+        if abs(k[0] - self.k_lo) > 1e-9 or abs(k[-1] - self.k_hi) > 1e-9:
+            raise EngineInputError("knots must start and end at the outer knots of the base")
+        k[0], k[-1] = self.k_lo, self.k_hi
+        values = np.maximum.accumulate(np.clip(self.base.prob_below_array(k), 0.0, 1.0))
+        base = RiskNeutralCdf(
+            strikes=k,
+            cdf=values,
+            raw_cdf=values,
+            forward=self.base.forward,
+            years=self.base.years,
+            rate=self.base.rate,
+            n_quotes=self.base.n_quotes,
+            flags=self.base.flags,
+        )
+        return TailCompletedCdf(base, self.sigma_lo, self.sigma_hi, self.location)
 
     # -- moments ------------------------------------------------------------------------
 

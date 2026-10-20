@@ -273,3 +273,21 @@ def test_identity_map_scores_like_the_raw_distribution(gold: GoldFixture) -> Non
     assert body.view.prob == pytest.approx(body.view.prob_market, abs=1e-9)
     assert body.map_is_identity
     assert not math.isnan(body.view.prob)
+
+
+def test_response_density_is_the_landscape_density_and_integrates_to_about_one(
+    gold: GoldFixture,
+) -> None:
+    book = _book(gold)
+    query = StructuresQuery(preset="flat")
+    view, preset = resolve_view(query, book.dist, book.curves.close)
+    body = structures_response(book, view, preset, query, _chosen(gold))
+    grid = np.asarray(body.grid)
+    density = np.asarray(body.density)
+    assert np.trapezoid(density, grid) == pytest.approx(0.99, abs=0.03)
+    knots = np.asarray(book.curves.curve.knots)
+    landscape = np.asarray(book.curves.curve.density_calibrated)
+    inside = (grid >= knots[0]) & (grid < knots[-1])
+    index = np.searchsorted(knots, grid[inside], side="right") - 1
+    assert np.allclose(density[inside], landscape[index], rtol=1e-12, atol=1e-15)
+    assert density.max() < 10 * np.max(landscape)

@@ -6,6 +6,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from oap.engine.calibration import apply_calibration, fit_isotonic_calibration
 from oap.engine.errors import EngineInputError
 from oap.engine.implied_distribution import RiskNeutralCdf, implied_cdf
 from oap.engine.positions import (
@@ -566,3 +567,83 @@ def test_expect_over_a_partition_sums_to_the_whole(position: Position, cuts: lis
     assert total[0] == pytest.approx(whole[0], abs=1e-12)
     assert total[1] == pytest.approx(whole[1], abs=1e-9)
     assert total[2] == pytest.approx(whole[2], rel=1e-9, abs=1e-9)
+
+
+# -- display density ----------------------------------------------------------------------------
+
+
+def _staircase_dist() -> tuple[TailCompletedCdf, np.ndarray]:
+    """A dense chain composed with an isotonic map, as production builds the calibrated CDF.
+
+    Isotonic regression gives a step-like map, so the composed CDF has hundreds of knots with
+    flat runs and near-vertical jumps. Returns the completed calibrated CDF and the raw knots.
+    """
+    strikes, puts, calls, _ = synthetic_chain(100.0, 0.35, YEARS, 0.0, 0.1)
+    keep = (strikes > 70) & (strikes < 135)
+    raw = implied_cdf(
+        strikes[keep],
+        puts[keep],
+        years=YEARS,
+        rate=0.0,
+        call_strikes=strikes[keep],
+        call_mids=calls[keep],
+    )
+    rng = np.random.default_rng(11)
+    predicted = rng.uniform(0.0, 1.0, size=4000)
+    realised = rng.uniform(size=4000) < np.clip(predicted * 0.8 + 0.05, 0.0, 1.0)
+    cmap = fit_isotonic_calibration(predicted, realised)
+    dist = TailCompletedCdf.complete(apply_calibration(raw, cmap), 0.45, 0.3)
+    return dist, raw.strikes
+
+
+def test_the_calibrated_cdf_is_a_staircase_so_point_densities_are_not_displayable() -> None:
+    dist, _ = _staircase_dist()
+    slopes = np.diff(dist.base.cdf) / np.diff(dist.base.strikes)
+    assert dist.base.strikes.shape[0] > 150
+    assert np.mean(slopes < 1e-9) > 0.2  # flat runs
+    grid = np.linspace(dist.quantile(0.005), dist.quantile(0.995), 161)
+    point = dist.density_array(grid)
+    assert np.mean(point[40:120] < 1e-9) > 0.2  # most of the body would show as empty
+
+
+def test_the_coarsened_density_integrates_to_about_one_over_its_quantile_grid() -> None:
+    dist, raw_knots = _staircase_dist()
+    display = dist.coarsened(raw_knots)
+    grid = np.linspace(display.quantile(0.005), display.quantile(0.995), 161)
+    density = display.density_array(grid)
+    assert np.all(density >= 0)
+    # Exact: the density integrates to the mass the knots hold (piecewise constant per bin).
+    knots = display.base.strikes
+    per_bin = display.density_array(knots[:-1] + 0.5 * np.diff(knots))
+    assert np.sum(per_bin * np.diff(knots)) == pytest.approx(
+        display.prob_between(knots[0], knots[-1]), abs=1e-12
+    )
+    # Sampled on the 161-point grid the trapezoid rule errs at each jump between bins.
+    assert np.trapezoid(density, grid) == pytest.approx(0.99, abs=0.05)
+    staircase_peak = float(np.max(np.diff(dist.base.cdf) / np.diff(dist.base.strikes)))
+    assert density.max() < 0.01 * staircase_peak  # no spike from the staircase
+    assert density.max() < 0.2  # 1/$ for a $100 underlying with 35% vol and 30 days
+
+
+def test_coarsening_keeps_the_probabilities_at_the_knots_and_the_tails() -> None:
+    dist, raw_knots = _staircase_dist()
+    display = dist.coarsened(raw_knots)
+    assert np.allclose(display.prob_below_array(raw_knots), dist.prob_below_array(raw_knots))
+    assert display.tail_mass() == dist.tail_mass()
+    outside = np.array([40.0, 60.0, 150.0, 180.0])
+    assert np.allclose(display.prob_below_array(outside), dist.prob_below_array(outside))
+    assert np.allclose(display.density_array(outside), dist.density_array(outside))
+    widths = np.diff(raw_knots)
+    mass = np.diff(dist.prob_below_array(raw_knots))
+    centres = raw_knots[:-1] + 0.5 * widths
+    assert np.allclose(display.density_array(centres), mass / widths, atol=1e-15)
+
+
+def test_coarsening_validates_the_knots() -> None:
+    dist = _dist()
+    with pytest.raises(EngineInputError):
+        dist.coarsened(np.array([dist.k_lo]))
+    with pytest.raises(EngineInputError):
+        dist.coarsened(np.array([dist.k_lo + 1.0, dist.k_hi]))
+    with pytest.raises(EngineInputError):
+        dist.coarsened(np.array([dist.k_hi, dist.k_lo]))
