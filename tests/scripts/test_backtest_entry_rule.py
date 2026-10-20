@@ -9,7 +9,7 @@ import pytest
 
 from oap.analytics.backtest import maps_to_frame, walk_forward_maps
 from oap.analytics.config import DEFAULT_CONFIG
-from oap.analytics.scoring import ENTRY_RULE, SPREAD_COLUMNS
+from oap.analytics.scoring import ENTRY_RULE, PREVIOUS_ENTRY_RULE, SPREAD_COLUMNS
 from oap.analytics.strategy import settle_trades, strategy_metrics, strategy_names
 from scripts import backtest_entry_rule as cli
 from tests.analytics.frames import lognormal_quotes, outcomes_frame, synthetic_predictions
@@ -92,6 +92,21 @@ def test_markdown_has_the_sections_in_order_and_states_the_rule() -> None:
     assert ENTRY_RULE in text
     assert "![Cumulative realised return](img/strategy_equity.png)" in text
     assert text.endswith("\n")
+
+
+def test_the_intro_says_when_and_why_the_rule_changed() -> None:
+    text = cli.render_markdown(_summary())
+    intro = text.split("\n\n")[1]
+    sentence = cli.rule_change_sentence(10)
+    assert sentence in intro
+    assert intro.index(ENTRY_RULE) < intro.index(sentence)
+    assert "2026-10-20" in sentence
+    assert PREVIOUS_ENTRY_RULE in sentence
+    assert "64.1%" in sentence
+    assert "`docs/rule-lab.md`" in sentence
+    assert "`entry_top10`" in sentence
+    assert "`entry_top5`" in cli.rule_change_sentence(5)
+    assert "recommend" not in text.lower()
 
 
 def test_the_overall_table_lists_the_three_strategies_with_intervals() -> None:

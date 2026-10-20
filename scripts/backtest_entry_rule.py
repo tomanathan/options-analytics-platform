@@ -37,7 +37,7 @@ from oap.analytics.backtest import maps_from_frame
 from oap.analytics.config import DEFAULT_CONFIG
 from oap.analytics.io import QUOTE_SELECT, read_outcomes, read_table
 from oap.analytics.sample import SnapshotStatus
-from oap.analytics.scoring import ENTRY_RULE
+from oap.analytics.scoring import ENTRY_RULE, ENTRY_RULE_SINCE, PREVIOUS_ENTRY_RULE
 from oap.analytics.strategy import (
     SETTLED_COLUMNS,
     backtest_session,
@@ -56,6 +56,12 @@ REQUIRED_TABLES: Final[tuple[str, ...]] = (
     "calibration_snapshot",
 )
 """Tables of the ``gold`` schema the backtest reads."""
+
+PREVIOUS_RULE_RESULT: Final = (
+    "10,458 out-of-sample trades from 2021-01-04 to 2026-10-05 that won 64.1% against 73.0% "
+    "predicted and returned -2.04% on capital at risk"
+)
+"""What this backtest measured for ``PREVIOUS_ENTRY_RULE`` on 2026-10-19, before the change."""
 
 EQUITY_IMAGE: Final = "img/strategy_equity.png"
 PROGRESS_EVERY: Final = 100
@@ -230,10 +236,27 @@ WORST_HEADERS: Final[tuple[str, ...]] = (
 )
 
 STRATEGY_LABELS: Final[dict[str, str]] = {
-    "entry": "the recommendation: `rank_entry` (the rule above)",
+    "entry": "the live entry ranking: `rank_entry` (the rule above)",
     "return": "`rank` (raw annualised return on max loss, without the entry guards)",
     "eligible_all": "every eligible spread, equal weight (the no-selection baseline)",
 }
+
+
+def rule_change_sentence(top_n: int) -> str:
+    """Say when and why the entry rule changed, from the rule constants.
+
+    Args:
+        top_n: Spreads per session of the backtest.
+
+    Returns:
+        One sentence.
+    """
+    return (
+        f"The rule changed on {ENTRY_RULE_SINCE.isoformat()}: until then `entry_top{top_n}` "
+        f'followed "{PREVIOUS_ENTRY_RULE}", which this backtest measured at '
+        f"{PREVIOUS_RULE_RESULT}, so the product moved to the rule above, the rule-lab rule that "
+        "held up on the 2025-2026 hold-out (`docs/rule-lab.md`)."
+    )
 
 
 def _overall_section(summary: BacktestSummary, index: _Index) -> str:
@@ -382,7 +405,8 @@ def render_markdown(summary: BacktestSummary) -> str:
         f"# Strategy backtest: the Top {summary.top_n} rule applied historically\n\n"
         f"`{entry}` takes, on every session, the spreads the live ranking would have listed "
         f'under "Top {summary.top_n} to enter": {ENTRY_RULE} Each session is scored by the '
-        "same code as the latest one, with only the calibration map that existed at the time.\n\n"
+        "same code as the latest one, with only the calibration map that existed at the time. "
+        f"{rule_change_sentence(summary.top_n)}\n\n"
         f"Sessions scored: {fmt_count(summary.sessions)} ({fmt_day(summary.first_session)} to "
         f"{fmt_day(summary.last_session)}); with at least one `{entry}` trade: "
         f"{fmt_count(summary.sessions_with_trades)}. Trades dropped as unsettled: "
