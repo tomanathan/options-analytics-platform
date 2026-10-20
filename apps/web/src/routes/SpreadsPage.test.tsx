@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createQueryClient } from '../api/queries';
 import { requestLog } from '../test/server';
+import { ADVICE_WORDS } from '../test/wording';
 import SpreadsPage from './SpreadsPage';
 
 const clients: ReturnType<typeof createQueryClient>[] = [];
@@ -382,7 +383,7 @@ describe('SpreadsPage', () => {
     expect(document.querySelector('.page > section')).toContainElement(rule);
   });
 
-  it('uses no buy, sell or recommend wording anywhere on the page', async () => {
+  it('uses no buy, sell, recommend or should wording anywhere on the page', async () => {
     const user = userEvent.setup();
     renderPage('/spreads?sel=TSLA%7C2026-10-16%7C370%7C367.5');
     await screen.findByText(/of 14 spreads/);
@@ -390,7 +391,7 @@ describe('SpreadsPage', () => {
     await within(panel).findByText('Breakeven');
     await user.click(screen.getByRole('radio', { name: 'Edge' }));
     await screen.findByRole('columnheader', { name: /^Rank · Edge/ });
-    expect(document.body.textContent).not.toMatch(/\b(buy|sell|recommend)\b/i);
+    expect(document.body.textContent).not.toMatch(ADVICE_WORDS);
     expect(document.body.textContent).not.toMatch(/overpriced|underpriced|mispriced/i);
   });
 });
