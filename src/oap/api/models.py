@@ -593,10 +593,14 @@ class StructuresResponse(ApiModel):
     view: ViewInfo = Field(description="The outcome, resolved to prices and probabilities.")
     grid: list[float] = Field(
         description="Terminal prices in dollars ($/sh): 161 evenly spaced points from the 0.5% "
-        "to the 99.5% quantile of the calibrated, tail-completed distribution."
+        "to the 99.5% quantile of the calibrated, tail-completed distribution, read at the raw "
+        "knots as density is."
     )
     density: list[float] = Field(
-        description="Calibrated, tail-completed probability density at each grid price (1/$)."
+        description="Calibrated, tail-completed probability density at each grid price (1/$): "
+        "inside the quoted strikes the calibrated probability of the raw knot interval holding "
+        "the price divided by its width (the landscape's density_calibrated), beyond them the "
+        "lognormal tail density."
     )
     kinds: list[KindBest] = Field(
         description="The best qualifying structure of each kind, in the order of the kind list."

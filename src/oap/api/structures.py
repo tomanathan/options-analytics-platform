@@ -359,7 +359,8 @@ def response_grid(dist: TailCompletedCdf) -> np.ndarray:
     """Return the terminal price grid of a response.
 
     Args:
-        dist: The calibrated, tail-completed distribution.
+        dist: The calibrated, tail-completed distribution re-knotted at the raw knots
+            (``TailCompletedCdf.coarsened``), the one whose density the response carries.
 
     Returns:
         ``GRID_POINTS`` evenly spaced prices in dollars between its ``GRID_QUANTILES``.
@@ -391,7 +392,8 @@ def structures_response(
     scores = score_structures(book.positions, dist, view)
     qualifying = ranked(scores, min_prob_profit_given_view=query.min_pop_given)
     bests = best_per_kind(scores, min_prob_profit_given_view=query.min_pop_given)
-    grid = response_grid(dist)
+    display = dist.coarsened(book.curves.cdf.strikes)
+    grid = response_grid(display)
     m_lo, m_hi = dist.tail_mass()
     return StructuresResponse(
         symbol=book.symbol,
@@ -423,7 +425,7 @@ def structures_response(
             prob_market=book.market.prob_view(view),
         ),
         grid=grid.tolist(),
-        density=dist.density_array(grid).tolist(),
+        density=display.density_array(grid).tolist(),
         kinds=[kind_best(score, grid) for score in bests.values()],
         ranking=[structure_row(score) for score in qualifying[: query.limit]],
         dominance=[

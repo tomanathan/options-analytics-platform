@@ -562,6 +562,23 @@ File locks may not propagate across a Colima bind mount, so the lock protection 
 
 `map=auto` (the default) uses the `production` map for the latest session and `fold_<year>` for any earlier one, so a historic session is not shown through a map that has seen its outcome. `production` and `walk_forward` force one or the other. A response says which map it used (`map_id`) and whether the map was fitted on outcomes that settle after the session (`look_ahead`); the web app shows that as an "in-sample map" chip. `fold_2020` is the identity (the burn-in year), and the app says "no calibration (2020 burn-in)" for it.
 
+### Structures and the outcome map
+
+`GET /api/structures/{symbol}/{session}` scores every structure of one expiration (the expiration with a distribution nearest 35 days unless `expiration` is given) against an outcome: a `preset`, or custom bounds `lo` and `hi` as fractions of the close with `outside=true` for a move. `GET /api/structures/map` does the same for every underlying of a session (`session=latest` by default) and every preset. Both read the landscape's own raw and calibrated CDFs, completed with lognormal tails ([ADR 0014](decisions/0014-structures-tail-completed-distribution.md)). After the session is in memory, a request takes about 0.01 s, the first one for a session about 0.3 s, and a full map of 11 underlyings about 1.2 s.
+
+Besides the shared `404 not_found` (unknown underlying, session or expiration) and `422 invalid` (a parameter out of range), the structures routes answer `422` with these codes:
+
+| Code | Cause | Fix |
+| --- | --- | --- |
+| `view_required` | Neither `preset` nor `lo`/`hi` was given (`outside` alone is not an outcome). | Add a preset or at least one bound. |
+| `view_invalid` | `lo >= hi`, or a preset collapses to a single price on a degenerate distribution. | Swap the bounds or pick another preset. |
+| `no_distribution` | The requested expiration has no curve; the detail echoes the landscape's reason (`expired`, `no_close`, `too_few_puts`, `engine_error: ...`). Without `expiration`, no expiration with at least 7 days to expiry has a curve. | Pick an expiration with a curve on the Landscape page. |
+| `no_implied_vol` | No quote of the expiration has a positive source IV, so the tails cannot be completed. | Pick another expiration; the gold quotes of this one lack IVs. |
+
+In the outcome map the last two codes do not fail the request: the underlying is listed with `cells: []` and `unavailable_reason` set to `no_distribution: ...` or `no_implied_vol: ...`.
+
+Mid fills on a wide quote can make a credit spread whose credit nearly equals its width (max loss of a few cents, a return if right of 10x or more). The natural fill, the default, does not produce them; read mid-fill results with that in mind.
+
 ### Regenerate the API schema
 
 The web app's types are generated from the API. After changing a model or a route in `src/oap/api/`:
@@ -586,6 +603,7 @@ Commit both files. `uv run pytest tests/api/test_openapi.py` fails, and says to 
 | `GET /` returns `The web app is not built` | `make serve` was not used, or `apps/web/dist` is gone. | `make web-build`, or use `make app`. |
 | `make dbt-build-local` fails with `Could not set lock` while the explorer runs | The API was loading at that moment. | Run the build again; stop playback first. |
 | `tests/api/test_openapi.py` fails | A model or route changed without regenerating the schema. | `make api-schema`, then commit `apps/web/openapi.json` and `src/api/schema.ts`. |
+| The Structures page shows `no_distribution` or `no_implied_vol` | The expiration has no curve, or its quotes have no positive IV. | See [Structures and the outcome map](#structures-and-the-outcome-map); pick another expiration. |
 
 ## Nightly cloud refresh
 
