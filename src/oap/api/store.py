@@ -22,7 +22,6 @@ from typing import Any, Final, Literal
 
 import pandas as pd
 
-from oap.analytics.backtest import maps_from_frame
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID
 from oap.analytics.scoring import ENTRY_EVIDENCE, ENTRY_RULE
 from oap.api import db
@@ -38,6 +37,7 @@ from oap.api.landscape import (
     named_map,
     pick_map,
     session_bundle,
+    stored_maps,
 )
 from oap.api.models import (
     CalibrationSummary,
@@ -385,18 +385,8 @@ class GoldStore:
         """
         group = self._group(sig)
         if group.maps is None:
-            frame = self._read(allow, [(db.MAPS_SQL, ())])[0]
-            meta: dict[str, MapMeta] = {}
-            for map_id, part in frame.groupby("map_id", sort=True):
-                head = part.iloc[0]
-                fold = head["fold"]
-                meta[str(map_id)] = MapMeta(
-                    fold=None if pd.isna(fold) else int(fold),
-                    train_cutoff=_as_date(head["train_cutoff"]),
-                    train_max_expiration=_as_date(head["train_max_expiration"]),
-                    n_samples=int(head["n_samples"]),
-                )
-            group.maps = _MapsData(maps_from_frame(frame), meta)
+            maps, meta = stored_maps(self._read(allow, [(db.MAPS_SQL, ())])[0])
+            group.maps = _MapsData(maps, meta)
         return group.maps
 
     def _metrics(self, sig: Signature, allow: bool) -> pd.DataFrame:

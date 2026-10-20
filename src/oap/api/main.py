@@ -14,7 +14,7 @@ from fastapi.routing import APIRoute
 from starlette.middleware.gzip import GZipMiddleware
 
 from oap import __version__
-from oap.api.errors import install_error_handlers
+from oap.api.handlers import install_error_handlers
 from oap.api.models import ErrorBody, HealthResponse
 from oap.api.routers import landscape, meta, spreads, structures
 from oap.api.settings import ApiSettings

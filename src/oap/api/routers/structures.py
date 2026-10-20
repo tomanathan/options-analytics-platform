@@ -14,7 +14,7 @@ from oap.api.models import (
     StructuresResponse,
 )
 from oap.api.routers import ERROR_RESPONSES, SYMBOL_PATTERN
-from oap.api.structures import StructuresQuery
+from oap.api.structures import DEFAULT_MIN_POP_GIVEN, StructuresQuery
 
 router = APIRouter(prefix="/api/structures", tags=["structures"], responses=ERROR_RESPONSES)
 
@@ -49,7 +49,7 @@ def get_outcome_map(
     ] = 35,
     fill: FillParam = "natural",
     map_choice: MapParam = "auto",
-    min_pop_given: MinPopGiven = 0.5,
+    min_pop_given: MinPopGiven = DEFAULT_MIN_POP_GIVEN,
 ) -> OutcomeMapResponse:
     """Return, for every underlying of a session and every preset outcome, the verdict numbers.
 
@@ -93,7 +93,7 @@ def get_structures(
     ] = False,
     fill: FillParam = "natural",
     map_choice: MapParam = "auto",
-    min_pop_given: MinPopGiven = 0.5,
+    min_pop_given: MinPopGiven = DEFAULT_MIN_POP_GIVEN,
     limit: Annotated[int, Query(ge=1, le=100, description="Most ranking rows.")] = 25,
 ) -> StructuresResponse:
     """Score every structure of one expiration against an outcome.

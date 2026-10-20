@@ -66,6 +66,8 @@ GRID_QUANTILES: Final = (0.005, 0.995)
 """The grid spans these quantiles of the calibrated, tail-completed distribution."""
 TARGET_DTE: Final = 35
 """Calendar days to expiration of the default expiration."""
+DEFAULT_MIN_POP_GIVEN: Final = 0.5
+"""Default smallest P(profit | outcome), a decimal, for a structure to qualify."""
 
 
 @dataclass(frozen=True)

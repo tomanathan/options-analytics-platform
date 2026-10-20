@@ -18,6 +18,7 @@ from oap.api.landscape import (
     pick_map,
     session_bundle,
     sessions_summary,
+    stored_maps,
 )
 from oap.engine.calibration import CalibrationMap, apply_calibration
 from oap.engine.conventions import dte_years
@@ -26,10 +27,12 @@ from tests.api.gold import (
     FAR_EXPIRY,
     LATEST,
     NEAR_EXPIRY,
+    PRODUCTION_TRAIN_MAX,
     SESSIONS,
     SHORT_EXPIRY,
     THIN_EXPIRY,
     VOL,
+    build_maps,
     build_quotes,
     strikes_for,
 )
@@ -372,6 +375,23 @@ def test_pick_map_walk_forward_falls_back_to_the_identity() -> None:
     assert chosen.look_ahead is False
     missing = pick_map("production", LATEST, LATEST, {}, {})
     assert missing.map_id == IDENTITY_MAP_ID
+
+
+def test_stored_maps_rebuild_the_maps_and_their_provenance() -> None:
+    frame, production = build_maps()
+    maps, meta = stored_maps(frame)
+    assert sorted(maps) == ["fold_2020", "fold_2024", "production"]
+    assert sorted(meta) == sorted(maps)
+    np.testing.assert_array_equal(maps["production"].knots, production.knots)
+    assert meta["production"] == MapMeta(
+        fold=None,
+        train_cutoff=None,
+        train_max_expiration=PRODUCTION_TRAIN_MAX,
+        n_samples=production.n_samples,
+    )
+    assert meta["fold_2024"].fold == 2024
+    assert meta["fold_2024"].train_cutoff == date(2024, 1, 1)
+    assert meta["fold_2020"].train_max_expiration is None
 
 
 def test_named_map_returns_none_for_an_unknown_id() -> None:
