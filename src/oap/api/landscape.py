@@ -21,6 +21,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
+from oap.analytics.backtest import maps_from_frame
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID, AnalyticsConfig, fold_map_id
 from oap.analytics.sample import STRIKE_DECIMALS, chain_cdf, usable_mask
 from oap.api.models import (
@@ -62,6 +63,36 @@ class MapMeta:
     train_cutoff: date | None
     train_max_expiration: date | None
     n_samples: int
+
+
+def _optional_date(value: object) -> date | None:
+    """Return the date of a timestamp or date, or None for a null."""
+    if value is None or pd.isna(value):  # type: ignore[call-overload]
+        return None
+    return pd.Timestamp(str(value)).date()
+
+
+def stored_maps(frame: pd.DataFrame) -> tuple[dict[str, CalibrationMap], dict[str, MapMeta]]:
+    """Read the calibration maps and their provenance from ``gold.calibration_map`` rows.
+
+    Args:
+        frame: Rows of ``MAPS_SQL`` (``map_id``, ``fold``, ``train_cutoff``,
+            ``train_max_expiration``, knots, ``n_samples``, ``is_identity``).
+
+    Returns:
+        The maps and their provenance, both keyed by ``map_id``.
+    """
+    meta: dict[str, MapMeta] = {}
+    for map_id, part in frame.groupby("map_id", sort=True):
+        head = part.iloc[0]
+        fold = head["fold"]
+        meta[str(map_id)] = MapMeta(
+            fold=None if pd.isna(fold) else int(fold),
+            train_cutoff=_optional_date(head["train_cutoff"]),
+            train_max_expiration=_optional_date(head["train_max_expiration"]),
+            n_samples=int(head["n_samples"]),
+        )
+    return maps_from_frame(frame), meta
 
 
 @dataclass(frozen=True, eq=False)
