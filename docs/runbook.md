@@ -2,6 +2,29 @@
 
 For whoever operates the stack. All commands run from the repo root unless noted. "Operating" means the Airflow stack, the bronze pipelines (chain and price backfills, the daily DAGs, maintenance), the dbt build, the analytics and the results report, the explorer, the nightly cloud refresh, Terraform and the checks.
 
+## Daily use
+
+The daily path is the nightly artifact plus the explorer; it needs no Airflow stack, no Docker and no DoltHub account. Prerequisites: `uv sync --all-groups` once, Node 22 or later for the web build, and the GitHub CLI logged in (`gh auth login`).
+
+| When | Command | What happens |
+| --- | --- | --- |
+| After 06:30 UTC, Tuesday to Saturday | (nothing) | The `nightly` workflow pulls the previous session from DoltHub, builds gold and the report, and uploads `gold-duckdb` (see "Nightly cloud refresh"). Check it with `make nightly-status`. |
+| Each morning | stop `make serve` if it runs (Ctrl-C) | Only one process may use `.dbt-local/oap.duckdb`. |
+| | `make daily` | Runs `make pull-gold` (moves the old file to `.bak`, puts the latest successful run's file in place), then prints the gold max `trade_date` and the serve command. It does not start a server. |
+| | `make serve` | Builds `apps/web/dist` and serves the explorer and the API on http://127.0.0.1:8000. |
+
+Check the printed `trade_date`: it is the previous session on a normal morning. If it is older, the nightly run failed or has not finished (`make nightly-status`, then "Failures" under "Nightly cloud refresh"); `make daily` exits 1 with a message when no successful run or no artifact exists.
+
+What each tab answers:
+
+| Tab | Question | API |
+| --- | --- | --- |
+| Structures (`/structures`, `/outcomes`) | Which structure serves an expected outcome for the price at expiry, for one ticker or every ticker of the session | `GET /api/structures/{symbol}/{session}`, `GET /api/structures/map` |
+| Spreads (`/spreads`) | The Top 10 to enter under the tested entry rule (`ENTRY_RULE`, with its hold-out evidence `ENTRY_EVIDENCE` printed under it; [rule-lab.md](rule-lab.md)), and every scored spread | `GET /api/spreads?sort=entry` |
+| Landscape (`/landscape`) | The implied distribution of the price at expiry, raw and calibrated, per ticker and session | `GET /api/underlyings/{symbol}/sessions/{session}/distribution` |
+
+The Top 10 comes from `rank_entry` in `gold.spread_scores`, which the nightly build computes with the code of `main`. A gold file built before 2026-10-20 has no `score_entry` column, so the Spreads tab answers `503 gold_missing` until a nightly run built after the entry rule change is pulled (`make nightly-run`, then `make daily`). The Airflow stack (`make up`) is for backfills, rebuilding history and the pipeline showcase; daily use does not need it.
+
 ## Airflow stack
 
 Services: `postgres` (metadata DB), `airflow-init` (one-shot migrate and create user), `airflow-webserver`, `airflow-scheduler`. LocalExecutor. `make up`, `make down`, `make reset` and `make logs` wrap the commands below; `make down` keeps the metadata volume, `make reset` deletes it.
