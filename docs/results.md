@@ -1,24 +1,24 @@
 # Results
 
-Source: the `gold` schema of the DuckDB file built by dbt; spreads are scored as of the 2026-10-16 session.
+Source: the `gold` schema of the DuckDB file built by dbt; spreads are scored as of the 2026-10-19 session.
 
 ## Data coverage
 
 | Underlying | First session | Last session | Sessions | Chain snapshots | Settled snapshots | Predictions |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| AAPL | 2020-01-06 | 2026-10-16 | 1,201 | 3,791 | 3,715 | 47,027 |
-| AMD | 2020-01-06 | 2026-10-16 | 1,198 | 3,785 | 3,708 | 47,069 |
-| AMZN | 2020-01-06 | 2026-10-16 | 1,197 | 3,780 | 3,704 | 46,718 |
-| DIA | 2020-01-06 | 2026-10-16 | 1,199 | 3,797 | 3,704 | 46,474 |
-| GOOGL | 2020-01-06 | 2026-10-16 | 1,192 | 3,766 | 3,690 | 46,584 |
-| META | 2022-07-01 | 2026-10-16 | 832 | 2,684 | 2,607 | 32,856 |
-| MSFT | 2020-01-06 | 2026-10-16 | 1,187 | 3,746 | 3,670 | 46,329 |
-| NVDA | 2020-01-06 | 2026-10-16 | 1,196 | 3,769 | 3,697 | 46,204 |
-| SPY | 2020-01-06 | 2026-10-16 | 1,189 | 3,793 | 3,706 | 45,979 |
-| TSLA | 2021-01-04 | 2026-10-16 | 1,047 | 3,323 | 3,247 | 41,049 |
-| XLF | 2020-01-06 | 2026-10-16 | 1,189 | 3,766 | 3,689 | 46,675 |
+| AAPL | 2020-01-06 | 2026-10-19 | 1,202 | 3,795 | 3,715 | 47,027 |
+| AMD | 2020-01-06 | 2026-10-19 | 1,199 | 3,789 | 3,708 | 47,069 |
+| AMZN | 2020-01-06 | 2026-10-19 | 1,198 | 3,784 | 3,704 | 46,718 |
+| DIA | 2020-01-06 | 2026-10-19 | 1,200 | 3,801 | 3,704 | 46,474 |
+| GOOGL | 2020-01-06 | 2026-10-19 | 1,193 | 3,770 | 3,690 | 46,584 |
+| META | 2022-07-01 | 2026-10-19 | 833 | 2,688 | 2,607 | 32,856 |
+| MSFT | 2020-01-06 | 2026-10-19 | 1,188 | 3,750 | 3,670 | 46,329 |
+| NVDA | 2020-01-06 | 2026-10-19 | 1,197 | 3,773 | 3,697 | 46,204 |
+| SPY | 2020-01-06 | 2026-10-19 | 1,190 | 3,797 | 3,706 | 45,979 |
+| TSLA | 2021-01-04 | 2026-10-19 | 1,048 | 3,327 | 3,247 | 41,049 |
+| XLF | 2020-01-06 | 2026-10-19 | 1,190 | 3,770 | 3,689 | 46,675 |
 
-In total: 1,831,506 quotes on 524,421 contracts, in 40,000 chain snapshots (an underlying, a trade date and an expiration).
+In total: 1,833,610 quotes on 524,915 contracts, in 40,044 chain snapshots (an underlying, a trade date and an expiration).
 
 ## Snapshot exclusions
 
@@ -26,8 +26,8 @@ Every chain snapshot is classified; only `ok` snapshots produce predictions. Sna
 
 | Status | Snapshots | Share | Meaning |
 | --- | ---: | ---: | --- |
-| `ok` | 38,902 | 97.3% | enters the calibration sample |
-| `unsettled` | 863 | 2.2% | the expiration is after the last priced session, so there is no outcome yet |
+| `ok` | 38,902 | 97.1% | enters the calibration sample |
+| `unsettled` | 907 | 2.3% | the expiration is after the last priced session, so there is no outcome yet |
 | `too_few_puts` | 6 | 0.0% | fewer than 4 usable puts (a positive bid and an ask at or above the bid) |
 | `no_close` | 15 | 0.0% | no official close of the underlying on the trade date |
 | `split_in_window` | 214 | 0.5% | a split between the trade date and settlement (closes are unadjusted) |
@@ -97,59 +97,59 @@ Brier change +0.0024 (95% cluster-bootstrap interval -0.0007 to +0.0064, resampl
 | 0.8-0.9 | 24,617 | 0.8482 | 0.8157 | 16,411 | 0.8509 | 0.8624 |
 | 0.9-1.0 | 32,308 | 0.9619 | 0.9559 | 27,157 | 0.9674 | 0.9673 |
 
-## Top 10 to enter (2026-10-16)
+## Top 10 to enter (2026-10-19)
 
 Passes every guard (eligible, calibrated POP ≥ 65%, credit ≥ $0.25, natural credit ≥ 50% of mid with positive natural edge, inside quoted strikes, no tail flags), ranked by annualised return on max loss, then reward/risk.
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Natural credit | Mid credit | POP calibrated | Expected return on max loss | Annualised return on max loss | Edge (% of mid) | Reward/risk |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | AMD | 2026-10-16 | 2026-10-30 | 14 | 525/515 | 2.75 | 3.40 | 74.3% | 11.99% | 1816.8% | 23.0% | 0.18 |
-| 2 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/242.5 | 1.45 | 1.78 | 70.8% | 11.80% | 1731.5% | 21.2% | 0.17 |
-| 3 | NVDA | 2026-10-16 | 2026-10-30 | 14 | 212.5/210 | 0.75 | 0.84 | 71.2% | 10.67% | 1307.1% | 20.6% | 0.16 |
-| 4 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/240 | 2.20 | 2.53 | 70.9% | 10.55% | 1266.4% | 20.5% | 0.16 |
-| 5 | GOOGL | 2026-10-16 | 2026-10-30 | 14 | 340/327.5 | 3.74 | 4.52 | 69.1% | 10.53% | 1261.5% | 18.4% | 0.16 |
-| 6 | AMD | 2026-10-16 | 2026-10-30 | 14 | 525/510 | 4.16 | 4.58 | 74.3% | 9.49% | 962.6% | 21.3% | 0.16 |
-| 7 | META | 2026-10-16 | 2026-10-30 | 14 | 700/680 | 5.45 | 6.18 | 75.0% | 9.34% | 926.9% | 20.6% | 0.15 |
-| 8 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/235 | 3.49 | 3.75 | 75.0% | 9.02% | 851.4% | 20.7% | 0.16 |
-| 9 | NVDA | 2026-10-16 | 2026-10-30 | 14 | 212.5/207.5 | 1.44 | 1.51 | 75.0% | 8.98% | 842.3% | 20.5% | 0.15 |
-| 10 | AMD | 2026-10-16 | 2026-10-30 | 14 | 520/510 | 2.46 | 2.88 | 74.3% | 8.94% | 832.5% | 21.8% | 0.16 |
+| 1 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 342.5/335 | 2.03 | 2.29 | 74.3% | 9.10% | 1699.0% | 20.5% | 0.15 |
+| 2 | SPY | 2026-10-19 | 2026-10-30 | 11 | 766/759 | 2.13 | 2.17 | 74.3% | 8.76% | 1520.6% | 19.3% | 0.15 |
+| 3 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 342.5/332.5 | 2.49 | 2.85 | 75.0% | 8.50% | 1398.0% | 21.1% | 0.16 |
+| 4 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 340/335 | 1.23 | 1.41 | 75.0% | 8.26% | 1292.4% | 20.7% | 0.15 |
+| 5 | XLF | 2026-10-19 | 2026-11-13 | 25 | 55/53 | 0.40 | 0.65 | 75.0% | 19.72% | 1284.4% | 40.0% | 0.38 |
+| 6 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 340/332.5 | 1.69 | 1.97 | 76.4% | 7.78% | 1100.9% | 21.5% | 0.15 |
+| 7 | AMZN | 2026-10-19 | 2026-11-02 | 14 | 255/235 | 5.59 | 6.66 | 70.9% | 9.67% | 1010.8% | 19.1% | 0.16 |
+| 8 | AAPL | 2026-10-19 | 2026-10-30 | 11 | 342.5/330 | 2.90 | 3.18 | 75.0% | 7.23% | 913.3% | 20.9% | 0.15 |
+| 9 | NVDA | 2026-10-19 | 2026-11-02 | 14 | 215/205 | 2.68 | 3.27 | 70.2% | 9.14% | 877.5% | 18.6% | 0.15 |
+| 10 | SPY | 2026-10-19 | 2026-10-30 | 11 | 766/751 | 3.74 | 3.77 | 75.0% | 6.83% | 796.6% | 20.0% | 0.14 |
 
 This is a ranking of a historical calibration, not trade advice: it orders spreads by what one pooled calibration map says happened on average, and that map is optimistic (see the caveats). Credits are dollars per share; the edge is the mid credit minus the calibrated fair credit, as a share of the mid credit; reward/risk is per trade.
 
-## Top put credit spreads (2026-10-16)
+## Top put credit spreads (2026-10-19)
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss | Annualised return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | XLF | 2026-10-16 | 2026-11-13 | 28 | 55/54.5 | 0.30 | 0.04 | 60.8% | 54.4% | 56.47% | 34139.2% |
-| 2 | GOOGL | 2026-10-16 | 2026-10-30 | 14 | 340/337.5 | 1.17 | 0.09 | 61.3% | 56.7% | 16.97% | 5860.0% |
-| 3 | GOOGL | 2026-10-16 | 2026-10-30 | 14 | 340/335 | 2.20 | 1.34 | 63.2% | 57.5% | 14.46% | 3279.1% |
-| 4 | AMD | 2026-10-16 | 2026-10-30 | 14 | 520/515 | 1.70 | 1.05 | 74.3% | 65.9% | 13.32% | 2505.1% |
-| 5 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/245 | 0.95 | 0.60 | 70.0% | 61.6% | 13.32% | 2502.5% |
-| 6 | AMD | 2026-10-16 | 2026-10-30 | 14 | 525/515 | 3.40 | 2.75 | 74.3% | 65.9% | 11.99% | 1816.8% |
-| 7 | AMZN | 2026-10-16 | 2026-10-30 | 14 | 247.5/242.5 | 1.78 | 1.45 | 70.8% | 63.0% | 11.80% | 1731.5% |
-| 8 | AAPL | 2026-10-16 | 2026-10-30 | 14 | 342.5/340 | 1.00 | 0.60 | 64.1% | 59.3% | 11.80% | 1731.5% |
-| 9 | AAPL | 2026-10-16 | 2026-10-30 | 14 | 342.5/337.5 | 1.85 | 1.40 | 70.0% | 61.4% | 11.29% | 1525.0% |
-| 10 | GOOGL | 2026-10-16 | 2026-10-30 | 14 | 340/330 | 3.79 | 3.04 | 64.1% | 59.0% | 11.12% | 1463.9% |
+| 1 | TSLA | 2026-10-19 | 2026-11-02 | 14 | 365/360 | 3.50 | 1.20 | 56.4% | 49.6% | 88.36% | 1477865704.2% |
+| 2 | TSLA | 2026-10-19 | 2026-11-02 | 14 | 365/355 | 5.42 | 3.20 | 60.8% | 54.5% | 33.16% | 174758.7% |
+| 3 | META | 2026-10-19 | 2026-11-02 | 14 | 700/690 | 5.28 | 3.45 | 59.3% | 51.4% | 26.90% | 49713.8% |
+| 4 | TSLA | 2026-10-19 | 2026-11-02 | 14 | 365/345 | 9.53 | 7.51 | 68.2% | 59.7% | 25.16% | 34694.7% |
+| 5 | XLF | 2026-10-19 | 2026-11-13 | 25 | 55/54 | 0.48 | 0.23 | 75.0% | 66.9% | 43.45% | 19301.4% |
+| 6 | TSLA | 2026-10-19 | 2026-11-02 | 14 | 365/340 | 10.82 | 8.90 | 68.2% | 59.7% | 20.29% | 12262.1% |
+| 7 | META | 2026-10-19 | 2026-11-02 | 14 | 705/690 | 7.60 | 5.80 | 59.3% | 51.1% | 20.09% | 11717.6% |
+| 8 | META | 2026-10-19 | 2026-11-02 | 14 | 700/685 | 7.32 | 4.85 | 60.8% | 53.6% | 19.69% | 10732.6% |
+| 9 | TSLA | 2026-10-19 | 2026-11-02 | 14 | 355/345 | 4.11 | 2.76 | 68.2% | 59.7% | 18.96% | 9141.6% |
+| 10 | META | 2026-10-19 | 2026-11-02 | 14 | 705/685 | 9.65 | 7.20 | 59.3% | 51.1% | 16.68% | 5480.1% |
 
 Credits are dollars per share. POP is the probability the underlying settles above the breakeven; return on max loss is the expected return over the trade as a share of the maximum loss, which is the collateral held, annualised in the last column.
 
 ![Eligible spreads](img/spread_scores.png)
 
-## Top spreads by edge (2026-10-16)
+## Top spreads by edge (2026-10-19)
 
 | Rank (edge) | Underlying | Expiration | Short/long | Mid credit | Natural credit | Fair credit | Edge | Edge (% of mid) | POP calibrated | POP risk-neutral | Price-implied POP | POP gap | Reward/risk |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | SPY | 2026-12-18 | 630/610 | 0.30 | 0.29 | 0.05 | +0.25 | 84.4% | 99.7% | 98.3% | 98.5% | +1.2 pp | 0.27 |
-| 2 | AMD | 2026-10-30 | 425/395 | 0.34 | 0.25 | 0.05 | +0.29 | 84.4% | 99.8% | 98.6% | 98.9% | +0.9 pp | 0.24 |
-| 3 | SPY | 2026-12-18 | 630/570 | 0.70 | 0.69 | 0.11 | +0.59 | 84.2% | 99.7% | 98.3% | 98.8% | +0.8 pp | 0.25 |
-| 4 | SPY | 2026-12-18 | 610/570 | 0.40 | 0.39 | 0.06 | +0.34 | 84.1% | 99.8% | 98.7% | 99.0% | +0.8 pp | 0.23 |
-| 5 | SPY | 2026-11-27 | 670/630 | 0.50 | 0.49 | 0.08 | +0.42 | 84.1% | 99.7% | 98.2% | 98.8% | +0.9 pp | 0.25 |
+| 1 | SPY | 2026-11-30 | 652/613 | 0.50 | 0.48 | 0.08 | +0.42 | 84.3% | 99.7% | 98.3% | 98.7% | +0.9 pp | 0.26 |
+| 2 | DIA | 2026-12-18 | 430/390 | 0.43 | 0.27 | 0.07 | +0.37 | 84.2% | 99.8% | 98.4% | 98.9% | +0.9 pp | 0.24 |
+| 3 | DIA | 2026-11-13 | 465/440 | 0.25 | 0.14 | 0.04 | +0.21 | 84.0% | 99.8% | 98.4% | 99.0% | +0.8 pp | 0.23 |
+| 4 | SPY | 2026-11-30 | 652/632 | 0.29 | 0.27 | 0.05 | +0.24 | 83.9% | 99.7% | 98.3% | 98.6% | +1.1 pp | 0.26 |
+| 5 | SPY | 2026-11-30 | 632/575 | 0.50 | 0.48 | 0.08 | +0.41 | 83.7% | 99.8% | 98.7% | 99.1% | +0.6 pp | 0.20 |
 
 Edge measures the mid credit against one pooled calibration map, so it is the historical variance risk premium applied to this chain, not a contract-specific mispricing; it is correlated across strikes, concentrated in the far tail, and partly the half-spread the natural credit gives up. Price-implied POP is the maximum loss over the width, the probability of profit at which the price breaks even, and the POP gap is the calibrated POP minus it: the same information as the edge in probability units. Out of sample, predictions with a raw probability under 2% saw 52 breaches in 52,508, which is how thin the evidence for the far tail is.
 
 ## How to read this
 
-Under the risk-neutral CDF built from the same mid quotes, a spread's expected return on max loss is roughly the cash rate by construction, so any edge comes from the calibration map, which is an estimate of the variance risk premium: the gap between the probabilities the option market implies and the frequencies that followed. Across the 1,459 eligible spreads of the latest session the median annualised return is 1.3% under the risk-neutral CDF and 62.9% after calibration, against a cash rate of 3.6%.
+Under the risk-neutral CDF built from the same mid quotes, a spread's expected return on max loss is roughly the cash rate by construction, so any edge comes from the calibration map, which is an estimate of the variance risk premium: the gap between the probabilities the option market implies and the frequencies that followed. Across the 1,354 eligible spreads of the latest session the median annualised return is 1.1% under the risk-neutral CDF and 81.0% after calibration, against a cash rate of 3.6%.
 
 ## Caveats
 
