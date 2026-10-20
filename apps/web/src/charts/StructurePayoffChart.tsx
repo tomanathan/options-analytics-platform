@@ -111,7 +111,7 @@ export function StructurePayoffChart({
 }: StructurePayoffChartProps) {
   const clipId = `clip-${useId().replace(/:/g, '')}`;
   const [hover, setHover] = useState<Hover | null>(null);
-  const margin: Margin = { top: 18, right: 16, bottom: STRIP_GAP + STRIP_HEIGHT + 4, left: 52 };
+  const margin: Margin = { top: 26, right: 16, bottom: STRIP_GAP + STRIP_HEIGHT + 4, left: 52 };
   const { w, h } = plotArea(width, height, margin);
 
   const lo = grid[0] ?? 0;
@@ -236,7 +236,7 @@ export function StructurePayoffChart({
           yScale={yDens}
           curve={curveLinear}
           fill="var(--ink-2)"
-          fillOpacity={0.12}
+          fillOpacity={0.1}
           data-testid="density"
         />
 
@@ -257,7 +257,7 @@ export function StructurePayoffChart({
           tickFormat={(v) => `$${Math.round(Number(v))}`}
           tickLabelProps={bottomTickLabel}
         />
-        <text x={-margin.left + 2} y={-6} fill="var(--ink-muted)" fontSize={10}>
+        <text x={-margin.left + 2} y={-14} fill="var(--ink-muted)" fontSize={10}>
           Return on max loss at expiry
         </text>
 
@@ -341,7 +341,7 @@ export function StructurePayoffChart({
                 />
               );
             })}
-            <text x={w} y={-6} textAnchor="end" fill="var(--ink-muted)" fontSize={10}>
+            <text x={w} y={-14} textAnchor="end" fill="var(--ink-muted)" fontSize={10}>
               {`▲ off scale above ${multiple(top, 1)}`}
             </text>
           </g>
