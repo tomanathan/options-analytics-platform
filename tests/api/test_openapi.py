@@ -15,6 +15,8 @@ OPERATION_IDS = {
     "/api/spreads": "listSpreads",
     "/api/spreads/{spread_key}": "getSpread",
     "/api/calibration/summary": "getCalibrationSummary",
+    "/api/structures/map": "getOutcomeMap",
+    "/api/structures/{symbol}/{session}": "getStructures",
 }
 
 

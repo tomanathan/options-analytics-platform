@@ -31,6 +31,27 @@ class NotFound(ApiError):  # noqa: N818 - named by the design spec
     """The requested underlying, session or spread does not exist."""
 
 
+class Unprocessable(ApiError):  # noqa: N818 - answers HTTP 422 Unprocessable Content
+    """The request is well formed but cannot be answered; carries its own error code.
+
+    Attributes:
+        code: ``view_required``, ``view_invalid``, ``no_distribution`` or ``no_implied_vol``
+            (see docs/runbook.md).
+        detail: Human-readable message.
+    """
+
+    def __init__(self, code: ErrorCode, detail: str) -> None:
+        """Store the code and the message.
+
+        Args:
+            code: Machine-readable error code.
+            detail: Human-readable message.
+        """
+        super().__init__(detail)
+        self.code: ErrorCode = code
+        self.detail = detail
+
+
 def _body(
     status: int, code: ErrorCode, detail: str, headers: dict[str, str] | None = None
 ) -> JSONResponse:
@@ -69,6 +90,11 @@ def install_error_handlers(app: FastAPI, *, retry_after_s: int) -> None:
     async def not_found(_: Request, exc: Exception) -> JSONResponse:
         return _body(404, "not_found", str(exc))
 
+    async def unprocessable(_: Request, exc: Exception) -> JSONResponse:
+        if isinstance(exc, Unprocessable):
+            return _body(422, exc.code, exc.detail)
+        return _body(422, "invalid", "invalid request")
+
     async def invalid(_: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, RequestValidationError) and exc.errors():
             first = exc.errors()[0]
@@ -87,5 +113,6 @@ def install_error_handlers(app: FastAPI, *, retry_after_s: int) -> None:
     app.add_exception_handler(DatabaseMissing, missing)
     app.add_exception_handler(GoldMissing, gold_missing)
     app.add_exception_handler(NotFound, not_found)
+    app.add_exception_handler(Unprocessable, unprocessable)
     app.add_exception_handler(RequestValidationError, invalid)
     app.add_exception_handler(StarletteHTTPException, http_error)
