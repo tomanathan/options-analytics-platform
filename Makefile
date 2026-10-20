@@ -25,7 +25,7 @@ GOLD_DB := .dbt-local/oap.duckdb
 .PHONY: help install lint format typecheck test dbt-deps synthetic-bronze dbt-compile dbt-build dbt-build-local report check \
 	tf-fmt tf-validate compose-config lock-export lock-check airflow-build up down reset logs \
 	backfill iceberg-count clean api web web-install app web-build web-check api-schema serve \
-	gold-max-date pull-gold nightly-run nightly-status
+	gold-max-date pull-gold daily nightly-run nightly-status
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -178,6 +178,11 @@ pull-gold: ## Replace .dbt-local/oap.duckdb with the gold file of the latest suc
 	{ if [ -f $(GOLD_DB).wal ]; then mv $(GOLD_DB).wal $(GOLD_DB).bak.wal; fi; } && \
 	mv "$$tmp/oap.duckdb" $(GOLD_DB) && rmdir "$$tmp" && \
 	echo "pulled run $$run; gold max trade_date: $$($(GOLD_MAX_DATE))"
+
+# Daily use needs only the nightly artifact and the explorer; it never starts a server or the Airflow stack.
+daily: pull-gold ## Pull the latest nightly gold file and print its latest session and how to serve it (needs gh)
+	@echo "gold max trade_date: $$($(GOLD_MAX_DATE))"
+	@echo "next: make serve, then open http://127.0.0.1:8000 (Structures, Spreads, Landscape)"
 
 nightly-run: ## Trigger the nightly refresh: make nightly-run [START=YYYY-MM-DD] [END=YYYY-MM-DD] [FULL=1] (needs gh)
 	gh workflow run $(NIGHTLY_WORKFLOW) $(if $(START),-f start=$(START)) $(if $(END),-f end=$(END)) $(if $(FULL),-f full_history=true)
