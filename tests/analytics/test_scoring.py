@@ -1,3 +1,4 @@
+import re
 from dataclasses import replace
 from datetime import date
 
@@ -7,14 +8,34 @@ import pytest
 
 import oap.analytics.scoring as scoring_module
 from oap.analytics.config import DEFAULT_CONFIG, PRODUCTION_MAP_ID, AnalyticsConfig
+from oap.analytics.ranking import rank_score
+from oap.analytics.rulelab import (
+    PREVIOUS_RULE,
+    live_rule,
+    prepare,
+    regime_features,
+    select_positions,
+)
 from oap.analytics.sample import chain_cdf
-from oap.analytics.scoring import ENTRY_RULE, SPREAD_COLUMNS, score_latest_session
+from oap.analytics.scoring import (
+    ENTRY_EVIDENCE,
+    ENTRY_RULE,
+    ENTRY_RULE_SINCE,
+    PREVIOUS_ENTRY_RULE,
+    SPREAD_COLUMNS,
+    describe_entry_rule,
+    score_latest_session,
+    score_session,
+)
+from oap.analytics.strategy import ELIGIBLE_ALL, SETTLED_COLUMNS
 from oap.engine.calibration import CalibrationMap
 from oap.engine.implied_distribution import QualityFlag, RiskNeutralCdf
 from oap.engine.spread_scoring import PutCreditSpread, score_spread
 from tests.analytics.frames import lognormal_quotes
 
 RATE = DEFAULT_CONFIG.risk_free_apy
+ADVICE_WORDS = re.compile(r"\b(buy|buying|sell|selling|recommend\w*|should)\b", re.IGNORECASE)
+"""The words the explorer's wording test forbids (``apps/web/src/test/wording.ts``)."""
 SPY_STRIKES = np.arange(80.0, 121.0, 1.0)
 AAPL_STRIKES = np.arange(160.0, 221.0, 2.0)
 
@@ -22,7 +43,8 @@ AAPL_STRIKES = np.arange(160.0, 221.0, 2.0)
 def _quotes() -> pd.DataFrame:
     """One session (2024-01-05) of two underlyings, as ``read_latest_quotes`` returns it.
 
-    SPY has a 4-day expiry that scoring must skip. Choosing the session is the job of
+    SPY has a 4-day expiry that scoring must skip; SPY's 49-day and AAPL's 56-day expiries
+    are inside the entry rule's days-to-expiry band. Choosing the session is the job of
     ``LATEST_QUOTES_SQL`` (``tests/analytics/test_io.py``), not of scoring.
     """
     return pd.concat(
@@ -37,7 +59,13 @@ def _quotes() -> pd.DataFrame:
                 "SPY", date(2024, 1, 5), date(2024, 1, 9), 100.0, 0.25, RATE, SPY_STRIKES
             ),
             lognormal_quotes(
+                "SPY", date(2024, 1, 5), date(2024, 2, 23), 100.0, 0.25, RATE, SPY_STRIKES
+            ),
+            lognormal_quotes(
                 "AAPL", date(2024, 1, 5), date(2024, 2, 2), 190.0, 0.3, RATE, AAPL_STRIKES
+            ),
+            lognormal_quotes(
+                "AAPL", date(2024, 1, 5), date(2024, 3, 1), 190.0, 0.3, RATE, AAPL_STRIKES
             ),
         ],
         ignore_index=True,
@@ -95,7 +123,7 @@ def test_every_row_satisfies_the_spread_invariants() -> None:
         f"{first['underlying']}|{first['trade_date'].date()}|{first['expiration'].date()}"
         f"|{first['short_strike']:.3f}|{first['long_strike']:.3f}"
     )
-    assert scores["dte_days"].isin([28, 42]).all()
+    assert scores["dte_days"].isin([28, 42, 49, 56]).all()
 
 
 def test_identity_map_leaves_probabilities_raw() -> None:
@@ -316,7 +344,12 @@ GUARD_CONFIGS = [
     DEFAULT_CONFIG,
     AnalyticsConfig(min_edge_credit=2.0),
     AnalyticsConfig(min_natural_fraction=0.95),
-    AnalyticsConfig(min_edge_credit=0.0, min_natural_fraction=0.0, entry_min_pop=0.9),
+    AnalyticsConfig(
+        min_edge_credit=0.0,
+        min_natural_fraction=0.0,
+        entry_min_pop=0.9,
+        entry_moneyness_band=(0.5, 1.0),
+    ),
 ]
 
 
@@ -365,13 +398,23 @@ def test_each_guard_blocks_the_alternative_ranks() -> None:
         assert scores.loc[mask, ["rank_edge", "rank_rr"]].isna().all().all(), name
 
 
-def _entry_candidates(scores: pd.DataFrame, config: AnalyticsConfig) -> pd.Series:
+def _entry_guarded(scores: pd.DataFrame, config: AnalyticsConfig) -> pd.Series:
     return (
         _guarded(scores, config)
         & (scores["prob_profit"] >= config.entry_min_pop)
         & (scores["edge_natural"] > 0)
         & ~scores["extrapolated"]
         & ~scores["flags"].str.contains(_TAIL)
+    )
+
+
+def _entry_candidates(scores: pd.DataFrame, config: AnalyticsConfig) -> pd.Series:
+    dte_lo, dte_hi = config.entry_dte_band
+    money_lo, money_hi = config.entry_moneyness_band
+    return (
+        _entry_guarded(scores, config)
+        & scores["dte_days"].between(dte_lo, dte_hi, inclusive="left")
+        & scores["short_moneyness"].between(money_lo, money_hi, inclusive="left")
     )
 
 
@@ -388,12 +431,13 @@ def test_entry_rank_covers_exactly_the_candidates_and_is_contiguous(
     assert ranked["rank_entry"].tolist() == list(range(1, len(ranked) + 1))
 
 
-def test_entry_rank_is_ordered_by_return_then_reward_to_risk() -> None:
+def test_entry_rank_is_ordered_by_the_shrunk_pop_return_then_the_tiebreak() -> None:
     scores = _scores(_tilt())
     ranked = scores.loc[scores["rank_entry"].notna()].sort_values("rank_entry")
     assert len(ranked) > 10
     keys = list(
         zip(
+            -ranked["score_entry"],
             -ranked["annualised_roc"],
             -ranked["reward_to_risk"],
             -ranked["prob_profit"],
@@ -403,6 +447,101 @@ def test_entry_rank_is_ordered_by_return_then_reward_to_risk() -> None:
         )
     )
     assert keys == sorted(keys)
+    # The order differs from the previous rule's (annualised return at the mid credit).
+    assert ranked["annualised_roc"].tolist() != sorted(ranked["annualised_roc"], reverse=True)
+
+
+def test_score_entry_is_the_annualised_shrunk_pop_return_at_the_natural_credit() -> None:
+    scores = _scores(_tilt())
+    q = 0.5 * scores["prob_profit"] + 0.5 * scores["pop_implied"]
+    odds = scores["credit_natural"] / (scores["width"] - scores["credit_natural"])
+    expected = (1.0 + q * odds - (1.0 - q)) ** (1.0 / scores["years"]) - 1.0
+    np.testing.assert_allclose(scores["score_entry"], expected, rtol=1e-9)
+    np.testing.assert_array_equal(
+        scores["score_entry"], rank_score(scores, DEFAULT_CONFIG.entry_rank)
+    )
+    mid = _scores(_tilt(), replace(DEFAULT_CONFIG, entry_rank="return_mid"))
+    np.testing.assert_array_equal(mid["score_entry"], mid["annualised_roc"])
+
+
+def test_entry_rank_keeps_only_the_dte_and_moneyness_bands() -> None:
+    scores = _scores(_tilt())
+    ranked = scores.loc[scores["rank_entry"].notna()]
+    assert ranked["dte_days"].between(45, 69).all()
+    assert ranked["short_moneyness"].between(0.95, 1.0, inclusive="left").all()
+    guarded = _entry_guarded(scores, DEFAULT_CONFIG)
+    outside = guarded & ~_entry_candidates(scores, DEFAULT_CONFIG)
+    assert scores.loc[outside, "dte_days"].lt(45).any()
+    assert scores.loc[outside, "short_moneyness"].lt(0.95).any()
+    assert scores.loc[outside, "rank_entry"].isna().all()
+    wide = replace(DEFAULT_CONFIG, entry_dte_band=(7, 70), entry_moneyness_band=(0.5, 1.0))
+    widened = _scores(_tilt(), wide)
+    assert widened["rank_entry"].notna().tolist() == guarded.tolist()
+
+
+def _settled(scores: pd.DataFrame) -> pd.DataFrame:
+    """Scored spreads with neutral settlement columns, as the lab's cache holds them."""
+    frame = scores.copy()
+    for column in SETTLED_COLUMNS:
+        if column not in frame:
+            frame[column] = 0.0
+    frame["strategy"] = ELIGIBLE_ALL
+    frame["is_out_of_sample"] = True
+    frame["win"] = True
+    frame["max_loss_hit"] = False
+    return frame
+
+
+def _no_daily() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "underlying": pd.Series(dtype="object"),
+            "trade_date": pd.Series(dtype="datetime64[ns]"),
+            "log_return": pd.Series(dtype="float64"),
+        }
+    )
+
+
+def _no_atm() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "underlying": pd.Series(dtype="object"),
+            "trade_date": pd.Series(dtype="datetime64[ns]"),
+            "atm_iv": pd.Series(dtype="float64"),
+        }
+    )
+
+
+@pytest.mark.parametrize("top_n", [1, 3, 10, 1000])
+@pytest.mark.parametrize("eligible_only", [False, True])
+def test_rank_entry_reproduces_the_rule_lab_selection_of_the_live_rule(
+    top_n: int, eligible_only: bool
+) -> None:
+    quotes = pd.concat(
+        [
+            _quotes(),
+            lognormal_quotes(
+                "SPY", date(2024, 1, 8), date(2024, 2, 23), 101.0, 0.25, RATE, SPY_STRIKES
+            ),
+        ],
+        ignore_index=True,
+    )
+    parts = [
+        score_session(day, _tilt(), eligible_only=eligible_only)
+        for _, day in quotes.groupby("trade_date", sort=True)
+    ]
+    scores = pd.concat(parts, ignore_index=True)
+    live = scores.loc[scores["rank_entry"].notna() & (scores["rank_entry"] <= top_n)]
+    live = live.sort_values(["trade_date", "rank_entry"])
+    assert len(live) >= min(top_n, 10)
+    rule = live_rule(top_n=top_n)
+    assert rule.rule_id.startswith("ps-d45_70-m95_100-all-any-e0-")
+    prepared = prepare(_settled(scores), regime_features(_no_daily(), _no_atm()))
+    chosen = prepared.frame.iloc[select_positions(prepared, rule)]
+    assert chosen["spread_key"].tolist() == live["spread_key"].tolist()
+    # The lab's guard is the live guard, so the unbanded previous rule sees more spreads.
+    wide = prepared.frame.iloc[select_positions(prepared, replace(PREVIOUS_RULE, top_n=10_000))]
+    assert set(live["spread_key"]) < set(wide["spread_key"])
 
 
 def test_each_entry_guard_nulls_the_entry_rank() -> None:
@@ -450,7 +589,28 @@ def test_entry_rule_states_the_configured_thresholds() -> None:
     assert "65%" in ENTRY_RULE
     assert "$0.25" in ENTRY_RULE
     assert "50% of mid" in ENTRY_RULE
-    assert ENTRY_RULE.endswith("then reward/risk.")
+    assert "45 to 69 days to expiry" in ENTRY_RULE
+    assert "short strike 95% to below 100% of the close" in ENTRY_RULE
+    assert "POP shrunk halfway toward the market-implied POP" in ENTRY_RULE
+    assert ENTRY_RULE.endswith("then annualised return on max loss and reward/risk.")
+    assert describe_entry_rule(DEFAULT_CONFIG) == ENTRY_RULE
+    other = describe_entry_rule(replace(DEFAULT_CONFIG, entry_dte_band=(21, 45)))
+    assert "21 to 44 days to expiry" in other
+    assert PREVIOUS_ENTRY_RULE.endswith(
+        "ranked by annualised return on max loss, then reward/risk."
+    )
+    assert date(2026, 10, 20) == ENTRY_RULE_SINCE
+
+
+def test_entry_evidence_quotes_the_hold_out_and_is_not_advice() -> None:
+    for number in ("4,053", "73.0%", "74.9%", "+7.53%", "-7.29%", "+21.10%", "+3.02%", "0.129"):
+        assert number in ENTRY_EVIDENCE, number
+    assert "2026-10-19" in ENTRY_EVIDENCE
+    assert "docs/rule-lab.md" in ENTRY_EVIDENCE
+    assert ". " not in ENTRY_EVIDENCE
+    assert ENTRY_EVIDENCE.endswith(".")
+    for text in (ENTRY_RULE, ENTRY_EVIDENCE, PREVIOUS_ENTRY_RULE):
+        assert ADVICE_WORDS.search(text) is None, text
 
 
 def test_probability_gap_columns() -> None:

@@ -220,6 +220,7 @@ def _row(record: Mapping[Hashable, Any]) -> SpreadRow:
         rank_edge=_rank(record["rank_edge"]),
         rank_rr=_rank(record["rank_rr"]),
         rank_entry=_rank(record["rank_entry"]),
+        score_entry=finite_or_none(record["score_entry"]),
         extrapolated=bool(record["extrapolated"]),
         flags=_flags(record["flags"]),
     )

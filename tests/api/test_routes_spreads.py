@@ -8,10 +8,10 @@ from fastapi.testclient import TestClient
 
 from oap.analytics.config import DEFAULT_CONFIG
 from oap.analytics.sample import chain_cdf
-from oap.analytics.scoring import ENTRY_RULE
+from oap.analytics.scoring import ENTRY_EVIDENCE, ENTRY_RULE
 from oap.engine.calibration import apply_calibration
 from oap.engine.conventions import dte_years
-from tests.api.gold import LATEST, GoldFixture
+from tests.api.gold import LATEST, SCORING_CONFIG, GoldFixture
 
 Row = dict[str, object]
 
@@ -228,6 +228,7 @@ def test_the_response_names_its_sort_and_the_entry_rule(client: TestClient) -> N
     body = client.get("/api/spreads").json()
     assert body["sort"] == "return"
     assert body["entry_rule"] == ENTRY_RULE
+    assert body["entry_evidence"] == ENTRY_EVIDENCE
     assert client.get("/api/spreads", params={"sort": "entry"}).json()["sort"] == "entry"
 
 
@@ -301,6 +302,11 @@ def test_entry_ranked_rows_pass_the_guards(client: TestClient) -> None:
         assert float(str(row["edge_natural"])) > 0
         assert row["eligible"] is True
         assert row["rank_edge"] is not None
+        lo, hi = SCORING_CONFIG.entry_moneyness_band
+        assert lo <= float(str(row["short_moneyness"])) < hi
+        assert row["score_entry"] is not None
+    scores = [float(str(r["score_entry"])) for r in rows]
+    assert scores == sorted(scores, reverse=True)
 
 
 def test_detail_carries_the_edge_identities(client: TestClient) -> None:

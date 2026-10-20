@@ -45,14 +45,14 @@ def _tilt() -> CalibrationMap:
 
 
 def _session(trade_date: date = date(2024, 1, 5)) -> pd.DataFrame:
-    """One session of two underlyings, expiries 28 and 42 days out."""
+    """One session of two underlyings, expiries 28 and 49 days out (49 is in the entry band)."""
     return pd.concat(
         [
             lognormal_quotes(
                 "SPY", trade_date, trade_date + timedelta(days=28), 100.0, 0.25, RATE, SPY_STRIKES
             ),
             lognormal_quotes(
-                "SPY", trade_date, trade_date + timedelta(days=42), 100.0, 0.25, RATE, SPY_STRIKES
+                "SPY", trade_date, trade_date + timedelta(days=49), 100.0, 0.25, RATE, SPY_STRIKES
             ),
             lognormal_quotes(
                 "AAPL", trade_date, trade_date + timedelta(days=28), 190.0, 0.3, RATE, AAPL_STRIKES

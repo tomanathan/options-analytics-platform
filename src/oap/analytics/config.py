@@ -17,7 +17,7 @@ of that bias; the report lists it as a caveat.
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Final
+from typing import Final, Literal
 
 from oap.engine.calibration import DEFAULT_BINS, MIN_FIT_SAMPLES
 
@@ -26,6 +26,20 @@ MONEYNESS_GRID: Final[tuple[float, ...]] = tuple(round(0.800 + 0.025 * i, 3) for
 
 PRODUCTION_MAP_ID: Final = "production"
 """Identifier of the calibration map fitted on every settled prediction."""
+
+RankBy = Literal[
+    "return_mid", "return_natural", "reward_to_risk", "kelly_growth", "pop_shrunk_return"
+]
+"""A ranking of scored spreads; ``oap.analytics.ranking.rank_score`` defines each one."""
+
+RANK_BYS: Final[tuple[RankBy, ...]] = (
+    "return_mid",
+    "return_natural",
+    "reward_to_risk",
+    "kelly_growth",
+    "pop_shrunk_return",
+)
+"""Every ranking, in the order of the rule lab grid."""
 
 DTE_BUCKET_EDGES: Final[tuple[int, ...]] = (20, 35, 50)
 """Upper edges, in calendar days, of the first three days-to-expiry buckets."""
@@ -92,6 +106,12 @@ class AnalyticsConfig:
             in [0, 1], for a spread to enter those rankings.
         entry_min_pop: Smallest calibrated probability of profit, a decimal in [0, 1], for
             a spread to enter the entry ranking.
+        entry_dte_band: ``(lo, hi)`` calendar days to expiry of the entry ranking, keeping
+            ``lo <= dte_days < hi``.
+        entry_moneyness_band: ``(lo, hi)`` short strike over close of the entry ranking, keeping
+            ``lo <= short_moneyness < hi``.
+        entry_rank: The ranking that orders the entry candidates (``score_entry``); see
+            ``oap.analytics.ranking.rank_score``.
     """
 
     risk_free_apy: float = 0.045
@@ -111,6 +131,9 @@ class AnalyticsConfig:
     min_edge_credit: float = 0.25
     min_natural_fraction: float = 0.5
     entry_min_pop: float = 0.65
+    entry_dte_band: tuple[int, int] = (45, 70)
+    entry_moneyness_band: tuple[float, float] = (0.95, 1.00)
+    entry_rank: RankBy = "pop_shrunk_return"
 
     def __post_init__(self) -> None:
         """Validate ranges.
@@ -120,7 +143,9 @@ class AnalyticsConfig:
         ``split_abs_log_return`` and ``max_width_fraction`` are positive decimals;
         ``min_credit`` and ``min_edge_credit`` are non-negative dollars per share;
         ``min_prob_profit``, ``min_natural_fraction`` and ``entry_min_pop`` lie in [0, 1];
-        counts must be positive.
+        counts must be positive; ``entry_dte_band`` is ``0 <= lo < hi`` calendar days,
+        ``entry_moneyness_band`` is ``0 < lo < hi``, and ``entry_rank`` is one of
+        ``RANK_BYS``.
 
         Raises:
             ValueError: If any value is out of range.
@@ -158,6 +183,14 @@ class AnalyticsConfig:
             raise ValueError("min_natural_fraction must be in [0, 1]")
         if not 0.0 <= self.entry_min_pop <= 1.0:
             raise ValueError("entry_min_pop must be in [0, 1]")
+        dte_lo, dte_hi = self.entry_dte_band
+        if not 0 <= dte_lo < dte_hi:
+            raise ValueError("entry_dte_band must have 0 <= lo < hi")
+        money_lo, money_hi = self.entry_moneyness_band
+        if not 0 < money_lo < money_hi:
+            raise ValueError("entry_moneyness_band must have 0 < lo < hi")
+        if self.entry_rank not in RANK_BYS:
+            raise ValueError(f"unknown entry_rank {self.entry_rank!r}")
 
 
 DEFAULT_CONFIG: Final = AnalyticsConfig()

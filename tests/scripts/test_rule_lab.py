@@ -31,13 +31,13 @@ def db(tmp_path: Path) -> Path:
     """A DuckDB file whose gold schema has the five tables, with sessions in 2021-2022."""
     quotes = pd.concat(
         [
-            lognormal_quotes(underlying, day, day + timedelta(days=dte), close, 0.3, 0.045, strikes)
+            lognormal_quotes(underlying, day, day + timedelta(days=dte), close, vol, 0.045, strikes)
             for day in SESSIONS
             for underlying, close, strikes in (
                 ("SPY", 100.0, np.arange(80.0, 121.0)),
                 ("AAPL", 190.0, np.arange(160.0, 221.0, 2.0)),
             )
-            for dte in (14, 28)
+            for dte, vol in ((14, 0.3), (28, 0.3), (49, 0.15))
         ],
         ignore_index=True,
     )
@@ -114,6 +114,8 @@ def test_score_writes_both_caches(db: Path, tmp_path: Path) -> None:
     assert trades["eligible"].all()
     assert sorted(pd.to_datetime(trades["trade_date"]).dt.date.unique()) == SESSIONS
     assert trades["rank_entry"].notna().sum() > 0
+    assert trades.loc[trades["rank_entry"].notna(), "dte_days"].between(45, 69).all()
+    assert trades["score_entry"].notna().all()
     assert list(regime.columns) == list(REGIME_COLUMNS)
     spy = regime.loc[
         (regime["underlying"] == "SPY") & (pd.to_datetime(regime["trade_date"]) == "2022-03-01")
@@ -198,12 +200,34 @@ def test_the_markdown_states_both_picks_in_words(db: Path, tmp_path: Path) -> No
     ):
         assert phrase in text
     top = text.split("## Top 10 rules on dev")[1].split("##")[0]
-    assert "| baseline | `rm-dany-many-all-any-e0-n10` |" in top
+    assert "| baseline | `ps-d45_70-m95_100-all-any-e0-n10` |" in top
+    assert f"| {cli.PREVIOUS_LABEL} | `rm-dany-many-all-any-e0-n10` |" in top
+    head = text.split("## Headline picks")[0]
+    assert "since 2026-10-20" in head
+    assert "45 to 69 days to expiry" in head
+    assert "`rm-dany-many-all-any-e0-n10`" in head
+    picks_table = text.split("## Headline picks")[1].split("**Best overall")[0]
+    assert "| Baseline (current Top 10) | `ps-d45_70-m95_100-all-any-e0-n10` |" in picks_table
+    assert f"| {cli.PREVIOUS_LABEL} | `rm-dany-many-all-any-e0-n10` |" in picks_table
     curve = cli.holdout_curves(prepared, [("base", BASELINE_RULE)], hold)
     cli.plot_holdout(curve, tmp_path / "h.png", ["base"])
     assert (tmp_path / "h.png").read_bytes()[:8] == PNG_MAGIC
     cli.plot_holdout(pd.DataFrame(), tmp_path / "empty.png", ["base"])
     assert (tmp_path / "empty.png").read_bytes()[:8] == PNG_MAGIC
+
+
+def test_a_cache_without_score_entry_gets_it_on_read(db: Path, tmp_path: Path) -> None:
+    lab, out = tmp_path / "lab", tmp_path / "rule-lab.md"
+    assert cli.main(["--score", "--db", str(db), "--lab-dir", str(lab)]) == 0
+    trades = pd.read_parquet(lab / cli.SCORED_FILE)
+    old = trades.drop(columns="score_entry")
+    upgraded = cli.with_score_entry(old)
+    assert list(upgraded.columns) == list(SETTLED_COLUMNS)
+    np.testing.assert_allclose(upgraded["score_entry"], trades["score_entry"])
+    assert cli.with_score_entry(trades) is trades
+    old.to_parquet(lab / cli.SCORED_FILE, index=False)
+    assert cli.main(_sweep_args(lab, out, "--grid-limit", "2")) == 0
+    assert "`ps-d45_70-m95_100-all-any-e0-n10`" in out.read_text()
 
 
 def test_exit_codes(db: Path, tmp_path: Path) -> None:

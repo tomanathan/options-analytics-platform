@@ -813,6 +813,12 @@ main {
   color: var(--ink-2);
 }
 
+.entry__evidence {
+  margin: 0 0 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
 .entry__caveat {
   margin: 0 0 10px;
   color: var(--ink-muted);

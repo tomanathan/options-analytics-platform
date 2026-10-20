@@ -75,6 +75,7 @@ describe('EntryCard', () => {
       'Ann. R/max loss',
       'Edge %',
       'Reward/risk',
+      'Entry score',
     ].forEach((name) => {
       expect(within(table).getByRole('columnheader', { name })).toBeInTheDocument();
     });
@@ -84,6 +85,37 @@ describe('EntryCard', () => {
     expect(first.getByText('68.0%')).toBeInTheDocument(); // POP calibrated
     expect(first.getByText('13.00%')).toBeInTheDocument(); // expected return on max loss
     expect(first.getByText('31.0%')).toBeInTheDocument(); // edge %
+    expect(first.getByText('80%')).toBeInTheDocument(); // entry score, annualised
+  });
+
+  it('prints the evidence for the rule under the rule line, verbatim', async () => {
+    const evidence = 'Evidence text from the API: 4,053 hold-out trades, measured 2026-10-19.';
+    server.use(
+      http.get('/api/spreads', () =>
+        HttpResponse.json({
+          ...makeSpreads({
+            underlyings: [],
+            expiration: null,
+            minWidth: null,
+            maxWidth: null,
+            minPop: 0,
+            minCredit: 0,
+            eligibleOnly: true,
+            sort: 'entry',
+            limit: 10,
+          }),
+          entry_evidence: evidence,
+        }),
+      ),
+    );
+    renderCard();
+    expect(await screen.findByTestId('entry-evidence')).toHaveTextContent(evidence);
+    expect(screen.getByTestId('entry-evidence').textContent).toBe(evidence);
+    const rule = screen.getByTestId('entry-rule');
+    const shown = screen.getByTestId('entry-evidence');
+    expect(rule.compareDocumentPosition(shown) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const caveat = screen.getByText('A ranking of historical calibration, not trade advice.');
+    expect(shown.compareDocumentPosition(caveat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('prints the entry rule from the response under the heading, verbatim', async () => {
@@ -169,8 +201,9 @@ describe('EntryCard', () => {
     renderCard();
     expect(await screen.findByText('No spread passes the entry rule')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
-    // The rule and the caveat stay visible so the reader knows what was asked.
+    // The rule, its evidence and the caveat stay visible so the reader knows what was asked.
     expect(screen.getByTestId('entry-rule')).toBeInTheDocument();
+    expect(screen.getByTestId('entry-evidence')).toBeInTheDocument();
     expect(screen.getByText(/not trade advice/)).toBeInTheDocument();
   });
 });

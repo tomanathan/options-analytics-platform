@@ -314,6 +314,7 @@ function spreadBase(
     rank_edge: null,
     rank_rr: null,
     rank_entry: rank === null ? null : (ENTRY_BY_RANK[rank - 1] ?? null),
+    score_entry: round(0.9 - (rank ?? 9) * 0.05, 3),
     ...overrides,
   };
 }
@@ -355,6 +356,9 @@ export const SPREAD_ROWS: SpreadRow[] = BASE_ROWS.map((row) => ({
 
 export const ENTRY_RULE =
   'Eligible spreads whose natural credit is at least half the mid, ordered by calibrated expected return on max loss.';
+
+export const ENTRY_EVIDENCE =
+  'On a hold-out this rule made 4,053 trades that won 73.0% of the time against 74.9% predicted.';
 
 export interface SpreadFilterParams {
   underlyings: string[];
@@ -423,6 +427,7 @@ export function makeSpreads(filters: SpreadFilterParams): SpreadsResponse {
     expirations: ['2026-10-16'],
     sort,
     entry_rule: ENTRY_RULE,
+    entry_evidence: ENTRY_EVIDENCE,
     rows: filters.limit == null ? rows : rows.slice(0, filters.limit),
   };
 }

@@ -4,12 +4,12 @@ Two symbols (SPY and XLF), three sessions each and four expirations: one with 2 
 expiry, two normal, one with only three usable puts. The first expiration has settled. The
 calibration maps are the production map (fitted on synthetic predictions), ``fold_2024`` and
 ``fold_2020`` (identity). The spread scores are what ``score_latest_session`` returns for the
-latest session, with one annualised return forced to infinity.
+latest session under ``SCORING_CONFIG``, with one annualised return forced to infinity.
 
 Units: strikes and prices in dollars per share, volatility as a decimal, time in years.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
@@ -39,6 +39,9 @@ CLOSES = {
 VOL = 0.30
 RATE = DEFAULT_CONFIG.risk_free_apy
 PRODUCTION_TRAIN_MAX = date(2024, 3, 6)
+SCORING_CONFIG = replace(DEFAULT_CONFIG, entry_dte_band=(7, 70))
+"""The default config with the entry rule's DTE band widened to 7-69 days, so the 22- and
+44-day expiries of the fixture have entry ranks; every other entry setting is the default."""
 
 
 @dataclass(frozen=True)
@@ -185,7 +188,9 @@ def build_gold(path: Path) -> GoldFixture:
     quotes = build_quotes()
     maps, production = build_maps()
     latest = quotes.loc[quotes["trade_date"] == pd.Timestamp(LATEST)]
-    scores = to_output(score_latest_session(latest, production), OUTPUT_SCHEMAS["spread_scores"])
+    scores = to_output(
+        score_latest_session(latest, production, SCORING_CONFIG), OUTPUT_SCHEMAS["spread_scores"]
+    )
     inf_row = int(scores.index[scores["eligible"].astype(bool)][0])
     inf_key = str(scores.loc[inf_row, "spread_key"])
     scores.loc[inf_row, "annualised_roc"] = float("inf")

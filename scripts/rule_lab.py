@@ -11,10 +11,12 @@ A one-time study, not a pipeline step, in two stages that can run together:
   the returns, ``fct_option_quote`` for the near-the-money IV) and writes
   ``regime.parquet``. Both go to ``--lab-dir`` (gitignored).
 * ``--sweep`` reads the two files, evaluates the rules of ``rule_grid`` (the first
-  ``--grid-limit`` of them when given; the baseline is always first), writes every result
-  to ``sweep.csv`` in ``--lab-dir``, and renders the comparison to ``--out`` with
-  ``img/rule_lab_holdout.png`` next to it. Rules are chosen on the dev years only (before
-  ``--holdout-year``) and reported on the hold-out.
+  ``--grid-limit`` of them when given; the baseline, the live rule, is always first and the
+  previous live rule second), writes every result to ``sweep.csv`` in ``--lab-dir``, and
+  renders the comparison to ``--out`` with ``img/rule_lab_holdout.png`` next to it. Rules are
+  chosen on the dev years only (before ``--holdout-year``) and reported on the hold-out. A
+  cache scored before ``score_entry`` existed gets that column from ``rank_score`` on read,
+  so it need not be scored again.
 
 Units: credits and payoffs in dollars per share, returns as decimals in the data and
 percentages in the text (return on max loss over the holding period), volatility as a
@@ -30,9 +32,9 @@ database is locked; 3 when a scored trade used a map that could have seen its ou
 import argparse
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Final
 
@@ -42,10 +44,12 @@ from matplotlib.figure import Figure
 
 from oap.analytics.config import DEFAULT_CONFIG
 from oap.analytics.io import read_table
+from oap.analytics.ranking import RANK_WORDS, rank_score
 from oap.analytics.rulelab import (
     ATM_MIN_DTE,
     BASELINE_RULE,
     IV_QUOTE_COLUMNS,
+    PREVIOUS_RULE,
     Picks,
     PreparedTrades,
     Rule,
@@ -60,6 +64,7 @@ from oap.analytics.rulelab import (
     rule_grid,
     select_positions,
 )
+from oap.analytics.scoring import ENTRY_RULE_SINCE
 from oap.analytics.strategy import (
     ELIGIBLE_ALL,
     SETTLED_COLUMNS,
@@ -100,6 +105,8 @@ HOLDOUT_IMAGE: Final = "img/rule_lab_holdout.png"
 SCORE_PROGRESS_EVERY: Final = 100
 SWEEP_PROGRESS_EVERY: Final = 100
 TOP_RULES: Final = 10
+PREVIOUS_LABEL: Final = f"Previous Top 10 (until {ENTRY_RULE_SINCE - timedelta(days=1)})"
+"""Row label of the live rule before ``ENTRY_RULE_SINCE``."""
 
 _DAILY_SQL: Final = "select underlying, trade_date, log_return from gold.fct_underlying_daily"
 _QUOTE_DATES_SQL: Final = "select distinct trade_date from gold.fct_option_quote order by 1"
@@ -212,6 +219,24 @@ def _atm_iv_all(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
 
 # --- sweep -----------------------------------------------------------------------------------
+
+
+def with_score_entry(trades: pd.DataFrame) -> pd.DataFrame:
+    """Add ``score_entry`` to a cache scored before the column existed.
+
+    Args:
+        trades: Settled trades, with or without ``score_entry``.
+
+    Returns:
+        ``trades`` unchanged when it has the column; otherwise a copy with ``score_entry`` set
+        to the ``entry_rank`` ranking of ``DEFAULT_CONFIG``, which is what scoring writes, in
+        ``SETTLED_COLUMNS`` order with any other columns after them.
+    """
+    if "score_entry" in trades.columns:
+        return trades
+    out = trades.assign(score_entry=rank_score(trades, DEFAULT_CONFIG.entry_rank))
+    known = [c for c in SETTLED_COLUMNS if c in out.columns]
+    return out[known + [c for c in out.columns if c not in known]]
 
 
 @dataclass(frozen=True)
@@ -453,6 +478,7 @@ def _headline_section(report: LabReport) -> str:
         )
     rows = [
         _pick_row(report, "Baseline (current Top 10)", BASELINE_RULE.rule_id),
+        *_previous_rows(report, _pick_row),
         _pick_row(report, "Best overall", picks.best_overall),
     ]
     paragraphs = [
@@ -492,6 +518,15 @@ def _headline_section(report: LabReport) -> str:
     )
 
 
+def _previous_rows(
+    report: LabReport, render: Callable[[LabReport, str, str], list[str]]
+) -> list[list[str]]:
+    """Render the previous live rule's row with ``render``, or nothing when it was not swept."""
+    if not (report.results["rule_id"] == PREVIOUS_RULE.rule_id).any():
+        return []
+    return [render(report, PREVIOUS_LABEL, PREVIOUS_RULE.rule_id)]
+
+
 def _top_row(report: LabReport, label: str, rule_id: str) -> list[str]:
     """Render one row of the top-rules table."""
     row = _result(report, rule_id)
@@ -518,6 +553,7 @@ def _top_section(report: LabReport) -> str:
     ids = [str(r) for r in qualified["rule_id"].head(TOP_RULES)]
     rows = [_top_row(report, str(i), rule_id) for i, rule_id in enumerate(ids, start=1)]
     rows.append(_top_row(report, "baseline", BASELINE_RULE.rule_id))
+    rows.extend(_previous_rows(report, _top_row))
     legend = (
         f"Ranked by dev Sharpe per trade among the {fmt_count(len(qualified))} rules with at "
         f"least {fmt_count(report.min_dev_trades)} dev trades and a finite dev drawdown; the "
@@ -580,8 +616,9 @@ def _protocol_section(report: LabReport) -> str:
         "dev drawdown; the best ROI pick is the highest dev mean realised return among those "
         "whose dev drawdown is below the median of all rules. The hold-out was not used to "
         "choose anything. The baseline is the current Top 10 rule "
-        f"(`{BASELINE_RULE.rule_id}`), which reproduces the live `entry_top10` selection. Every "
-        "result is in `sweep.csv` in the lab directory."
+        f"(`{BASELINE_RULE.rule_id}`), which reproduces the live `entry_top10` selection; the "
+        f"previous Top 10 rule (`{PREVIOUS_RULE.rule_id}`) is shown next to it. Every result is "
+        "in `sweep.csv` in the lab directory."
     )
 
 
@@ -629,7 +666,10 @@ def render_markdown(report: LabReport) -> str:
         "run through the walk-forward backtest of the entry rule. Each was ranked on the dev "
         f"years ({_years(report.dev_years)}) and is reported on the hold-out "
         f"({_years(report.holdout_years)}), which no choice looked at. The baseline is the "
-        "current Top 10 rule: rank by annualised return on max loss at the mid credit."
+        f"Top 10 rule the product uses since {ENTRY_RULE_SINCE.isoformat()}: "
+        f"{describe_rule(BASELINE_RULE).replace('Rank by', 'rank by', 1)} The previous Top 10 rule "
+        f"(`{PREVIOUS_RULE.rule_id}`) ranked every guarded spread by "
+        f"{RANK_WORDS[PREVIOUS_RULE.rank_by]}, at any days to expiry and moneyness."
     )
     figure = (
         "## Hold-out equity\n\n"
@@ -763,7 +803,7 @@ def _run_sweep(args: argparse.Namespace) -> int:
         if not path.exists():
             _log(f"{path} does not exist: run with --score first")
             return 2
-    trades = pd.read_parquet(scored)
+    trades = with_score_entry(pd.read_parquet(scored))
     regime = pd.read_parquet(regime_path)
     began = time.monotonic()
     prepared = prepare(trades, regime)
