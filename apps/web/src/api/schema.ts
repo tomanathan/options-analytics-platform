@@ -2060,7 +2060,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2130,7 +2130,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2181,7 +2181,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2241,7 +2241,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2314,7 +2314,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2363,7 +2363,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2415,7 +2415,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2469,7 +2469,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2526,7 +2526,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -2583,7 +2583,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description A path or query parameter is invalid. */
+            /** @description A path or query parameter is invalid (invalid), or the structures calculator cannot answer: view_required, view_invalid, no_distribution or no_implied_vol (see docs/runbook.md). */
             422: {
                 headers: {
                     [name: string]: unknown;
