@@ -59,9 +59,9 @@ make report                          # after score_spreads finishes: docs/result
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | TSLA | 2026-10-19 | 2026-11-02 | 14 | 365/360 | 3.50 | 1.20 | 56.4% | 49.6% | 88.36% |
-| 2 | TSLA | 2026-10-19 | 2026-11-02 | 14 | 365/355 | 5.42 | 3.20 | 60.8% | 54.5% | 33.16% |
-| 3 | META | 2026-10-19 | 2026-11-02 | 14 | 700/690 | 5.28 | 3.45 | 59.3% | 51.4% | 26.90% |
+| 1 | XLF | 2026-10-20 | 2026-11-04 | 15 | 54/51 | 1.35 | 0.38 | 70.0% | 62.0% | 45.88% |
+| 2 | AMD | 2026-10-20 | 2026-11-02 | 13 | 517.5/512.5 | 2.10 | 0.10 | 70.8% | 64.2% | 23.38% |
+| 3 | NVDA | 2026-10-20 | 2026-11-02 | 13 | 212.5/210 | 1.05 | 0.50 | 70.0% | 60.9% | 22.50% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
