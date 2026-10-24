@@ -53,15 +53,15 @@ make report                          # after score_spreads finishes: docs/result
 <!-- results:start -->
 | Out-of-sample metric | Risk-neutral | Calibrated | Change |
 | --- | ---: | ---: | ---: |
-| Brier score | 0.1264 | 0.1288 | +0.0024 |
-| Log loss (nats) | 0.3911 | 0.3952 | +0.0041 |
-| Expected calibration error | 0.0356 | 0.0160 | -0.0196 |
+| Brier score | 0.1263 | 0.1288 | +0.0024 |
+| Log loss (nats) | 0.3909 | 0.3950 | +0.0042 |
+| Expected calibration error | 0.0352 | 0.0164 | -0.0188 |
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | AMD | 2026-10-22 | 2026-11-06 | 15 | 500/495 | 2.68 | 1.35 | 63.2% | 57.1% | 36.34% |
-| 2 | AMD | 2026-10-22 | 2026-11-06 | 15 | 500/490 | 4.93 | 3.80 | 63.2% | 57.1% | 24.87% |
-| 3 | AAPL | 2026-10-22 | 2026-11-04 | 13 | 342.5/335 | 2.80 | 1.50 | 75.0% | 68.5% | 20.02% |
+| 1 | GOOGL | 2026-10-23 | 2026-11-06 | 14 | 317.5/315 | 1.30 | 0.06 | 60.8% | 53.9% | 27.39% |
+| 2 | AMD | 2026-10-23 | 2026-11-06 | 14 | 507.5/502.5 | 2.45 | 1.40 | 60.8% | 54.2% | 19.60% |
+| 3 | GOOGL | 2026-10-23 | 2026-11-06 | 14 | 317.5/310 | 3.30 | 2.00 | 63.1% | 57.2% | 16.88% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
