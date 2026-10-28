@@ -59,9 +59,9 @@ make report                          # after score_spreads finishes: docs/result
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | AMD | 2026-10-26 | 2026-11-09 | 14 | 525/520 | 3.68 | 1.55 | 56.3% | 49.7% | 104.13% |
-| 2 | GOOGL | 2026-10-26 | 2026-11-09 | 14 | 310/305 | 2.60 | 1.20 | 63.1% | 57.6% | 35.22% |
-| 3 | AMZN | 2026-10-26 | 2026-11-09 | 14 | 235/230 | 2.22 | 1.05 | 70.2% | 62.3% | 30.88% |
+| 1 | AMD | 2026-10-27 | 2026-11-09 | 13 | 555/550 | 3.12 | 1.65 | 55.2% | 46.9% | 43.44% |
+| 2 | AMD | 2026-10-27 | 2026-11-09 | 13 | 560/550 | 5.95 | 3.95 | 50.8% | 44.6% | 29.16% |
+| 3 | AMD | 2026-10-27 | 2026-12-04 | 38 | 555/550 | 3.68 | 1.41 | 55.2% | 48.2% | 102.55% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
