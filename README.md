@@ -59,9 +59,9 @@ make report                          # after score_spreads finishes: docs/result
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | XLF | 2026-10-28 | 2026-12-04 | 37 | 55.5/54 | 1.12 | 0.06 | 90.0% | 86.6% | 211.12% |
-| 2 | AMD | 2026-10-28 | 2026-11-11 | 14 | 575/565 | 5.95 | 2.95 | 58.0% | 50.9% | 44.21% |
-| 3 | AMD | 2026-10-28 | 2026-11-11 | 14 | 560/545 | 6.32 | 1.65 | 70.8% | 64.7% | 24.06% |
+| 1 | AMZN | 2026-10-29 | 2026-11-13 | 15 | 237.5/235 | 1.15 | 0.40 | 69.9% | 61.9% | 29.82% |
+| 2 | AMZN | 2026-10-29 | 2026-11-13 | 15 | 242.5/240 | 1.37 | 0.30 | 55.2% | 46.7% | 24.73% |
+| 3 | AMZN | 2026-10-29 | 2026-11-13 | 15 | 237.5/230 | 2.92 | 2.25 | 70.8% | 63.0% | 17.08% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
