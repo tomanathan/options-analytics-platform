@@ -59,9 +59,6 @@ make report                          # after score_spreads finishes: docs/result
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | AMZN | 2026-10-29 | 2026-11-13 | 15 | 237.5/235 | 1.15 | 0.40 | 69.9% | 61.9% | 29.82% |
-| 2 | AMZN | 2026-10-29 | 2026-11-13 | 15 | 242.5/240 | 1.37 | 0.30 | 55.2% | 46.7% | 24.73% |
-| 3 | AMZN | 2026-10-29 | 2026-11-13 | 15 | 237.5/230 | 2.92 | 2.25 | 70.8% | 63.0% | 17.08% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
