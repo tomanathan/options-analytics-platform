@@ -53,12 +53,15 @@ make report                          # after score_spreads finishes: docs/result
 <!-- results:start -->
 | Out-of-sample metric | Risk-neutral | Calibrated | Change |
 | --- | ---: | ---: | ---: |
-| Brier score | 0.1263 | 0.1288 | +0.0025 |
-| Log loss (nats) | 0.3908 | 0.3951 | +0.0042 |
-| Expected calibration error | 0.0350 | 0.0165 | -0.0186 |
+| Brier score | 0.1265 | 0.1290 | +0.0025 |
+| Log loss (nats) | 0.3914 | 0.3959 | +0.0045 |
+| Expected calibration error | 0.0340 | 0.0175 | -0.0165 |
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | XLF | 2026-11-02 | 2026-11-27 | 25 | 57.5/56.5 | 0.71 | 0.16 | 74.7% | 68.9% | 97.94% |
+| 2 | XLF | 2026-11-02 | 2026-11-27 | 25 | 57.5/56 | 0.84 | 0.09 | 79.9% | 72.6% | 49.12% |
+| 3 | XLF | 2026-11-02 | 2026-11-27 | 25 | 57.5/55.5 | 0.99 | 0.41 | 79.9% | 72.6% | 36.47% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
