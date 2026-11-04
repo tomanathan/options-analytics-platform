@@ -59,9 +59,9 @@ make report                          # after score_spreads finishes: docs/result
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | XLF | 2026-11-02 | 2026-11-27 | 25 | 57.5/56.5 | 0.71 | 0.16 | 74.7% | 68.9% | 97.94% |
-| 2 | XLF | 2026-11-02 | 2026-11-27 | 25 | 57.5/56 | 0.84 | 0.09 | 79.9% | 72.6% | 49.12% |
-| 3 | XLF | 2026-11-02 | 2026-11-27 | 25 | 57.5/55.5 | 0.99 | 0.41 | 79.9% | 72.6% | 36.47% |
+| 1 | MSFT | 2026-11-03 | 2026-11-18 | 15 | 520/515 | 2.60 | 0.10 | 60.7% | 54.5% | 29.99% |
+| 2 | GOOGL | 2026-11-03 | 2026-11-16 | 13 | 270/265 | 1.71 | 0.61 | 77.5% | 72.0% | 21.15% |
+| 3 | GOOGL | 2026-11-03 | 2026-11-16 | 13 | 280/275 | 2.27 | 1.40 | 60.7% | 55.5% | 16.47% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
