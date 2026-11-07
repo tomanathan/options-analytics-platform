@@ -53,15 +53,15 @@ make report                          # after score_spreads finishes: docs/result
 <!-- results:start -->
 | Out-of-sample metric | Risk-neutral | Calibrated | Change |
 | --- | ---: | ---: | ---: |
-| Brier score | 0.1265 | 0.1290 | +0.0026 |
-| Log loss (nats) | 0.3914 | 0.3959 | +0.0045 |
-| Expected calibration error | 0.0339 | 0.0175 | -0.0164 |
+| Brier score | 0.1265 | 0.1291 | +0.0026 |
+| Log loss (nats) | 0.3915 | 0.3961 | +0.0046 |
+| Expected calibration error | 0.0336 | 0.0178 | -0.0159 |
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | TSLA | 2026-11-05 | 2026-11-18 | 13 | 340/337.5 | 1.60 | 0.60 | 70.6% | 64.0% | 96.18% |
-| 2 | AMD | 2026-11-05 | 2026-11-18 | 13 | 380/370 | 4.22 | 0.80 | 74.7% | 67.9% | 31.41% |
-| 3 | TSLA | 2026-11-05 | 2026-11-18 | 13 | 340/332.5 | 3.43 | 2.40 | 70.6% | 64.0% | 30.05% |
+| 1 | AMD | 2026-11-06 | 2026-11-20 | 14 | 435/430 | 2.47 | 0.90 | 60.7% | 56.1% | 23.44% |
+| 2 | XLF | 2026-11-06 | 2026-11-20 | 14 | 56.5/56 | 0.23 | 0.03 | 62.8% | 57.4% | 22.07% |
+| 3 | MSFT | 2026-11-06 | 2026-11-20 | 14 | 525/520 | 1.93 | 1.10 | 69.9% | 62.4% | 14.61% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
