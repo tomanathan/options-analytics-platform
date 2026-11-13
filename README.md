@@ -59,9 +59,9 @@ make report                          # after score_spreads finishes: docs/result
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | NVDA | 2026-11-11 | 2026-11-25 | 14 | 170/167.5 | 1.30 | 0.35 | 62.8% | 57.0% | 31.81% |
-| 2 | GOOGL | 2026-11-11 | 2026-11-25 | 14 | 287.5/282.5 | 2.27 | 0.35 | 69.5% | 60.9% | 28.48% |
-| 3 | TSLA | 2026-11-11 | 2026-11-25 | 14 | 390/382.5 | 3.65 | 2.20 | 63.9% | 59.2% | 26.33% |
+| 1 | AMD | 2026-11-12 | 2026-11-27 | 15 | 572.5/567.5 | 3.00 | 0.20 | 62.8% | 56.9% | 55.90% |
+| 2 | GOOGL | 2026-11-12 | 2026-11-27 | 15 | 290/287.5 | 1.08 | 0.45 | 70.5% | 63.2% | 26.62% |
+| 3 | AMD | 2026-11-12 | 2026-11-27 | 15 | 562.5/550 | 5.03 | 2.75 | 70.9% | 64.9% | 20.88% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
