@@ -54,14 +54,14 @@ make report                          # after score_spreads finishes: docs/result
 | Out-of-sample metric | Risk-neutral | Calibrated | Change |
 | --- | ---: | ---: | ---: |
 | Brier score | 0.1266 | 0.1292 | +0.0026 |
-| Log loss (nats) | 0.3918 | 0.3965 | +0.0046 |
-| Expected calibration error | 0.0333 | 0.0181 | -0.0153 |
+| Log loss (nats) | 0.3919 | 0.3965 | +0.0047 |
+| Expected calibration error | 0.0333 | 0.0181 | -0.0152 |
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | AMD | 2026-11-13 | 2026-11-27 | 14 | 530/525 | 2.50 | 0.60 | 62.8% | 57.7% | 26.68% |
-| 2 | GOOGL | 2026-11-13 | 2026-11-27 | 14 | 290/287.5 | 1.08 | 0.30 | 63.9% | 59.4% | 18.79% |
-| 3 | AMD | 2026-11-13 | 2026-11-27 | 14 | 530/520 | 4.52 | 3.10 | 63.9% | 58.4% | 17.95% |
+| 1 | TSLA | 2026-11-16 | 2026-11-30 | 14 | 370/365 | 3.32 | 0.60 | 69.8% | 62.9% | 109.63% |
+| 2 | META | 2026-11-16 | 2026-11-30 | 14 | 625/620 | 3.35 | 0.30 | 55.0% | 46.5% | 63.03% |
+| 3 | META | 2026-11-16 | 2026-11-30 | 14 | 615/610 | 2.85 | 0.25 | 59.1% | 52.2% | 39.22% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
