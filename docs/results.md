@@ -1,24 +1,24 @@
 # Results
 
-Source: the `gold` schema of the DuckDB file built by dbt; spreads are scored as of the 2026-11-18 session.
+Source: the `gold` schema of the DuckDB file built by dbt; spreads are scored as of the 2026-11-19 session.
 
 ## Data coverage
 
 | Underlying | First session | Last session | Sessions | Chain snapshots | Settled snapshots | Predictions |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| AAPL | 2020-01-06 | 2026-11-18 | 1,224 | 3,881 | 3,777 | 47,829 |
-| AMD | 2020-01-06 | 2026-11-18 | 1,221 | 3,875 | 3,770 | 47,835 |
-| AMZN | 2020-01-06 | 2026-11-18 | 1,220 | 3,870 | 3,766 | 47,524 |
-| DIA | 2020-01-06 | 2026-11-18 | 1,222 | 3,889 | 3,763 | 47,223 |
-| GOOGL | 2020-01-06 | 2026-11-18 | 1,215 | 3,856 | 3,752 | 47,387 |
-| META | 2022-07-01 | 2026-11-18 | 855 | 2,774 | 2,668 | 33,597 |
-| MSFT | 2020-01-06 | 2026-11-18 | 1,210 | 3,835 | 3,732 | 47,102 |
-| NVDA | 2020-01-06 | 2026-11-18 | 1,219 | 3,858 | 3,755 | 46,958 |
-| SPY | 2020-01-06 | 2026-11-18 | 1,212 | 3,885 | 3,771 | 46,801 |
-| TSLA | 2021-01-04 | 2026-11-18 | 1,070 | 3,413 | 3,309 | 41,837 |
-| XLF | 2020-01-06 | 2026-11-18 | 1,212 | 3,858 | 3,751 | 47,471 |
+| AAPL | 2020-01-06 | 2026-11-19 | 1,225 | 3,885 | 3,777 | 47,829 |
+| AMD | 2020-01-06 | 2026-11-19 | 1,222 | 3,879 | 3,770 | 47,835 |
+| AMZN | 2020-01-06 | 2026-11-19 | 1,221 | 3,874 | 3,766 | 47,524 |
+| DIA | 2020-01-06 | 2026-11-19 | 1,223 | 3,893 | 3,763 | 47,223 |
+| GOOGL | 2020-01-06 | 2026-11-19 | 1,216 | 3,860 | 3,752 | 47,387 |
+| META | 2022-07-01 | 2026-11-19 | 856 | 2,778 | 2,668 | 33,597 |
+| MSFT | 2020-01-06 | 2026-11-19 | 1,211 | 3,839 | 3,732 | 47,102 |
+| NVDA | 2020-01-06 | 2026-11-19 | 1,220 | 3,862 | 3,755 | 46,958 |
+| SPY | 2020-01-06 | 2026-11-19 | 1,213 | 3,889 | 3,771 | 46,801 |
+| TSLA | 2021-01-04 | 2026-11-19 | 1,071 | 3,417 | 3,309 | 41,837 |
+| XLF | 2020-01-06 | 2026-11-19 | 1,213 | 3,862 | 3,751 | 47,471 |
 
-In total: 1,879,416 quotes on 538,246 contracts, in 40,994 chain snapshots (an underlying, a trade date and an expiration).
+In total: 1,881,632 quotes on 538,654 contracts, in 41,038 chain snapshots (an underlying, a trade date and an expiration).
 
 ## Snapshot exclusions
 
@@ -26,8 +26,8 @@ Every chain snapshot is classified; only `ok` snapshots produce predictions. Sna
 
 | Status | Snapshots | Share | Meaning |
 | --- | ---: | ---: | --- |
-| `ok` | 39,579 | 96.5% | enters the calibration sample |
-| `unsettled` | 1,180 | 2.9% | the expiration is after the last priced session, so there is no outcome yet |
+| `ok` | 39,579 | 96.4% | enters the calibration sample |
+| `unsettled` | 1,224 | 3.0% | the expiration is after the last priced session, so there is no outcome yet |
 | `too_few_puts` | 6 | 0.0% | fewer than 4 usable puts (a positive bid and an ask at or above the bid) |
 | `no_close` | 15 | 0.0% | no official close of the underlying on the trade date |
 | `split_in_window` | 214 | 0.5% | a split between the trade date and settlement (closes are unadjusted) |
@@ -97,7 +97,7 @@ Brier change +0.0026 (95% cluster-bootstrap interval -0.0005 to +0.0057, resampl
 | 0.8-0.9 | 25,124 | 0.8481 | 0.8188 | 16,710 | 0.8509 | 0.8642 |
 | 0.9-1.0 | 32,931 | 0.9620 | 0.9565 | 27,714 | 0.9674 | 0.9677 |
 
-## Top 10 to enter (2026-11-18)
+## Top 10 to enter (2026-11-19)
 
 Passes every guard (eligible, calibrated POP ≥ 65%, credit ≥ $0.25, natural credit ≥ 50% of mid with positive natural edge, inside quoted strikes, no tail flags), 45 to 69 days to expiry, short strike 95% to below 100% of the close, ranked by annualised natural return with the POP shrunk halfway toward the market-implied POP, then annualised return on max loss and reward/risk.
 
@@ -105,71 +105,71 @@ On the rule lab's 2025-2026 hold-out, measured on 2026-10-19, this rule made 4,0
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Natural credit | Mid credit | POP calibrated | Expected return on max loss | Annualised return on max loss | Edge (% of mid) | Reward/risk | Entry score (annualised) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | SPY | 2026-11-18 | 2027-01-15 | 58 | 730/710 | 6.22 | 6.32 | 73.5% | 9.41% | 76.1% | 19.1% | 0.15 | 20.4% |
-| 2 | SPY | 2026-11-18 | 2027-01-15 | 58 | 725/715 | 3.02 | 3.11 | 74.7% | 8.59% | 68.0% | 17.8% | 0.13 | 19.3% |
-| 3 | SPY | 2026-11-18 | 2027-01-15 | 58 | 730/725 | 1.77 | 1.86 | 69.8% | 12.00% | 104.1% | 19.3% | 0.16 | 17.6% |
-| 4 | SPY | 2026-11-18 | 2027-01-15 | 58 | 725/710 | 4.39 | 4.46 | 74.7% | 8.63% | 68.4% | 19.1% | 0.14 | 16.5% |
-| 5 | SPY | 2026-11-18 | 2027-01-15 | 58 | 730/700 | 8.54 | 8.64 | 74.7% | 8.23% | 64.5% | 19.0% | 0.14 | 13.0% |
-| 6 | SPY | 2026-11-18 | 2027-01-15 | 58 | 715/700 | 3.57 | 3.67 | 79.7% | 6.97% | 52.8% | 19.8% | 0.13 | 12.4% |
-| 7 | SPY | 2026-11-18 | 2027-01-15 | 58 | 730/715 | 4.85 | 4.97 | 70.5% | 9.66% | 78.7% | 18.4% | 0.14 | 9.7% |
-| 8 | SPY | 2026-11-18 | 2027-01-15 | 58 | 700/685 | 2.66 | 2.74 | 84.6% | 5.71% | 41.8% | 23.1% | 0.12 | 7.4% |
-| 9 | SPY | 2026-11-18 | 2027-01-15 | 58 | 710/700 | 2.24 | 2.32 | 79.9% | 6.13% | 45.4% | 18.4% | 0.11 | 6.3% |
-| 10 | AAPL | 2026-11-18 | 2027-01-15 | 58 | 350/330 | 5.60 | 5.87 | 74.7% | 8.69% | 68.9% | 19.5% | 0.15 | 5.8% |
+| 1 | SPY | 2026-11-19 | 2027-01-15 | 57 | 715/695 | 6.19 | 6.33 | 74.1% | 9.49% | 78.7% | 19.3% | 0.15 | 22.0% |
+| 2 | SPY | 2026-11-19 | 2027-01-15 | 57 | 710/700 | 3.03 | 3.15 | 74.7% | 9.25% | 76.2% | 19.0% | 0.14 | 18.9% |
+| 3 | SPY | 2026-11-19 | 2027-01-15 | 57 | 710/695 | 4.41 | 4.52 | 74.7% | 9.01% | 73.7% | 19.6% | 0.14 | 16.3% |
+| 4 | SPY | 2026-11-19 | 2027-01-15 | 57 | 700/685 | 3.68 | 3.78 | 79.7% | 7.15% | 55.6% | 19.6% | 0.13 | 16.3% |
+| 5 | SPY | 2026-11-19 | 2027-01-15 | 57 | 715/685 | 8.60 | 8.74 | 74.7% | 8.41% | 67.7% | 19.1% | 0.14 | 13.6% |
+| 6 | SPY | 2026-11-19 | 2027-01-15 | 57 | 685/675 | 1.93 | 2.02 | 84.0% | 6.49% | 49.6% | 23.5% | 0.13 | 10.0% |
+| 7 | META | 2026-11-19 | 2027-01-15 | 57 | 595/550 | 16.15 | 17.04 | 68.0% | 10.50% | 89.5% | 16.3% | 0.14 | 10.0% |
+| 8 | SPY | 2026-11-19 | 2027-01-15 | 57 | 695/685 | 2.32 | 2.41 | 79.9% | 6.47% | 49.4% | 18.6% | 0.11 | 9.6% |
+| 9 | SPY | 2026-11-19 | 2027-01-15 | 57 | 700/675 | 5.70 | 5.80 | 79.8% | 6.87% | 53.1% | 20.9% | 0.13 | 9.5% |
+| 10 | SPY | 2026-11-19 | 2027-01-15 | 57 | 715/700 | 4.81 | 4.96 | 70.9% | 9.83% | 82.3% | 18.8% | 0.14 | 9.5% |
 
 This is a ranking of a historical calibration, not trade advice: it orders spreads by what one pooled calibration map says happened on average, pulled halfway toward the probability the price implies, and that map is optimistic (see the caveats). Credits are dollars per share; the edge is the mid credit minus the calibrated fair credit, as a share of the mid credit; reward/risk is per trade; the entry score is the annualised return on max loss at the natural credit with that shrunk probability of profit, the number the rule ranks by.
 
-## Which structure serves each outcome (2026-11-18)
+## Which structure serves each outcome (2026-11-19)
 
 | Underlying | Expiry (DTE) | Up, above the 75th percentile | Up, moderately (55th to 85th) | Flat (25th to 75th) | Down, moderately (15th to 45th) | Down, below the 25th percentile | Big move, outside the 10th to 90th |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| AAPL | 2026-12-18 (30d) | long call `+1 C 380`, +417.3% | bull call spread `+1 C 360 / -1 C 375`, +122.0% | iron condor `-1 P 350 / +1 P 340 / -1 C 365 / +1 C 375`, +75.9% | iron condor `-1 P 340 / +1 P 330 / -1 C 355 / +1 C 365`, +133.2% | bear put spread `+1 P 345 / -1 P 325`, +201.3% | long call `+1 C 380`, +499.5% |
-| AMD | 2026-12-18 (30d) | long call `+1 C 640`, +402.0% | bull call spread `+1 C 560 / -1 C 600`, +119.0% | iron condor `-1 P 510 / +1 P 460 / -1 C 570 / +1 C 620`, +77.0% | iron condor `-1 P 480 / +1 P 440 / -1 C 540 / +1 C 580`, +110.7% | bear put spread `+1 P 480 / -1 P 440`, +185.2% | long strangle `+1 P 460 / +1 C 600`, +241.5% |
-| AMZN | 2026-12-18 (30d) | long call `+1 C 290`, +387.0% | bull call spread `+1 C 275 / -1 C 285`, +130.9% | iron condor `-1 P 265 / +1 P 255 / -1 C 280 / +1 C 290`, +83.2% | iron condor `-1 P 250 / +1 P 245 / -1 C 270 / +1 C 275`, +135.2% | bear put spread `+1 P 260 / -1 P 235`, +200.8% | long call `+1 C 300`, +458.0% |
-| DIA | 2026-12-18 (30d) | long call `+1 C 522`, +423.8% | bull call spread `+1 C 507 / -1 C 522`, +111.3% | iron condor `-1 P 497 / +1 P 482 / -1 C 517 / +1 C 532`, +56.3% | iron condor `-1 P 492 / +1 P 482 / -1 C 502 / +1 C 512`, +118.6% | bear call spread `-1 C 460 / +1 C 497`, +192.1% | long call `+1 C 532`, +604.7% |
-| GOOGL | 2026-12-18 (30d) | bull call spread `+1 C 305 / -1 C 325`, +358.2% | bull call spread `+1 C 290 / -1 C 300`, +132.0% | iron condor `-1 P 280 / +1 P 270 / -1 C 300 / +1 C 310`, +77.8% | iron condor `-1 P 265 / +1 P 260 / -1 C 285 / +1 C 290`, +118.6% | bear put spread `+1 P 270 / -1 P 245`, +199.4% | long call `+1 C 310`, +340.9% |
-| META | 2026-12-18 (30d) | bull call spread `+1 C 680 / -1 C 695`, +379.1% | bull call spread `+1 C 635 / -1 C 655`, +141.6% | iron condor `-1 P 605 / +1 P 580 / -1 C 655 / +1 C 680`, +97.2% | iron condor `-1 P 565 / +1 P 555 / -1 C 625 / +1 C 635`, +151.9% | bear put spread `+1 P 590 / -1 P 540`, +213.0% | bull call spread `+1 C 710 / -1 C 740`, +444.8% |
-| MSFT | 2026-12-18 (30d) | long call `+1 C 550`, +380.3% | bull call spread `+1 C 520 / -1 C 540`, +124.3% | iron condor `-1 P 505 / +1 P 480 / -1 C 525 / +1 C 550`, +75.0% | iron condor `-1 P 490 / +1 P 470 / -1 C 510 / +1 C 530`, +119.5% | bear put spread `+1 P 495 / -1 P 455`, +197.5% | long call `+1 C 560`, +438.0% |
-| NVDA | 2026-12-18 (30d) | bull call spread `+1 C 170 / -1 C 181`, +383.9% | bull call spread `+1 C 156 / -1 C 160`, +143.2% | iron condor `-1 P 146 / +1 P 142 / -1 C 166 / +1 C 170`, +93.3% | iron condor `-1 P 136 / +1 P 132 / -1 C 152 / +1 C 156`, +157.3% | bear put spread `+1 P 142 / -1 P 132`, +210.4% | bull call spread `+1 C 177 / -1 C 189`, +442.4% |
-| SPY | 2026-12-18 (30d) | long call `+1 C 774`, +615.1% | bull call spread `+1 C 745 / -1 C 759`, +136.1% | iron condor `-1 P 730 / +1 P 723 / -1 C 752 / +1 C 759`, +94.6% | iron condor `-1 P 708 / +1 P 701 / -1 C 738 / +1 C 745`, +178.5% | bear put spread `+1 P 723 / -1 P 708`, +215.5% | long call `+1 C 774`, +736.9% |
-| TSLA | 2026-12-18 (30d) | bull call spread `+1 C 430 / -1 C 460`, +365.2% | bull call spread `+1 C 400 / -1 C 420`, +128.3% | iron condor `-1 P 375 / +1 P 355 / -1 C 400 / +1 C 420`, +86.8% | iron condor `-1 P 360 / +1 P 345 / -1 C 385 / +1 C 400`, +138.8% | bear put spread `+1 P 360 / -1 P 325`, +196.5% | long strangle `+1 P 335 / +1 C 440`, +254.2% |
-| XLF | 2026-12-18 (30d) | long call `+1 C 60`, +1186.6% | bull call spread `+1 C 58 / -1 C 59`, +92.9% | iron condor `-1 P 56 / +1 P 54 / -1 C 58 / +1 C 60`, +50.8% | bear call spread `-1 C 57 / +1 C 58`, +51.2% | bear put spread `+1 P 56 / -1 P 53`, +176.8% | long strangle `+1 P 48 / +1 C 60`, +731.1% |
+| AAPL | 2026-12-18 (29d) | long call `+1 C 375`, +417.2% | bull call spread `+1 C 355 / -1 C 370`, +115.7% | iron condor `-1 P 345 / +1 P 335 / -1 C 365 / +1 C 375`, +68.1% | iron condor `-1 P 340 / +1 P 330 / -1 C 350 / +1 C 360`, +127.7% | bear put spread `+1 P 345 / -1 P 320`, +197.0% | long strangle `+1 P 305 / +1 C 375`, +298.6% |
+| AMD | 2026-12-18 (29d) | long call `+1 C 610`, +406.4% | bull call spread `+1 C 510 / -1 C 550`, +133.6% | iron condor `-1 P 480 / +1 P 440 / -1 C 550 / +1 C 590`, +89.1% | iron condor `-1 P 430 / +1 P 390 / -1 C 490 / +1 C 530`, +114.9% | bear put spread `+1 P 440 / -1 P 400`, +193.9% | long strangle `+1 P 420 / +1 C 560`, +244.0% |
+| AMZN | 2026-12-18 (29d) | bull call spread `+1 C 280 / -1 C 300`, +363.7% | bull call spread `+1 C 265 / -1 C 280`, +123.9% | iron condor `-1 P 255 / +1 P 240 / -1 C 270 / +1 C 285`, +78.2% | iron condor `-1 P 245 / +1 P 235 / -1 C 260 / +1 C 270`, +116.1% | bear put spread `+1 P 250 / -1 P 225`, +197.3% | long call `+1 C 290`, +409.2% |
+| DIA | 2026-12-18 (29d) | long call `+1 C 520`, +431.4% | bull call spread `+1 C 501 / -1 C 510`, +107.4% | iron condor `-1 P 486 / +1 P 476 / -1 C 510 / +1 C 520`, +60.6% | iron condor `-1 P 470 / +1 P 460 / -1 C 491 / +1 C 501`, +97.6% | bear call spread `-1 C 450 / +1 C 486`, +186.7% | long call `+1 C 520`, +510.6% |
+| GOOGL | 2026-12-18 (29d) | bull call spread `+1 C 300 / -1 C 320`, +353.5% | bull call spread `+1 C 280 / -1 C 290`, +122.4% | iron condor `-1 P 270 / +1 P 255 / -1 C 285 / +1 C 300`, +74.6% | iron condor `-1 P 255 / +1 P 245 / -1 C 275 / +1 C 285`, +108.1% | bear put spread `+1 P 265 / -1 P 240`, +203.4% | long strangle `+1 P 240 / +1 C 305`, +264.2% |
+| META | 2026-12-18 (29d) | bull call spread `+1 C 655 / -1 C 700`, +359.6% | bull call spread `+1 C 610 / -1 C 645`, +124.7% | iron condor `-1 P 590 / +1 P 550 / -1 C 630 / +1 C 670`, +82.6% | iron condor `-1 P 550 / +1 P 535 / -1 C 600 / +1 C 615`, +123.1% | bear put spread `+1 P 570 / -1 P 520`, +201.5% | long call `+1 C 685`, +391.6% |
+| MSFT | 2026-12-18 (29d) | long call `+1 C 540`, +351.0% | bull call spread `+1 C 510 / -1 C 530`, +120.8% | iron condor `-1 P 495 / +1 P 470 / -1 C 515 / +1 C 540`, +70.6% | iron condor `-1 P 470 / +1 P 450 / -1 C 500 / +1 C 520`, +129.4% | bear put spread `+1 P 485 / -1 P 450`, +197.8% | long call `+1 C 550`, +391.0% |
+| NVDA | 2026-12-18 (29d) | bull call spread `+1 C 164 / -1 C 175`, +370.3% | bull call spread `+1 C 150 / -1 C 160`, +132.1% | iron condor `-1 P 142 / +1 P 134 / -1 C 160 / +1 C 168`, +87.1% | iron condor `-1 P 134 / +1 P 128 / -1 C 146 / +1 C 152`, +147.4% | bear put spread `+1 P 138 / -1 P 124`, +204.9% | bull call spread `+1 C 175 / -1 C 182`, +421.5% |
+| SPY | 2026-12-18 (29d) | long call `+1 C 759`, +485.5% | bull call spread `+1 C 737 / -1 C 745`, +140.0% | iron condor `-1 P 709 / +1 P 695 / -1 C 745 / +1 C 759`, +84.1% | iron condor `-1 P 709 / +1 P 695 / -1 C 716 / +1 C 730`, +188.6% | bear put spread `+1 P 709 / -1 P 685`, +213.4% | long call `+1 C 759`, +506.4% |
+| TSLA | 2026-12-18 (29d) | bull call spread `+1 C 420 / -1 C 450`, +365.0% | bull call spread `+1 C 390 / -1 C 405`, +127.9% | iron condor `-1 P 370 / +1 P 345 / -1 C 405 / +1 C 430`, +83.3% | iron condor `-1 P 350 / +1 P 330 / -1 C 375 / +1 C 395`, +133.8% | bear put spread `+1 P 350 / -1 P 320`, +200.5% | long strangle `+1 P 320 / +1 C 430`, +249.1% |
+| XLF | 2026-12-18 (29d) | long call `+1 C 59`, +778.8% | bull call spread `+1 C 55 / -1 C 59`, +76.6% | iron condor `-1 P 55 / +1 P 53 / -1 C 58 / +1 C 60`, +25.3% | iron condor `-1 P 53 / +1 P 50 / -1 C 56 / +1 C 59`, +42.2% | bear put spread `+1 P 55 / -1 P 50`, +152.2% | long call `+1 C 59`, +923.5% |
 
 Fill: natural (long legs at the ask, short legs at the bid); target 35 days to expiry, using each underlying's expiry with a distribution nearest to it; calibration map `production`. Each cell is the structure kind with the highest return if right among those whose probability of profit given the outcome is at least 50%, its legs (signed quantity, right, strike) and its return if right: the expected profit and loss on max loss when the price at expiry lands in the outcome's range. The outcomes are quantile ranges of the calibrated distribution. This is a measurement of how each structure pays under each outcome, not advice; the same numbers are on the Structures tab (`/api/structures/map`).
 
-## Top put credit spreads (2026-11-18)
+## Top put credit spreads (2026-11-19)
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss | Annualised return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | NVDA | 2026-11-18 | 2026-12-02 | 14 | 149/146 | 1.62 | 0.55 | 60.7% | 53.7% | 36.52% | 334913.0% |
-| 2 | AMD | 2026-11-18 | 2026-12-02 | 14 | 530/520 | 5.12 | 0.65 | 60.7% | 55.6% | 24.52% | 30293.4% |
-| 3 | NVDA | 2026-11-18 | 2026-12-02 | 14 | 149/145 | 1.80 | 1.10 | 60.7% | 53.7% | 20.08% | 11713.7% |
-| 4 | GOOGL | 2026-11-18 | 2026-12-02 | 14 | 275/265 | 3.53 | 1.85 | 76.1% | 70.8% | 19.79% | 10974.3% |
-| 5 | META | 2026-11-18 | 2026-12-02 | 14 | 605/590 | 5.75 | 0.75 | 70.9% | 65.0% | 18.88% | 8975.0% |
-| 6 | XLF | 2026-11-18 | 2027-01-15 | 58 | 56/55 | 0.74 | 0.22 | 55.6% | 49.5% | 101.94% | 8233.0% |
-| 7 | AMD | 2026-11-18 | 2026-12-02 | 14 | 525/510 | 7.20 | 3.30 | 61.0% | 56.4% | 18.28% | 7864.8% |
-| 8 | AMD | 2026-11-18 | 2026-12-02 | 14 | 525/515 | 4.83 | 0.65 | 60.8% | 56.0% | 17.69% | 6879.7% |
-| 9 | NVDA | 2026-11-18 | 2026-12-02 | 14 | 149/142 | 2.73 | 1.85 | 69.8% | 62.8% | 17.25% | 6232.4% |
-| 10 | AMD | 2026-11-18 | 2026-12-02 | 14 | 530/510 | 9.47 | 5.50 | 60.8% | 56.0% | 16.46% | 5216.6% |
+| 1 | TSLA | 2026-11-19 | 2026-12-02 | 13 | 370/362.5 | 3.92 | 1.49 | 65.1% | 59.6% | 41.98% | 1880375.0% |
+| 2 | NVDA | 2026-11-19 | 2026-12-02 | 13 | 145/143 | 0.92 | 0.50 | 68.0% | 59.9% | 26.67% | 76162.8% |
+| 3 | NVDA | 2026-11-19 | 2026-12-02 | 13 | 145/142 | 1.32 | 0.75 | 68.0% | 59.9% | 22.08% | 26993.1% |
+| 4 | GOOGL | 2026-11-19 | 2026-12-02 | 13 | 272.5/270 | 1.23 | 0.05 | 60.7% | 52.9% | 20.44% | 18429.0% |
+| 5 | TSLA | 2026-11-19 | 2026-12-02 | 13 | 370/360 | 3.90 | 2.09 | 65.1% | 59.6% | 17.16% | 8437.2% |
+| 6 | NVDA | 2026-11-19 | 2026-12-02 | 13 | 145/140 | 2.05 | 1.65 | 68.0% | 59.9% | 16.99% | 8102.2% |
+| 7 | GOOGL | 2026-11-19 | 2026-12-02 | 13 | 267.5/262.5 | 1.78 | 0.50 | 74.1% | 66.6% | 15.36% | 5421.9% |
+| 8 | TSLA | 2026-11-19 | 2026-12-02 | 13 | 367.5/360 | 2.67 | 0.50 | 68.1% | 60.6% | 14.46% | 4334.0% |
+| 9 | TSLA | 2026-11-19 | 2026-12-02 | 13 | 370/352.5 | 5.70 | 4.29 | 70.5% | 63.3% | 14.18% | 4036.0% |
+| 10 | TSLA | 2026-11-19 | 2026-12-02 | 13 | 370/345 | 7.52 | 6.04 | 79.7% | 72.9% | 13.60% | 3491.2% |
 
 Credits are dollars per share. POP is the probability the underlying settles above the breakeven; return on max loss is the expected return over the trade as a share of the maximum loss, which is the collateral held, annualised in the last column.
 
 ![Eligible spreads](img/spread_scores.png)
 
-## Top spreads by edge (2026-11-18)
+## Top spreads by edge (2026-11-19)
 
 | Rank (edge) | Underlying | Expiration | Short/long | Mid credit | Natural credit | Fair credit | Edge | Edge (% of mid) | POP calibrated | POP risk-neutral | Price-implied POP | POP gap | Reward/risk |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | SPY | 2026-12-18 | 585/550 | 0.36 | 0.34 | 0.07 | +0.29 | 81.0% | 99.7% | 98.6% | 99.0% | +0.7 pp | 0.21 |
-| 2 | SPY | 2026-12-18 | 600/550 | 0.59 | 0.57 | 0.11 | +0.47 | 80.9% | 99.7% | 98.2% | 98.8% | +0.8 pp | 0.22 |
-| 3 | DIA | 2026-12-18 | 425/375 | 0.48 | 0.28 | 0.09 | +0.38 | 80.5% | 99.7% | 98.4% | 99.0% | +0.7 pp | 0.20 |
-| 4 | AAPL | 2026-12-18 | 290/265 | 0.32 | 0.26 | 0.07 | +0.26 | 79.6% | 99.4% | 97.9% | 98.7% | +0.7 pp | 0.23 |
-| 5 | DIA | 2026-12-31 | 425/375 | 0.63 | 0.38 | 0.13 | +0.50 | 79.3% | 99.4% | 97.7% | 98.7% | +0.6 pp | 0.23 |
+| 1 | SPY | 2026-12-02 | 610/575 | 0.34 | 0.32 | 0.06 | +0.28 | 81.5% | 99.7% | 98.6% | 99.0% | +0.7 pp | 0.20 |
+| 2 | SPY | 2026-12-02 | 625/575 | 0.58 | 0.56 | 0.11 | +0.47 | 80.5% | 99.6% | 97.9% | 98.8% | +0.7 pp | 0.22 |
+| 3 | SPY | 2026-12-02 | 625/590 | 0.46 | 0.44 | 0.09 | +0.37 | 79.9% | 99.6% | 97.9% | 98.7% | +0.9 pp | 0.23 |
+| 4 | AAPL | 2026-12-18 | 290/260 | 0.33 | 0.17 | 0.07 | +0.26 | 78.6% | 99.4% | 97.6% | 98.9% | +0.5 pp | 0.21 |
+| 5 | AAPL | 2026-12-04 | 305/280 | 0.31 | 0.16 | 0.07 | +0.24 | 78.2% | 99.6% | 97.9% | 98.8% | +0.8 pp | 0.20 |
 
 Edge measures the mid credit against one pooled calibration map, so it is the historical variance risk premium applied to this chain, not a contract-specific mispricing; it is correlated across strikes, concentrated in the far tail, and partly the half-spread the natural credit gives up. Price-implied POP is the maximum loss over the width, the probability of profit at which the price breaks even, and the POP gap is the calibrated POP minus it: the same information as the edge in probability units. Out of sample, predictions with a raw probability under 2% saw 71 breaches in 53,722, which is how thin the evidence for the far tail is.
 
 ## How to read this
 
-Under the risk-neutral CDF built from the same mid quotes, a spread's expected return on max loss is roughly the cash rate by construction, so any edge comes from the calibration map, which is an estimate of the variance risk premium: the gap between the probabilities the option market implies and the frequencies that followed. Across the 1,360 eligible spreads of the latest session the median annualised return is 1.3% under the risk-neutral CDF and 74.9% after calibration, against a cash rate of 3.6%.
+Under the risk-neutral CDF built from the same mid quotes, a spread's expected return on max loss is roughly the cash rate by construction, so any edge comes from the calibration map, which is an estimate of the variance risk premium: the gap between the probabilities the option market implies and the frequencies that followed. Across the 1,380 eligible spreads of the latest session the median annualised return is 1.2% under the risk-neutral CDF and 78.6% after calibration, against a cash rate of 3.6%.
 
 ## Caveats
 
