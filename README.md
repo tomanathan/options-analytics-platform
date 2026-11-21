@@ -53,15 +53,15 @@ make report                          # after score_spreads finishes: docs/result
 <!-- results:start -->
 | Out-of-sample metric | Risk-neutral | Calibrated | Change |
 | --- | ---: | ---: | ---: |
-| Brier score | 0.1266 | 0.1292 | +0.0026 |
-| Log loss (nats) | 0.3919 | 0.3965 | +0.0047 |
-| Expected calibration error | 0.0333 | 0.0181 | -0.0152 |
+| Brier score | 0.1274 | 0.1303 | +0.0029 |
+| Log loss (nats) | 0.3940 | 0.3996 | +0.0055 |
+| Expected calibration error | 0.0307 | 0.0207 | -0.0100 |
 
 | Rank | Underlying | Session | Expiration | DTE | Short/long | Mid credit | Natural credit | POP calibrated | POP risk-neutral | Expected return on max loss |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | TSLA | 2026-11-19 | 2026-12-02 | 13 | 370/362.5 | 3.92 | 1.49 | 65.1% | 59.6% | 41.98% |
-| 2 | NVDA | 2026-11-19 | 2026-12-02 | 13 | 145/143 | 0.92 | 0.50 | 68.0% | 59.9% | 26.67% |
-| 3 | NVDA | 2026-11-19 | 2026-12-02 | 13 | 145/142 | 1.32 | 0.75 | 68.0% | 59.9% | 22.08% |
+| 1 | GOOGL | 2026-11-20 | 2026-12-04 | 14 | 262.5/260 | 1.20 | 0.25 | 62.4% | 57.3% | 24.74% |
+| 2 | NVDA | 2026-11-20 | 2026-12-04 | 14 | 122/118 | 1.50 | 0.55 | 74.3% | 67.4% | 19.04% |
+| 3 | NVDA | 2026-11-20 | 2026-12-04 | 14 | 121/118 | 1.12 | 0.20 | 74.3% | 67.4% | 19.04% |
 <!-- results:end -->
 
 ![Reliability diagram of out-of-sample probabilities, risk-neutral and calibrated](docs/img/calibration.png)
